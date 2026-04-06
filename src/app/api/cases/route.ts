@@ -1,0 +1,150 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { hasPermission } from "@/lib/rbac";
+import { createCaseSchema } from "@/lib/validations";
+import { getChecklistForCategories } from "@/lib/checklist-rules";
+import { logAudit } from "@/lib/audit";
+
+export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.orgId || !session.user.role) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+  if (!hasPermission(session.user.role, "cases.read")) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
+  }
+
+  const url = new URL(req.url);
+  const status = url.searchParams.get("status");
+  const search = url.searchParams.get("search");
+
+  const where: Record<string, unknown> = {
+    orgId: session.user.orgId,
+    deletedAt: null,
+  };
+  if (status) where.status = status;
+  if (search) {
+    where.OR = [
+      { ref: { contains: search, mode: "insensitive" } },
+      { deceased: { fullName: { contains: search, mode: "insensitive" } } },
+      { contact: { fullName: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+
+  const cases = await prisma.case.findMany({
+    where: where as any,
+    include: { deceased: true, contact: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return NextResponse.json(cases);
+}
+
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.orgId || !session.user.role) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+  if (!hasPermission(session.user.role, "cases.create")) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
+  }
+
+  try {
+    const body = await req.json();
+    const data = createCaseSchema.parse(body);
+
+    // Check plan limits
+    const sub = await prisma.subscription.findUnique({ where: { orgId: session.user.orgId } });
+    if (sub?.plan === "STARTER") {
+      const month = new Date().toISOString().slice(0, 7);
+      const usage = await prisma.usageRecord.findUnique({
+        where: { orgId_month: { orgId: session.user.orgId, month } },
+      });
+      if (usage && usage.casesCreated >= 10) {
+        return NextResponse.json({ error: "Limite de expedientes alcanzado para el plan Starter (10/mes)" }, { status: 403 });
+      }
+    }
+
+    // Generate ref
+    const count = await prisma.case.count({ where: { orgId: session.user.orgId } });
+    const ref = `EXP-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+
+    const newCase = await prisma.$transaction(async (tx) => {
+      const c = await tx.case.create({
+        data: {
+          orgId: session.user.orgId!,
+          ref,
+          categories: data.categories,
+          province: data.province,
+          isUrgent: data.isUrgent || false,
+          hasDeceasedInsurance: data.hasDeceasedInsurance || false,
+          consentAccepted: data.consentAccepted,
+          consentDate: data.consentAccepted ? new Date() : null,
+          deceased: {
+            create: {
+              fullName: data.deceasedName,
+              deathDate: data.deathDate ? new Date(data.deathDate) : null,
+              dni: data.deceasedDni,
+            },
+          },
+          contact: {
+            create: {
+              fullName: data.contactName,
+              phone: data.contactPhone,
+              email: data.contactEmail,
+              relationship: data.relationship,
+            },
+          },
+        },
+        include: { deceased: true, contact: true },
+      });
+
+      // Auto-generate tasks from checklist rules
+      const tasks = getChecklistForCategories(data.categories);
+      for (const task of tasks) {
+        await tx.task.create({
+          data: {
+            caseId: c.id,
+            category: task.category,
+            title: task.title,
+            description: task.description,
+            sortOrder: task.sortOrder,
+          },
+        });
+      }
+
+      // Update usage record
+      const month = new Date().toISOString().slice(0, 7);
+      await tx.usageRecord.upsert({
+        where: { orgId_month: { orgId: session.user.orgId!, month } },
+        create: { orgId: session.user.orgId!, month, casesCreated: 1 },
+        update: { casesCreated: { increment: 1 } },
+      });
+
+      return c;
+    });
+
+    await logAudit({
+      orgId: session.user.orgId,
+      userId: session.user.id,
+      caseId: newCase.id,
+      action: "case.created",
+      details: `Expediente ${ref} creado`,
+    });
+
+    const full = await prisma.case.findUnique({
+      where: { id: newCase.id },
+      include: { deceased: true, contact: true, tasks: true },
+    });
+
+    return NextResponse.json(full, { status: 201 });
+  } catch (error: any) {
+    if (error?.name === "ZodError") {
+      return NextResponse.json({ error: "Datos invalidos", details: error.errors }, { status: 400 });
+    }
+    console.error("Create case error:", error);
+    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+  }
+}

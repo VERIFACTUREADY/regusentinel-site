@@ -1,0 +1,344 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  MANAGER
+  OPERATOR
+  VIEWER
+  MANAGED_OPS
+}
+
+enum CaseStatus {
+  INTAKE
+  VALIDATION
+  IN_PROGRESS
+  PENDING_DOCS
+  READY_TO_SEND
+  SENT
+  FOLLOW_UP
+  CLOSED
+  ARCHIVED
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  BLOCKED
+  READY
+  APPROVED
+  DONE
+  SKIPPED
+}
+
+enum TaskCategory {
+  BANCOS
+  SUMINISTROS
+  TELECOM
+  SUSCRIPCIONES
+  SEGUROS
+  VIDA_DIGITAL
+  FISCAL
+  OTROS
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PlanTier {
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+// ─── ORGANIZATION ────────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members       Membership[]
+  cases         Case[]
+  templates     Template[]
+  subscription  Subscription?
+  usageRecords  UsageRecord[]
+  auditLogs     AuditLog[]
+  demoRequests  DemoRequest[]
+
+  retentionDays Int @default(90)
+}
+
+// ─── USER & MEMBERSHIP ──────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String?
+  magicToken    String?
+  magicTokenExp DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  memberships   Membership[]
+  assignedTasks Task[]        @relation("AssignedTo")
+  approvals     Approval[]
+  auditLogs     AuditLog[]
+  promptLogs    PromptLog[]
+}
+
+model Membership {
+  id     String @id @default(cuid())
+  role   Role
+  userId String
+  orgId  String
+
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, orgId])
+}
+
+// ─── CASE ───────────────────────────────────────────────
+
+model Case {
+  id        String     @id @default(cuid())
+  orgId     String
+  ref       String
+  status    CaseStatus @default(INTAKE)
+
+  isUrgent       Boolean @default(false)
+  hasDeceasedInsurance Boolean @default(false)
+
+  categories     TaskCategory[]
+  province       String?
+  notes          String?
+
+  portalToken    String  @unique @default(cuid())
+  portalEnabled  Boolean @default(true)
+
+  consentAccepted   Boolean  @default(false)
+  consentDate       DateTime?
+  legitimationNote  String?
+
+  deletedAt      DateTime?
+  closedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org       Organization @relation(fields: [orgId], references: [id])
+  deceased  Deceased?
+  contact   CaseContact?
+  tasks     Task[]
+  documents Document[]
+  approvals Approval[]
+  promptLogs PromptLog[]
+  auditLogs  AuditLog[]
+}
+
+model Deceased {
+  id        String   @id @default(cuid())
+  caseId    String   @unique
+  fullName  String
+  deathDate DateTime?
+  dni       String?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+model CaseContact {
+  id           String  @id @default(cuid())
+  caseId       String  @unique
+  fullName     String
+  phone        String?
+  email        String?
+  relationship String?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+// ─── TASK ───────────────────────────────────────────────
+
+model Task {
+  id          String       @id @default(cuid())
+  caseId      String
+  category    TaskCategory
+  title       String
+  description String?
+  status      TaskStatus   @default(PENDING)
+  sortOrder   Int          @default(0)
+
+  dueDate     DateTime?
+  assigneeId  String?
+  dependsOnId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  case      Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignee  User? @relation("AssignedTo", fields: [assigneeId], references: [id])
+  dependsOn Task? @relation("TaskDependency", fields: [dependsOnId], references: [id])
+  dependents Task[] @relation("TaskDependency")
+  approval  Approval?
+}
+
+// ─── DOCUMENT ───────────────────────────────────────────
+
+model Document {
+  id        String  @id @default(cuid())
+  caseId    String
+  fileName  String
+  fileKey   String
+  mimeType  String?
+  fileSize  Int?
+  uploadedBy String?
+  isPortalUpload Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+// ─── TEMPLATE ───────────────────────────────────────────
+
+model Template {
+  id       String @id @default(cuid())
+  orgId    String
+  name     String
+  category TaskCategory?
+  type     String @default("email") // email | carta | solicitud
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org      Organization    @relation(fields: [orgId], references: [id])
+  versions TemplateVersion[]
+}
+
+model TemplateVersion {
+  id         String  @id @default(cuid())
+  templateId String
+  version    Int     @default(1)
+  subject    String?
+  body       String
+  variables  String[] // e.g. ["deceased.fullName", "contact.fullName"]
+  isApproved Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+}
+
+// ─── AUTOPILOT / IA ─────────────────────────────────────
+
+model PromptLog {
+  id       String @id @default(cuid())
+  caseId   String?
+  userId   String
+  action   String // "generate_checklist" | "generate_draft" | etc
+  prompt   String
+  response String
+  model    String?
+  tokens   Int?
+
+  createdAt DateTime @default(now())
+
+  case Case? @relation(fields: [caseId], references: [id])
+  user User  @relation(fields: [userId], references: [id])
+}
+
+model Approval {
+  id       String         @id @default(cuid())
+  caseId   String
+  taskId   String?        @unique
+  action   String         // "send_email" | "mark_sent" | etc
+  status   ApprovalStatus @default(PENDING)
+  details  String?
+  reviewerId String?
+
+  createdAt  DateTime @default(now())
+  reviewedAt DateTime?
+
+  case     Case  @relation(fields: [caseId], references: [id])
+  task     Task? @relation(fields: [taskId], references: [id])
+  reviewer User? @relation(fields: [reviewerId], references: [id])
+}
+
+// ─── AUDIT ──────────────────────────────────────────────
+
+model AuditLog {
+  id       String @id @default(cuid())
+  orgId    String
+  userId   String?
+  caseId   String?
+  action   String
+  details  String?
+  ip       String?
+
+  createdAt DateTime @default(now())
+
+  org  Organization @relation(fields: [orgId], references: [id])
+  user User?        @relation(fields: [userId], references: [id])
+  case Case?        @relation(fields: [caseId], references: [id])
+}
+
+// ─── BILLING ────────────────────────────────────────────
+
+model Subscription {
+  id                String   @id @default(cuid())
+  orgId             String   @unique
+  stripeCustomerId  String?
+  stripeSubId       String?
+  plan              PlanTier @default(STARTER)
+  status            String   @default("active") // active | past_due | canceled
+  currentPeriodEnd  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id])
+}
+
+model UsageRecord {
+  id     String @id @default(cuid())
+  orgId  String
+  month  String // "2026-04"
+  casesCreated Int @default(0)
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, month])
+}
+
+// ─── DEMO REQUEST ───────────────────────────────────────
+
+model DemoRequest {
+  id        String  @id @default(cuid())
+  orgId     String?
+  name      String
+  email     String
+  company   String?
+  phone     String?
+  message   String?
+
+  createdAt DateTime @default(now())
+
+  org Organization? @relation(fields: [orgId], references: [id])
+}
