@@ -184,6 +184,7 @@ model Task {
   description String?
   status      TaskStatus   @default(PENDING)
   sortOrder   Int          @default(0)
+  docTag      String?      // tag for document matching (e.g. "certificado_saldos")
 
   dueDate     DateTime?
   assigneeId  String?
@@ -197,6 +198,7 @@ model Task {
   dependsOn Task? @relation("TaskDependency", fields: [dependsOnId], references: [id])
   dependents Task[] @relation("TaskDependency")
   approval  Approval?
+  documents Document[] @relation("TaskDocuments")
 }
 
 // ─── DOCUMENT ───────────────────────────────────────────
@@ -204,6 +206,7 @@ model Task {
 model Document {
   id        String  @id @default(cuid())
   caseId    String
+  taskId    String? // linked task (auto or manual)
   fileName  String
   fileKey   String
   mimeType  String?
@@ -213,7 +216,8 @@ model Document {
 
   createdAt DateTime @default(now())
 
-  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  case Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  task Task? @relation("TaskDocuments", fields: [taskId], references: [id])
 }
 
 // ─── TEMPLATE ───────────────────────────────────────────

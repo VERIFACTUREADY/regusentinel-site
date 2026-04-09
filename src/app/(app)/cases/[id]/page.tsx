@@ -213,9 +213,17 @@ export default function CaseDetailPage() {
               <h3 className="font-semibold text-sm text-gray-500 mb-2">{cat}</h3>
               <div className="space-y-2">
                 {(tasks as any[]).map((task: any) => (
-                  <div key={task.id} className="bg-white p-4 rounded-lg border flex items-center justify-between">
+                  <div key={task.id} className={`bg-white p-4 rounded-lg border flex items-center justify-between ${task.status === "READY" ? "border-l-4 border-l-yellow-400" : task.status === "DONE" ? "border-l-4 border-l-green-400" : ""}`}>
                     <div className="flex-1">
-                      <p className="font-medium">{task.title}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{task.title}</p>
+                        {task.documents && task.documents.length > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded" title={`${task.documents.length} doc(s) vinculado(s)`}>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                            {task.documents.length}
+                          </span>
+                        )}
+                      </div>
                       {task.description && <p className="text-sm text-gray-500 mt-1">{task.description}</p>}
                     </div>
                     <div className="flex items-center gap-2 ml-4">
@@ -240,21 +248,37 @@ export default function CaseDetailPage() {
 
       {tab === "documents" && (
         <div>
-          <div className="mb-4">
+          <div className="mb-4 flex items-center gap-4">
             <label className="inline-block px-4 py-2 bg-primary text-white rounded-md text-sm cursor-pointer hover:bg-primary/90">
               Subir documento
               <input type="file" className="hidden" onChange={handleFileUpload} />
             </label>
+            <p className="text-xs text-gray-500">
+              Los documentos se vinculan automaticamente a tareas por nombre de archivo
+            </p>
           </div>
           <div className="bg-white rounded-lg border divide-y">
             {caseData.documents.map((doc: any) => (
               <div key={doc.id} className="px-6 py-3 flex items-center justify-between">
-                <div>
+                <div className="flex-1">
                   <p className="font-medium text-sm">{doc.fileName}</p>
-                  <p className="text-xs text-gray-400">
-                    {new Date(doc.createdAt).toLocaleString("es-ES")}
-                    {doc.isPortalUpload && " (portal familia)"}
-                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-xs text-gray-400">
+                      {new Date(doc.createdAt).toLocaleString("es-ES")}
+                      {doc.isPortalUpload && " (portal familia)"}
+                    </p>
+                    {doc.task && (
+                      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-green-50 text-green-700 rounded-full">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.172 13.828a4 4 0 015.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
+                        {doc.task.title}
+                      </span>
+                    )}
+                    {!doc.task && (
+                      <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">
+                        Sin vincular
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {doc.downloadUrl && (
                   <a href={doc.downloadUrl} target="_blank" rel="noreferrer"

@@ -111,6 +111,7 @@ export async function POST(req: NextRequest) {
             title: task.title,
             description: task.description,
             sortOrder: task.sortOrder,
+            docTag: task.docTag,
           },
         });
       }

@@ -19,8 +19,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     include: {
       deceased: true,
       contact: true,
-      tasks: { orderBy: { sortOrder: "asc" } },
-      documents: true,
+      tasks: {
+        orderBy: { sortOrder: "asc" },
+        include: { documents: { select: { id: true, fileName: true } } },
+      },
+      documents: { include: { task: { select: { id: true, title: true, category: true } } } },
       approvals: true,
       auditLogs: { orderBy: { createdAt: "desc" }, take: 50 },
     },

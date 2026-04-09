@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { uploadFile, getPresignedUrl } from "@/lib/s3";
 import { logAudit } from "@/lib/audit";
+import { matchDocumentToTag } from "@/lib/doc-task-matching";
 
 export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
   const c = await prisma.case.findFirst({
@@ -12,6 +13,7 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
   const docs = await prisma.document.findMany({
     where: { caseId: c.id },
     orderBy: { createdAt: "desc" },
+    include: { task: { select: { id: true, title: true, category: true } } },
   });
 
   const docsWithUrls = await Promise.all(
@@ -20,6 +22,7 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
       fileName: doc.fileName,
       createdAt: doc.createdAt,
       isPortalUpload: doc.isPortalUpload,
+      linkedTask: doc.task ? { title: doc.task.title, category: doc.task.category } : null,
       downloadUrl: await getPresignedUrl(doc.fileKey),
     }))
   );
@@ -43,9 +46,25 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
 
     await uploadFile(fileKey, buffer, file.type);
 
+    // Auto-match document to a task
+    let linkedTaskId: string | null = null;
+    const docTag = matchDocumentToTag(file.name);
+    if (docTag) {
+      const matchingTask = await prisma.task.findFirst({
+        where: {
+          caseId: c.id,
+          docTag,
+          status: { in: ["PENDING", "IN_PROGRESS", "BLOCKED"] },
+        },
+        orderBy: { sortOrder: "asc" },
+      });
+      if (matchingTask) linkedTaskId = matchingTask.id;
+    }
+
     const doc = await prisma.document.create({
       data: {
         caseId: c.id,
+        taskId: linkedTaskId,
         fileName: file.name,
         fileKey,
         mimeType: file.type,
@@ -54,11 +73,29 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       },
     });
 
+    // Auto-update task status to READY
+    if (linkedTaskId) {
+      const task = await prisma.task.findUnique({ where: { id: linkedTaskId } });
+      if (task && (task.status === "PENDING" || task.status === "IN_PROGRESS")) {
+        await prisma.task.update({
+          where: { id: linkedTaskId },
+          data: { status: "READY" },
+        });
+
+        await logAudit({
+          orgId: c.orgId,
+          caseId: c.id,
+          action: "task.auto_updated_portal",
+          details: `Tarea "${task.title}" actualizada a READY por documento portal "${file.name}"`,
+        });
+      }
+    }
+
     await logAudit({
       orgId: c.orgId,
       caseId: c.id,
       action: "portal.document_uploaded",
-      details: `Documento "${file.name}" subido desde portal familia`,
+      details: `Documento "${file.name}" subido desde portal familia${linkedTaskId ? " (vinculado a tarea)" : ""}`,
     });
 
     return NextResponse.json(doc, { status: 201 });
