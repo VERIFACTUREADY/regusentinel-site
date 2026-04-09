@@ -156,3 +156,4 @@ Ejecuta 3 suites de tests:
 8. **OCR/IA docs**: Extraccion automatica de datos de documentos subidos
 9. **Compliance avanzado**: Cifrado at-rest, key rotation, data residency EU
 10. **Testing E2E**: Playwright para tests end-to-end
+
