@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { uploadFile, getPresignedUrl } from "@/lib/s3";
 import { logAudit } from "@/lib/audit";
-import { matchDocumentToTag } from "@/lib/doc-task-matching";
+import { matchDocumentToTag, DOC_MATCH_RULES } from "@/lib/doc-task-matching";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -115,7 +115,24 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       details: `Archivo "${file.name}" subido${linkedTaskId ? ` (vinculado a tarea)` : ""}`,
     });
 
-    return NextResponse.json({ ...doc, taskUpdated }, { status: 201 });
+    // If no task was linked, return naming suggestions from pending tasks
+    let suggestions: string[] | undefined;
+    if (!linkedTaskId) {
+      const pendingTasks = await prisma.task.findMany({
+        where: { caseId: params.id, status: { in: ["PENDING", "IN_PROGRESS"] }, docTag: { not: null } },
+        select: { docTag: true, title: true },
+        take: 5,
+      });
+      if (pendingTasks.length > 0) {
+        suggestions = pendingTasks.map((t) => {
+          const rule = DOC_MATCH_RULES.find((r) => r.docTag === t.docTag);
+          const keyword = rule?.keywords[0] || t.docTag;
+          return `${keyword} → ${t.title}`;
+        });
+      }
+    }
+
+    return NextResponse.json({ ...doc, taskUpdated, suggestions }, { status: 201 });
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json({ error: "Error al subir archivo" }, { status: 500 });

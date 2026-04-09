@@ -87,12 +87,22 @@ export default function CaseDetailPage() {
     }
   }
 
+  const [uploadHint, setUploadHint] = useState<{ fileName: string; suggestions: string[] } | null>(null);
+
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     const formData = new FormData();
     formData.append("file", file);
-    await fetch(`/api/cases/${caseId}/documents`, { method: "POST", body: formData });
+    const res = await fetch(`/api/cases/${caseId}/documents`, { method: "POST", body: formData });
+    if (res.ok) {
+      const data = await res.json();
+      if (!data.taskId && data.suggestions) {
+        setUploadHint({ fileName: file.name, suggestions: data.suggestions });
+      } else {
+        setUploadHint(null);
+      }
+    }
     fetchCase();
     e.target.value = "";
   }
@@ -257,6 +267,29 @@ export default function CaseDetailPage() {
               Los documentos se vinculan automaticamente a tareas por nombre de archivo
             </p>
           </div>
+          {uploadHint && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <svg className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+                <div>
+                  <p className="text-sm font-medium text-amber-800">
+                    No se pudo vincular &quot;{uploadHint.fileName}&quot; a ninguna tarea
+                  </p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    Renombra el archivo incluyendo alguna de estas palabras clave y vuelve a subirlo:
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {uploadHint.suggestions.map((s, i) => (
+                      <li key={i} className="text-xs text-amber-700">
+                        <span className="font-mono bg-amber-100 px-1.5 py-0.5 rounded">{s}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <button onClick={() => setUploadHint(null)} className="text-xs text-amber-600 underline mt-2">Cerrar</button>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="bg-white rounded-lg border divide-y">
             {caseData.documents.map((doc: any) => (
               <div key={doc.id} className="px-6 py-3 flex items-center justify-between">
