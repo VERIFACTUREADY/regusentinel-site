@@ -6,6 +6,7 @@ import { hasPermission } from "@/lib/rbac";
 import { createCaseSchema } from "@/lib/validations";
 import { getChecklistForCategories } from "@/lib/checklist-rules";
 import { logAudit } from "@/lib/audit";
+import { calculateTaskDeadlines } from "@/lib/deadline-engine";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -101,9 +102,11 @@ export async function POST(req: NextRequest) {
         include: { deceased: true, contact: true },
       });
 
-      // Auto-generate tasks from checklist rules
+      // Auto-generate tasks from checklist rules with deadlines
       const tasks = getChecklistForCategories(data.categories);
+      const deathDate = data.deathDate ? new Date(data.deathDate) : new Date();
       for (const task of tasks) {
+        const deadlines = calculateTaskDeadlines(deathDate, task.docTag, task.title);
         await tx.task.create({
           data: {
             caseId: c.id,
@@ -112,6 +115,10 @@ export async function POST(req: NextRequest) {
             description: task.description,
             sortOrder: task.sortOrder,
             docTag: task.docTag,
+            blockedUntil: deadlines.blockedUntil,
+            deadline: deadlines.deadline,
+            blockReason: deadlines.blockReason,
+            status: deadlines.blockedUntil && deadlines.blockedUntil > new Date() ? "BLOCKED" : "PENDING",
           },
         });
       }

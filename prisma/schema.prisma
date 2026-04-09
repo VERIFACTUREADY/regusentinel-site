@@ -184,7 +184,10 @@ model Task {
   description String?
   status      TaskStatus   @default(PENDING)
   sortOrder   Int          @default(0)
-  docTag      String?      // tag for document matching (e.g. "certificado_saldos")
+  docTag      String?      // tag for document matching
+  blockedUntil DateTime?   // date-based blocking (e.g., 15 business days)
+  deadline     DateTime?   // hard deadline (e.g., 6 months ISD)
+  blockReason  String?     // human-readable reason for block
 
   dueDate     DateTime?
   assigneeId  String?

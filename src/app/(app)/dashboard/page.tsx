@@ -23,12 +23,18 @@ export default async function DashboardPage() {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [activeCases, pendingTasks, closedThisMonth, recentCases, recentLogs] = await Promise.all([
+  const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, recentCases, recentLogs, upcomingDeadlines] = await Promise.all([
     prisma.case.count({
       where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
     }),
     prisma.task.count({
       where: { case: { orgId, deletedAt: null }, status: { in: ["PENDING", "IN_PROGRESS"] } },
+    }),
+    prisma.task.count({
+      where: { case: { orgId, deletedAt: null }, status: "BLOCKED" },
+    }),
+    prisma.task.count({
+      where: { case: { orgId, deletedAt: null }, status: "READY" },
     }),
     prisma.case.count({
       where: { orgId, deletedAt: null, status: "CLOSED", closedAt: { gte: startOfMonth } },
@@ -45,6 +51,17 @@ export default async function DashboardPage() {
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
+    // Tasks with deadlines in the next 30 days
+    prisma.task.findMany({
+      where: {
+        case: { orgId, deletedAt: null },
+        deadline: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), gte: now },
+        status: { notIn: ["DONE", "SKIPPED"] },
+      },
+      include: { case: { select: { ref: true } } },
+      orderBy: { deadline: "asc" },
+      take: 8,
+    }),
   ]);
 
   const portalDocs = await prisma.document.count({
@@ -54,23 +71,58 @@ export default async function DashboardPage() {
   const kpis = [
     { label: "Expedientes activos", value: activeCases, color: "text-blue-600" },
     { label: "Tareas pendientes", value: pendingTasks, color: "text-orange-600" },
+    { label: "Tareas bloqueadas", value: blockedTasks, color: "text-red-600" },
+    { label: "Listas para accion", value: readyTasks, color: "text-yellow-600" },
     { label: "Docs portal familia", value: portalDocs, color: "text-purple-600" },
     { label: "Cerrados este mes", value: closedThisMonth, color: "text-green-600" },
   ];
+
+  function daysUntil(date: Date): number {
+    return Math.ceil((new Date(date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  }
 
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
         {kpis.map((kpi) => (
-          <div key={kpi.label} className="bg-white p-6 rounded-lg border">
-            <p className="text-sm text-gray-500">{kpi.label}</p>
-            <p className={`text-3xl font-bold mt-1 ${kpi.color}`}>{kpi.value}</p>
+          <div key={kpi.label} className="bg-white p-4 rounded-lg border">
+            <p className="text-xs text-gray-500">{kpi.label}</p>
+            <p className={`text-2xl font-bold mt-1 ${kpi.color}`}>{kpi.value}</p>
           </div>
         ))}
       </div>
+
+      {/* Deadline alerts */}
+      {upcomingDeadlines.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
+          <h2 className="font-semibold text-red-800 mb-3 flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            Plazos proximos (30 dias)
+          </h2>
+          <div className="space-y-2">
+            {upcomingDeadlines.map((task) => {
+              const days = daysUntil(task.deadline!);
+              const urgent = days <= 7;
+              return (
+                <div key={task.id} className={`flex items-center justify-between text-sm ${urgent ? "text-red-800 font-medium" : "text-red-700"}`}>
+                  <div>
+                    <Link href={`/cases/${task.caseId}`} className="hover:underline">
+                      <span className="font-mono text-xs mr-2">{task.case.ref}</span>
+                      {task.title}
+                    </Link>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-xs ${urgent ? "bg-red-200" : "bg-red-100"}`}>
+                    {days <= 0 ? "VENCIDO" : `${days} dias`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Recent cases */}
       <div className="bg-white rounded-lg border mb-8">

@@ -115,8 +115,8 @@ export default function OnboardingPage() {
               <h2 className="text-lg font-semibold">Selecciona tu plan</h2>
               <div className="space-y-3">
                 {[
-                  { id: "STARTER", name: "Starter", price: "49EUR/mes", desc: "1-3 usuarios, 10 exp/mes" },
-                  { id: "PRO", name: "Pro", price: "149EUR/mes", desc: "Hasta 10 usuarios, ilimitado" },
+                  { id: "STARTER", name: "PRO Starter", price: "149EUR/mes + 12EUR/exp", desc: "2 usuarios, 15 exp/mes incluidos" },
+                  { id: "PRO", name: "PRO Growth", price: "399EUR/mes + 9EUR/exp", desc: "5 usuarios, 50 exp/mes incluidos" },
                   { id: "ENTERPRISE", name: "Enterprise", price: "Contactar", desc: "Personalizado" },
                 ].map((p) => (
                   <button key={p.id} onClick={() => update("plan", p.id)}
