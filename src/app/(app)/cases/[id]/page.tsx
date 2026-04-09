@@ -149,7 +149,7 @@ export default function CaseDetailPage() {
               tab === t ? "border-primary text-primary" : "border-transparent text-gray-500 hover:text-gray-700"
             }`}>
             {tabLabels[t]}
-            {t === "tasks" && ` (${caseData.tasks.length})`}
+            {t === "tasks" && ` (${new Set(caseData.tasks.map((tk: any) => `${tk.category}::${tk.title}`)).size})`}
             {t === "documents" && ` (${caseData.documents.length})`}
           </button>
         ))}
@@ -213,12 +213,21 @@ export default function CaseDetailPage() {
               </span>
             </div>
           )}
-          {Object.entries(
-            caseData.tasks.reduce((acc: Record<string, any[]>, t: any) => {
-              (acc[t.category] = acc[t.category] || []).push(t);
-              return acc;
-            }, {})
-          ).map(([cat, tasks]) => (
+          {(() => {
+            // Deduplicate tasks by category+title (keep first occurrence)
+            const seen = new Set<string>();
+            const uniqueTasks = caseData.tasks.filter((t: any) => {
+              const key = `${t.category}::${t.title}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+            return Object.entries(
+              uniqueTasks.reduce((acc: Record<string, any[]>, t: any) => {
+                (acc[t.category] = acc[t.category] || []).push(t);
+                return acc;
+              }, {})
+            ).map(([cat, tasks]) => (
             <div key={cat} className="mb-6">
               <h3 className="font-semibold text-sm text-gray-500 mb-2">{cat}</h3>
               <div className="space-y-2">
@@ -249,7 +258,8 @@ export default function CaseDetailPage() {
                 ))}
               </div>
             </div>
-          ))}
+          ));
+          })()}
           {caseData.tasks.length === 0 && (
             <p className="text-center text-gray-400 py-8">No hay tareas asignadas a este expediente.</p>
           )}
