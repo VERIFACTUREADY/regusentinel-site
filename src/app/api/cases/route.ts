@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
               fullName: data.contactName,
               phone: data.contactPhone,
               email: data.contactEmail,
-              relationship: data.relationship,
+              relationship: data.contactRelationship,
             },
           },
         },

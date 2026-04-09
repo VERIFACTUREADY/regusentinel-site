@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       user = await prisma.user.create({
         data: {
           email: data.email,
-          name: data.name || null,
+          name: data.email.split("@")[0] || null,
           magicToken,
           magicTokenExp: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
         },
