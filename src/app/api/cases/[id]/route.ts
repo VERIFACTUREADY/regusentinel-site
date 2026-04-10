@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
+import { getCaseDeadlines } from "@/lib/deadline-engine";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -30,7 +31,42 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   });
 
   if (!c) return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
-  return NextResponse.json(c);
+
+  // Auto-unblock tasks whose blockedUntil date has passed
+  const now = new Date();
+  const tasksToUnblock = c.tasks.filter(
+    (t) => t.status === "BLOCKED" && t.blockedUntil && new Date(t.blockedUntil) <= now
+  );
+  if (tasksToUnblock.length > 0) {
+    await prisma.task.updateMany({
+      where: { id: { in: tasksToUnblock.map((t) => t.id) } },
+      data: { status: "PENDING", blockReason: null },
+    });
+    // Re-fetch with updated statuses
+    const updated = await prisma.case.findFirst({
+      where: { id: params.id, orgId: session.user.orgId, deletedAt: null },
+      include: {
+        deceased: true,
+        contact: true,
+        tasks: {
+          orderBy: { sortOrder: "asc" },
+          include: { documents: { select: { id: true, fileName: true } } },
+        },
+        documents: { include: { task: { select: { id: true, title: true, category: true } } } },
+        approvals: true,
+        auditLogs: { orderBy: { createdAt: "desc" }, take: 50 },
+      },
+    });
+    // Add case-level deadlines
+    const deathDate = updated?.deceased?.deathDate;
+    const caseDeadlines = deathDate ? getCaseDeadlines(new Date(deathDate)) : null;
+    return NextResponse.json({ ...updated, caseDeadlines });
+  }
+
+  // Add case-level deadlines
+  const deathDate = c.deceased?.deathDate;
+  const caseDeadlines = deathDate ? getCaseDeadlines(new Date(deathDate)) : null;
+  return NextResponse.json({ ...c, caseDeadlines });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {

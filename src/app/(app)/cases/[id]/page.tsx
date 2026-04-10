@@ -26,6 +26,7 @@ interface CaseDetail {
   deceased: { fullName: string; deathDate: string | null; dni: string | null } | null;
   contact: { fullName: string; phone: string | null; email: string | null; relationship: string | null } | null;
   tasks: any[]; documents: any[]; approvals: any[]; auditLogs: any[];
+  caseDeadlines: { certificatesAvailable: string; isdDeadline: string; isdExtensionRequestDeadline: string } | null;
   createdAt: string;
 }
 
@@ -118,10 +119,10 @@ export default function CaseDetailPage() {
   if (loading) return <div className="text-center py-12 text-gray-400">Cargando...</div>;
   if (!caseData) return <div className="text-center py-12 text-gray-400">Expediente no encontrado</div>;
 
-  const tabs = ["overview", "tasks", "documents", "templates", "activity", "export"];
+  const tabs = ["overview", "tasks", "documents", "bankpack", "templates", "activity", "export"];
   const tabLabels: Record<string, string> = {
     overview: "Resumen", tasks: "Tareas", documents: "Documentos",
-    templates: "Plantillas", activity: "Actividad", export: "Exportar",
+    bankpack: "Paquete banco", templates: "Plantillas", activity: "Actividad", export: "Exportar",
   };
 
   return (
@@ -189,6 +190,39 @@ export default function CaseDetailPage() {
             </div>
           </div>
 
+          {/* Case-level deadlines */}
+          {caseData.caseDeadlines && (
+            <div className="md:col-span-2 bg-white p-6 rounded-lg border">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                Plazos legales clave
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  { label: "Certificados disponibles", date: caseData.caseDeadlines.certificatesAvailable, desc: "Ultimas voluntades + seguros (15 dias habiles)" },
+                  { label: "Solicitud prorroga ISD", date: caseData.caseDeadlines.isdExtensionRequestDeadline, desc: "Limite para solicitar prorroga del Modelo 650" },
+                  { label: "Plazo ISD (Modelo 650)", date: caseData.caseDeadlines.isdDeadline, desc: "6 meses desde fallecimiento" },
+                ].map((d) => {
+                  const days = Math.ceil((new Date(d.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                  const expired = days <= 0;
+                  const urgent = days > 0 && days <= 14;
+                  return (
+                    <div key={d.label} className={`p-3 rounded-lg border ${expired ? "bg-red-50 border-red-200" : urgent ? "bg-orange-50 border-orange-200" : "bg-gray-50 border-gray-200"}`}>
+                      <p className="text-xs text-gray-500">{d.label}</p>
+                      <p className={`text-lg font-bold ${expired ? "text-red-600" : urgent ? "text-orange-600" : "text-gray-900"}`}>
+                        {new Date(d.date).toLocaleDateString("es-ES")}
+                      </p>
+                      <p className={`text-xs mt-1 ${expired ? "text-red-500 font-medium" : urgent ? "text-orange-500" : "text-gray-400"}`}>
+                        {expired ? "VENCIDO" : `${days} dias restantes`}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">{d.desc}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Pipeline visualization */}
           <div className="md:col-span-2 bg-white p-6 rounded-lg border">
             <h3 className="font-semibold mb-4">Pipeline</h3>
@@ -232,9 +266,13 @@ export default function CaseDetailPage() {
               <h3 className="font-semibold text-sm text-gray-500 mb-2">{cat}</h3>
               <div className="space-y-2">
                 {(tasks as any[]).map((task: any) => (
-                  <div key={task.id} className={`bg-white p-4 rounded-lg border flex items-center justify-between ${task.status === "READY" ? "border-l-4 border-l-yellow-400" : task.status === "DONE" ? "border-l-4 border-l-green-400" : ""}`}>
+                  <div key={task.id} className={`bg-white p-4 rounded-lg border flex items-start justify-between ${
+                    task.status === "BLOCKED" ? "border-l-4 border-l-red-400" :
+                    task.status === "READY" ? "border-l-4 border-l-yellow-400" :
+                    task.status === "DONE" ? "border-l-4 border-l-green-400" : ""
+                  }`}>
                     <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium">{task.title}</p>
                         {task.documents && task.documents.length > 0 && (
                           <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded" title={`${task.documents.length} doc(s) vinculado(s)`}>
@@ -244,8 +282,32 @@ export default function CaseDetailPage() {
                         )}
                       </div>
                       {task.description && <p className="text-sm text-gray-500 mt-1">{task.description}</p>}
+                      {/* Deadline and blocked info */}
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {task.status === "BLOCKED" && task.blockReason && (
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                            {task.blockReason}
+                          </span>
+                        )}
+                        {task.blockedUntil && task.status === "BLOCKED" && (
+                          <span className="text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded">
+                            Disponible: {new Date(task.blockedUntil).toLocaleDateString("es-ES")}
+                          </span>
+                        )}
+                        {task.deadline && task.status !== "DONE" && task.status !== "SKIPPED" && (() => {
+                          const days = Math.ceil((new Date(task.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                          const expired = days <= 0;
+                          const urgent = days > 0 && days <= 14;
+                          return (
+                            <span className={`text-xs px-2 py-0.5 rounded ${expired ? "bg-red-100 text-red-700 font-medium" : urgent ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600"}`}>
+                              {expired ? "VENCIDO" : `Plazo: ${days}d`} - {new Date(task.deadline).toLocaleDateString("es-ES")}
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 ml-4">
+                    <div className="flex items-center gap-2 ml-4 shrink-0">
                       <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)}
                         className="text-xs px-2 py-1 border rounded">
                         {taskStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -335,6 +397,93 @@ export default function CaseDetailPage() {
           </div>
         </div>
       )}
+
+      {tab === "bankpack" && (() => {
+        // Build set of available docTags from linked documents and DONE tasks
+        const availableTags = new Set<string>();
+        caseData.documents.forEach((d: any) => {
+          if (d.task?.category) {
+            const linkedTask = caseData.tasks.find((t: any) => t.id === d.task.id);
+            if (linkedTask?.docTag) availableTags.add(linkedTask.docTag);
+          }
+        });
+        caseData.tasks.forEach((t: any) => {
+          if (t.status === "DONE" && t.docTag) availableTags.add(t.docTag);
+        });
+
+        const bankDocs = [
+          { name: "Certificado de defuncion", desc: "Original o copia autorizada del Registro Civil", tags: ["certificado_defuncion"], required: true },
+          { name: "Certificado de ultimas voluntades", desc: "Ministerio de Justicia (tras 15 dias habiles)", tags: ["certificado_saldos"], required: true },
+          { name: "Certificado de seguros de fallecimiento", desc: "Ministerio de Justicia (tras 15 dias habiles)", tags: ["seguro_vida", "notificacion_seguro"], required: true },
+          { name: "Testamento o declaracion de herederos", desc: "Copia autorizada del testamento o acta notarial", tags: [], required: true },
+          { name: "DNI del fallecido", desc: "Original o copia del documento de identidad", tags: [], required: true },
+          { name: "DNI de los herederos", desc: "Copias de todos los herederos", tags: [], required: true },
+          { name: "Escritura de aceptacion de herencia", desc: "Escritura publica notarial de aceptacion y adjudicacion", tags: ["transferencia_titularidad_banco"], required: true },
+          { name: "Justificante de pago ISD (Modelo 650)", desc: "Presentado y pagado ante la CCAA correspondiente", tags: ["modelo_650"], required: true },
+          { name: "Certificado de saldos de la entidad", desc: "Solicitar a la propia entidad bancaria", tags: ["certificado_saldos"], required: true },
+          { name: "Justificante plusvalia municipal", desc: "Solo si hay inmuebles en la herencia", tags: ["plazos_fiscales"], required: false },
+        ];
+
+        const ready = bankDocs.filter((d) => d.required && d.tags.some((t) => availableTags.has(t))).length;
+        const totalRequired = bankDocs.filter((d) => d.required).length;
+
+        return (
+          <div>
+            <div className="bg-white p-6 rounded-lg border mb-4">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold">Paquete documental para banco</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Checklist estandar para procesar la sucesion en entidades bancarias espanolas
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-primary">{ready}/{totalRequired}</p>
+                  <p className="text-xs text-gray-500">documentos listos</p>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${totalRequired > 0 ? (ready / totalRequired) * 100 : 0}%` }} />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg border divide-y">
+              {bankDocs.map((doc, i) => {
+                const isReady = doc.tags.some((t) => availableTags.has(t));
+                return (
+                  <div key={i} className="px-6 py-4 flex items-start gap-3">
+                    <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
+                      isReady ? "bg-green-500 text-white" : doc.required ? "bg-gray-200 text-gray-400" : "bg-gray-100 text-gray-300"
+                    }`}>
+                      {isReady ? (
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                      ) : (
+                        <span className="text-xs">{i + 1}</span>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-sm">{doc.name}</p>
+                        {doc.required && <span className="text-xs text-red-600">*</span>}
+                        {!doc.required && <span className="text-xs text-gray-400">(opcional)</span>}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">{doc.desc}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded-full shrink-0 ${
+                      isReady ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                    }`}>
+                      {isReady ? "Listo" : "Pendiente"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-gray-400 mt-4">
+              * Documentos obligatorios segun BdE y normativa sucesoria. Algunos bancos pueden solicitar documentacion adicional especifica.
+            </p>
+          </div>
+        );
+      })()}
 
       {tab === "templates" && (
         <div className="space-y-4">
