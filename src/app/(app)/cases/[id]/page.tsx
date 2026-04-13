@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
+import { generateBankPack } from "@/lib/bank-pack";
 
 const statusColors: Record<string, string> = {
   INTAKE: "bg-gray-100 text-gray-700", VALIDATION: "bg-yellow-100 text-yellow-700",
@@ -411,21 +412,7 @@ export default function CaseDetailPage() {
           if (t.status === "DONE" && t.docTag) availableTags.add(t.docTag);
         });
 
-        const bankDocs = [
-          { name: "Certificado de defuncion", desc: "Original o copia autorizada del Registro Civil", tags: ["certificado_defuncion"], required: true },
-          { name: "Certificado de ultimas voluntades", desc: "Ministerio de Justicia (tras 15 dias habiles)", tags: ["certificado_saldos"], required: true },
-          { name: "Certificado de seguros de fallecimiento", desc: "Ministerio de Justicia (tras 15 dias habiles)", tags: ["seguro_vida", "notificacion_seguro"], required: true },
-          { name: "Testamento o declaracion de herederos", desc: "Copia autorizada del testamento o acta notarial", tags: [], required: true },
-          { name: "DNI del fallecido", desc: "Original o copia del documento de identidad", tags: [], required: true },
-          { name: "DNI de los herederos", desc: "Copias de todos los herederos", tags: [], required: true },
-          { name: "Escritura de aceptacion de herencia", desc: "Escritura publica notarial de aceptacion y adjudicacion", tags: ["transferencia_titularidad_banco"], required: true },
-          { name: "Justificante de pago ISD (Modelo 650)", desc: "Presentado y pagado ante la CCAA correspondiente", tags: ["modelo_650"], required: true },
-          { name: "Certificado de saldos de la entidad", desc: "Solicitar a la propia entidad bancaria", tags: ["certificado_saldos"], required: true },
-          { name: "Justificante plusvalia municipal", desc: "Solo si hay inmuebles en la herencia", tags: ["plazos_fiscales"], required: false },
-        ];
-
-        const ready = bankDocs.filter((d) => d.required && d.tags.some((t) => availableTags.has(t))).length;
-        const totalRequired = bankDocs.filter((d) => d.required).length;
+        const { requirements: bankDocs, ready, total: totalRequired } = generateBankPack(availableTags);
 
         return (
           <div>
@@ -449,7 +436,7 @@ export default function CaseDetailPage() {
 
             <div className="bg-white rounded-lg border divide-y">
               {bankDocs.map((doc, i) => {
-                const isReady = doc.tags.some((t) => availableTags.has(t));
+                const isReady = doc.docTags.length > 0 && doc.docTags.some((t) => availableTags.has(t));
                 return (
                   <div key={i} className="px-6 py-4 flex items-start gap-3">
                     <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
@@ -467,7 +454,7 @@ export default function CaseDetailPage() {
                         {doc.required && <span className="text-xs text-red-600">*</span>}
                         {!doc.required && <span className="text-xs text-gray-400">(opcional)</span>}
                       </div>
-                      <p className="text-xs text-gray-500 mt-0.5">{doc.desc}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{doc.description}</p>
                     </div>
                     <span className={`text-xs px-2 py-1 rounded-full shrink-0 ${
                       isReady ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
