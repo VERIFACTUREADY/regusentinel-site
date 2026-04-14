@@ -56,15 +56,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const data = createCaseSchema.parse(body);
 
-    // Check plan limits
+    // Check plan limits (includedCases per mes; excedentes facturados aparte).
     const sub = await prisma.subscription.findUnique({ where: { orgId: session.user.orgId } });
-    if (sub?.plan === "STARTER") {
+    if (sub?.plan === "INICIA") {
       const month = new Date().toISOString().slice(0, 7);
       const usage = await prisma.usageRecord.findUnique({
         where: { orgId_month: { orgId: session.user.orgId, month } },
       });
-      if (usage && usage.casesCreated >= 10) {
-        return NextResponse.json({ error: "Limite de expedientes alcanzado para el plan Starter (10/mes)" }, { status: 403 });
+      if (usage && usage.casesCreated >= 15) {
+        return NextResponse.json(
+          { error: "Limite de expedientes alcanzado para el plan Inicia (15/mes). Actualiza a Despacho." },
+          { status: 403 }
+        );
       }
     }
 

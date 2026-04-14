@@ -52,7 +52,7 @@ async function main() {
     update: {},
     create: {
       orgId: org.id,
-      plan: PlanTier.STARTER,
+      plan: PlanTier.DESPACHO,
       status: "active",
       currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // +30 days
     },

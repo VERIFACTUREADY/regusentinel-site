@@ -157,61 +157,68 @@ export default function LandingPage() {
       <section id="plans" className="py-16 bg-gray-50">
         <div className="max-w-6xl mx-auto px-4">
           <h3 className="text-2xl font-bold text-center mb-3">Planes BARITUR PRO</h3>
-          <p className="text-center text-gray-500 mb-12">Precio hibrido: base mensual + por expediente. Alineado con tu volumen real.</p>
+          <p className="text-center text-gray-500 mb-2">Prepago anual = 2 meses gratis (-17%). Precios sin IVA.</p>
+          <p className="text-center text-gray-400 text-sm mb-10">Despacho y Firma incluyen cuota unica de setup (onboarding y migracion).</p>
 
           <div className="grid md:grid-cols-3 gap-8 mb-12">
-            {/* PRO Starter */}
+            {/* Inicia */}
             <div className="p-6 bg-white border rounded-lg">
-              <h4 className="text-lg font-bold">PRO Starter</h4>
+              <h4 className="text-lg font-bold">Inicia</h4>
+              <p className="text-xs text-gray-500 mb-3">Empieza a no perder plazos</p>
               <div className="my-4">
                 <p className="text-3xl font-bold">149<span className="text-lg">EUR</span><span className="text-sm font-normal text-gray-500">/mes</span></p>
-                <p className="text-sm text-primary font-medium">+ 12EUR/expediente</p>
+                <p className="text-xs text-gray-500">o 1.490EUR/ano (ahorras 358EUR)</p>
+                <p className="text-xs text-gray-400 mt-1">Sin cuota de setup</p>
               </div>
               <ul className="text-sm text-gray-600 space-y-2">
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>2 usuarios</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Hasta 2 usuarios</li>
                 <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>15 expedientes/mes incluidos</li>
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Motor de checklist + plazos</li>
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Plantillas base</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Motor de plazos ISD (Modelo 650)</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Checklist automatico + plantillas base</li>
                 <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Portal familia basico</li>
                 <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Export PDF/ZIP</li>
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Audit trail basico</li>
               </ul>
             </div>
 
-            {/* PRO Growth */}
+            {/* Despacho (ancla) */}
             <div className="p-6 bg-white border-2 border-primary rounded-lg relative">
               <span className="absolute -top-3 left-4 bg-primary text-white text-xs px-2 py-1 rounded">Recomendado</span>
-              <h4 className="text-lg font-bold">PRO Growth</h4>
+              <h4 className="text-lg font-bold">Despacho</h4>
+              <p className="text-xs text-gray-500 mb-3">El plan operativo de tu asesoria</p>
               <div className="my-4">
-                <p className="text-3xl font-bold">399<span className="text-lg">EUR</span><span className="text-sm font-normal text-gray-500">/mes</span></p>
-                <p className="text-sm text-primary font-medium">+ 9EUR/expediente</p>
+                <p className="text-3xl font-bold">349<span className="text-lg">EUR</span><span className="text-sm font-normal text-gray-500">/mes</span></p>
+                <p className="text-xs text-gray-500">o 3.490EUR/ano (ahorras 698EUR)</p>
+                <p className="text-xs text-primary font-medium mt-1">+ 299EUR setup unico</p>
               </div>
               <ul className="text-sm text-gray-600 space-y-2">
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>5 usuarios</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Hasta 5 usuarios</li>
                 <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>50 expedientes/mes incluidos</li>
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Reglas avanzadas (bloqueos/dependencias)</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Pack banco unificado (BdE-ready)</li>
                 <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Plantillas versionadas + aprobacion</li>
                 <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Reporting (lead time, bloqueos)</li>
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Roles/permisos completos</li>
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>API/webhooks basicos</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Portal familia white-label</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Notificaciones email automaticas</li>
                 <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>SLA soporte 24h</li>
               </ul>
             </div>
 
-            {/* PRO Enterprise */}
+            {/* Firma */}
             <div className="p-6 bg-white border rounded-lg">
-              <h4 className="text-lg font-bold">PRO Enterprise</h4>
+              <h4 className="text-lg font-bold">Firma</h4>
+              <p className="text-xs text-gray-500 mb-3">Para firmas con volumen y equipo</p>
               <div className="my-4">
-                <p className="text-3xl font-bold">A medida</p>
-                <p className="text-sm text-gray-500 font-medium">Contactar</p>
+                <p className="text-3xl font-bold">749<span className="text-lg">EUR</span><span className="text-sm font-normal text-gray-500">/mes</span></p>
+                <p className="text-xs text-gray-500">o 7.490EUR/ano (ahorras 1.498EUR)</p>
+                <p className="text-xs text-primary font-medium mt-1">+ 990EUR setup unico</p>
               </div>
               <ul className="text-sm text-gray-600 space-y-2">
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Usuarios ilimitados</li>
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>SSO, SCIM, entornos segregados</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Hasta 20 usuarios</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>200 expedientes/mes incluidos</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Roles/permisos avanzados, SSO</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>API/webhooks + integraciones</li>
                 <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>DPA extendido + auditorias</li>
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>SLAs enterprise + soporte prioritario</li>
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Integraciones custom (ERP, firma-e)</li>
-                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Data residency y retencion a medida</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Onboarding asistido + formacion</li>
+                <li className="flex items-start gap-2"><span className="text-green-500 mt-0.5">&#10003;</span>Soporte prioritario</li>
               </ul>
             </div>
           </div>

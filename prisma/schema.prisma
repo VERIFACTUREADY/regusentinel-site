@@ -57,9 +57,14 @@ enum ApprovalStatus {
 }
 
 enum PlanTier {
-  STARTER
-  PRO
-  ENTERPRISE
+  INICIA
+  DESPACHO
+  FIRMA
+}
+
+enum BillingInterval {
+  MONTHLY
+  ANNUAL
 }
 
 // ─── ORGANIZATION ────────────────────────────────────────
@@ -309,13 +314,18 @@ model AuditLog {
 // ─── BILLING ────────────────────────────────────────────
 
 model Subscription {
-  id                String   @id @default(cuid())
-  orgId             String   @unique
+  id                String          @id @default(cuid())
+  orgId             String          @unique
   stripeCustomerId  String?
   stripeSubId       String?
-  plan              PlanTier @default(STARTER)
-  status            String   @default("active") // active | past_due | canceled
+  plan              PlanTier        @default(INICIA)
+  interval          BillingInterval @default(MONTHLY)
+  status            String          @default("active") // active | past_due | canceled
   currentPeriodEnd  DateTime?
+
+  // Setup fee (one-time, required for DESPACHO/FIRMA onboarding)
+  setupFeePaid      Boolean   @default(false)
+  setupFeePaidAt    DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

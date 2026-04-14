@@ -8,7 +8,7 @@ const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(6),
-  plan: z.enum(["STARTER", "PRO", "ENTERPRISE"]).default("STARTER"),
+  plan: z.enum(["INICIA", "DESPACHO", "FIRMA"]).default("INICIA"),
 });
 
 export async function POST(req: NextRequest) {
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       });
 
       await tx.subscription.create({
-        data: { orgId: org.id, plan: data.plan as "STARTER" | "PRO" | "ENTERPRISE", status: "active" },
+        data: { orgId: org.id, plan: data.plan, status: "active" },
       });
 
       return { org, user };

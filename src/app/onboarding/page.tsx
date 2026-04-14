@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
-    orgName: "", name: "", email: "", password: "", plan: "STARTER",
+    orgName: "", name: "", email: "", password: "", plan: "INICIA",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -115,9 +115,9 @@ export default function OnboardingPage() {
               <h2 className="text-lg font-semibold">Selecciona tu plan</h2>
               <div className="space-y-3">
                 {[
-                  { id: "STARTER", name: "PRO Starter", price: "149EUR/mes + 12EUR/exp", desc: "2 usuarios, 15 exp/mes incluidos" },
-                  { id: "PRO", name: "PRO Growth", price: "399EUR/mes + 9EUR/exp", desc: "5 usuarios, 50 exp/mes incluidos" },
-                  { id: "ENTERPRISE", name: "Enterprise", price: "Contactar", desc: "Personalizado" },
+                  { id: "INICIA", name: "Inicia", price: "149EUR/mes", desc: "Hasta 2 usuarios, 15 exp/mes, sin setup" },
+                  { id: "DESPACHO", name: "Despacho", price: "349EUR/mes + 299EUR setup", desc: "Hasta 5 usuarios, 50 exp/mes, pack banco + white-label" },
+                  { id: "FIRMA", name: "Firma", price: "749EUR/mes + 990EUR setup", desc: "Hasta 20 usuarios, 200 exp/mes, SSO + onboarding asistido" },
                 ].map((p) => (
                   <button key={p.id} onClick={() => update("plan", p.id)}
                     className={`w-full p-4 border-2 rounded-lg text-left transition ${
