@@ -429,6 +429,22 @@ export default function CaseDetailPage() {
                   <p className="text-xs text-gray-500">documentos listos</p>
                 </div>
               </div>
+
+              <div className="flex flex-wrap gap-2 mb-4">
+                <a
+                  href={`/api/cases/${caseData.id}/bank-pack?format=pdf`}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm rounded-md hover:bg-primary/90"
+                >
+                  Descargar PDF unificado
+                </a>
+                <a
+                  href={`/api/cases/${caseData.id}/bank-pack?format=zip`}
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white text-gray-700 text-sm rounded-md hover:bg-gray-50"
+                >
+                  Descargar ZIP (con originales)
+                </a>
+              </div>
+
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${totalRequired > 0 ? (ready / totalRequired) * 100 : 0}%` }} />
               </div>

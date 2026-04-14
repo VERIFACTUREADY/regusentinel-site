@@ -66,3 +66,19 @@ export async function deleteFile(key: string): Promise<void> {
     })
   );
 }
+
+/**
+ * Download a file from S3/MinIO into memory.
+ * Used by the bank pack generator to merge stored documents.
+ */
+export async function downloadFile(key: string): Promise<Buffer> {
+  const res = await s3Client.send(
+    new GetObjectCommand({ Bucket: S3_BUCKET, Key: key })
+  );
+  if (!res.Body) throw new Error(`S3 object ${key} has empty body`);
+
+  // Body is a ReadableStream (node) or web stream depending on runtime.
+  // transformToByteArray() is available on both in AWS SDK v3.
+  const bytes = await (res.Body as any).transformToByteArray();
+  return Buffer.from(bytes);
+}
