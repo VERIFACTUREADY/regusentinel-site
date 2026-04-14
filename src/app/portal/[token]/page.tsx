@@ -64,20 +64,32 @@ export default function PortalPage() {
   if (error) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="bg-white p-8 rounded-lg border text-center">
-        <h1 className="text-xl font-bold text-gray-900 mb-2">BARITUR PRO</h1>
+        <h1 className="text-xl font-bold text-gray-900 mb-2">Portal de seguimiento</h1>
         <p className="text-red-600">{error}</p>
       </div>
     </div>
   );
 
   const statusIdx = statusOrder.indexOf(data.status);
+  const branding = data.branding || {};
+  const primary = branding.primaryColor || "#6366f1";
+  const displayName = branding.displayName || "Portal de seguimiento";
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b py-4">
-        <div className="max-w-3xl mx-auto px-4">
-          <h1 className="text-xl font-bold text-primary">BARITUR PRO</h1>
-          <p className="text-sm text-gray-500">Portal de seguimiento</p>
+      <header className="bg-white border-b py-4" style={{ borderBottomColor: primary }}>
+        <div className="max-w-3xl mx-auto px-4 flex items-center gap-3">
+          {branding.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={branding.logoUrl} alt={displayName}
+              className="h-9 w-auto max-w-[160px] object-contain" />
+          ) : (
+            <div className="h-9 w-9 rounded" style={{ backgroundColor: primary }} />
+          )}
+          <div>
+            <h1 className="text-xl font-bold" style={{ color: primary }}>{displayName}</h1>
+            <p className="text-sm text-gray-500">Portal de seguimiento</p>
+          </div>
         </div>
       </header>
 
@@ -93,9 +105,12 @@ export default function PortalPage() {
           <h3 className="font-semibold mb-4">Estado del expediente</h3>
           <div className="flex gap-1">
             {statusOrder.map((s, i) => (
-              <div key={s} className={`flex-1 py-2 text-center text-xs rounded ${
-                i <= statusIdx ? "bg-primary text-white" : "bg-gray-100 text-gray-400"
-              }`}>
+              <div key={s}
+                className={`flex-1 py-2 text-center text-xs rounded ${
+                  i <= statusIdx ? "text-white" : "bg-gray-100 text-gray-400"
+                }`}
+                style={i <= statusIdx ? { backgroundColor: primary } : undefined}
+              >
                 {statusLabels[s] || s}
               </div>
             ))}
@@ -221,8 +236,10 @@ export default function PortalPage() {
             Suba aqui la documentacion solicitada. Nombre el archivo segun la gestion correspondiente para vincularlo automaticamente (ej: &quot;certificado_defuncion.pdf&quot;).
           </p>
           <label className={`inline-block px-4 py-2 rounded-md text-sm cursor-pointer font-medium ${
-            uploading ? "bg-gray-200 text-gray-500" : "bg-primary text-white hover:bg-primary/90"
-          }`}>
+            uploading ? "bg-gray-200 text-gray-500" : "text-white"
+          }`}
+            style={!uploading ? { backgroundColor: primary } : undefined}
+          >
             {uploading ? "Subiendo..." : "Subir documento"}
             <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
           </label>
@@ -239,10 +256,27 @@ export default function PortalPage() {
           )}
         </div>
 
-        {/* Disclaimer */}
-        <div className="text-center text-xs text-gray-400 space-y-1 py-4">
-          <p>BARITUR no presta asesoramiento juridico ni fiscal individual.</p>
-          <p>Actuamos con autorizacion del familiar/heredero/representante.</p>
+        {/* Footer: white-label aware */}
+        <div className="text-center text-xs text-gray-500 space-y-1 py-4">
+          {branding.footerText ? (
+            <p>{branding.footerText}</p>
+          ) : (
+            <>
+              <p>Responsable del tratamiento: {displayName}.</p>
+              <p>Actuamos con autorizacion del familiar/heredero/representante.</p>
+            </>
+          )}
+          {branding.supportEmail && (
+            <p>
+              Contacto:{" "}
+              <a href={`mailto:${branding.supportEmail}`} className="underline" style={{ color: primary }}>
+                {branding.supportEmail}
+              </a>
+            </p>
+          )}
+          {branding.showPoweredBy && (
+            <p className="text-gray-400 pt-2">Powered by BARITUR PRO</p>
+          )}
         </div>
       </main>
     </div>

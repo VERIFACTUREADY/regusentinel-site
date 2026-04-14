@@ -86,6 +86,14 @@ model Organization {
   notifications NotificationLog[]
 
   retentionDays Int @default(90)
+
+  // White-label del portal familia. Unlocked en plan DESPACHO/FIRMA
+  // (INICIA sigue mostrando "Powered by BARITUR PRO").
+  brandDisplayName   String?
+  brandLogoUrl       String?
+  brandPrimaryColor  String? // hex, e.g. "#1e40af"
+  brandSupportEmail  String?
+  brandFooterText    String?
 }
 
 // ─── USER & MEMBERSHIP ──────────────────────────────────
