@@ -1,277 +1,596 @@
-import { PrismaClient, Role, PlanTier, CaseStatus, TaskStatus, TaskCategory } from "@prisma/client";
+import {
+  PrismaClient,
+  Role,
+  PlanTier,
+  BillingInterval,
+  CaseStatus,
+  TaskStatus,
+  TaskCategory,
+} from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { calculateTaskDeadlines } from "../src/lib/deadline-engine";
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log("🌱 Seeding database...");
+// ── Helpers ────────────────────────────────────────────────
+function daysAgo(n: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  d.setHours(12, 0, 0, 0);
+  return d;
+}
 
-  // ── Organization ─────────────────────────────────────────
+function daysFromNow(n: number): Date {
+  return daysAgo(-n);
+}
+
+async function main() {
+  console.log("Seeding database...");
+
+  // ── Organization (branded DESPACHO org) ─────────────────
   const org = await prisma.organization.upsert({
     where: { slug: "gestoria-demo" },
-    update: {},
+    update: {
+      brandDisplayName: "Despacho García & Asociados",
+      brandPrimaryColor: "#1e40af",
+      brandSupportEmail: "familias@garcia-asociados.es",
+      brandFooterText:
+        "Despacho García & Asociados · Calle Velázquez 45, Madrid · +34 910 00 00 00",
+    },
     create: {
-      name: "Gestoría Demo",
+      name: "Despacho García & Asociados",
       slug: "gestoria-demo",
-      retentionDays: 90,
+      retentionDays: 180,
+      brandDisplayName: "Despacho García & Asociados",
+      brandPrimaryColor: "#1e40af",
+      brandSupportEmail: "familias@garcia-asociados.es",
+      brandFooterText:
+        "Despacho García & Asociados · Calle Velázquez 45, Madrid · +34 910 00 00 00",
     },
   });
-  console.log(`  ✔ Organization: ${org.name} (${org.id})`);
+  console.log(`  Organization: ${org.name} (${org.id})`);
 
-  // ── Admin User ───────────────────────────────────────────
+  // ── Users ────────────────────────────────────────────────
   const passwordHash = await bcrypt.hash("admin123", 12);
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@baritur.com" },
-    update: {},
+    update: { passwordHash },
     create: {
       email: "admin@baritur.com",
-      name: "Admin Baritur",
+      name: "Laura García (Owner)",
       passwordHash,
     },
   });
-  console.log(`  ✔ User: ${admin.email} (${admin.id})`);
 
-  // ── Membership ───────────────────────────────────────────
-  const membership = await prisma.membership.upsert({
-    where: {
-      userId_orgId: { userId: admin.id, orgId: org.id },
-    },
-    update: {},
+  const operator = await prisma.user.upsert({
+    where: { email: "operador@baritur.com" },
+    update: { passwordHash },
     create: {
-      userId: admin.id,
-      orgId: org.id,
-      role: Role.OWNER,
+      email: "operador@baritur.com",
+      name: "Miguel Fernández",
+      passwordHash,
     },
   });
-  console.log(`  ✔ Membership: role ${membership.role}`);
 
-  // ── Subscription ─────────────────────────────────────────
-  const subscription = await prisma.subscription.upsert({
+  const viewer = await prisma.user.upsert({
+    where: { email: "viewer@baritur.com" },
+    update: { passwordHash },
+    create: {
+      email: "viewer@baritur.com",
+      name: "Ana Ruiz (Socia)",
+      passwordHash,
+    },
+  });
+
+  console.log(`  Users: admin / operador / viewer (password: admin123)`);
+
+  // ── Memberships ──────────────────────────────────────────
+  for (const [user, role] of [
+    [admin, Role.OWNER],
+    [operator, Role.OPERATOR],
+    [viewer, Role.VIEWER],
+  ] as const) {
+    await prisma.membership.upsert({
+      where: { userId_orgId: { userId: user.id, orgId: org.id } },
+      update: { role },
+      create: { userId: user.id, orgId: org.id, role },
+    });
+  }
+
+  // ── Subscription (DESPACHO annual, setup paid) ──────────
+  await prisma.subscription.upsert({
     where: { orgId: org.id },
-    update: {},
+    update: {
+      plan: PlanTier.DESPACHO,
+      interval: BillingInterval.ANNUAL,
+      status: "active",
+      setupFeePaid: true,
+      setupFeePaidAt: daysAgo(120),
+      currentPeriodEnd: daysFromNow(245),
+    },
     create: {
       orgId: org.id,
       plan: PlanTier.DESPACHO,
+      interval: BillingInterval.ANNUAL,
       status: "active",
-      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // +30 days
+      setupFeePaid: true,
+      setupFeePaidAt: daysAgo(120),
+      currentPeriodEnd: daysFromNow(245),
     },
   });
-  console.log(`  ✔ Subscription: ${subscription.plan} (${subscription.status})`);
+  console.log(`  Subscription: DESPACHO annual (setup paid)`);
 
   // ── Templates ────────────────────────────────────────────
-
-  // 1. Notificación de fallecimiento a banco
-  const template1 = await prisma.template.create({
-    data: {
-      orgId: org.id,
-      name: "Notificación de fallecimiento a banco",
-      category: TaskCategory.BANCOS,
-      type: "carta",
-      versions: {
-        create: {
-          version: 1,
-          subject: "Notificación de fallecimiento - {{deceased.fullName}}",
-          body: `Estimados señores,
+  const existingTemplates = await prisma.template.count({ where: { orgId: org.id } });
+  if (existingTemplates === 0) {
+    await prisma.template.create({
+      data: {
+        orgId: org.id,
+        name: "Notificación de fallecimiento a banco",
+        category: TaskCategory.BANCOS,
+        type: "carta",
+        versions: {
+          create: {
+            version: 1,
+            subject: "Notificación de fallecimiento - {{deceased.fullName}}",
+            body: `Estimados señores,
 
 Por medio de la presente, les comunico el fallecimiento de D./Dña. {{deceased.fullName}}, con DNI {{deceased.dni}}, ocurrido en fecha {{deceased.deathDate}}, quien era titular de una o varias cuentas en su entidad.
 
-En calidad de {{contact.relationship}} del/la fallecido/a, y como persona de contacto autorizada, les ruego procedan a:
+En calidad de {{contact.relationship}} del/la fallecido/a, les ruego procedan a:
 
 1. Bloquear las cuentas y productos asociados al titular fallecido.
-2. Emitir un certificado de posiciones (saldos, préstamos, seguros vinculados, tarjetas, etc.) a fecha de fallecimiento.
+2. Emitir un certificado de posiciones a fecha de fallecimiento.
 3. Informar sobre la documentación necesaria para la tramitación de la herencia.
 
-Adjunto copia del certificado de defunción y documento acreditativo de mi identidad.
-
-Quedo a su disposición para cualquier aclaración.
-
 Atentamente,
-{{contact.fullName}}
-DNI: {{contact.dni}}
-Teléfono: {{contact.phone}}
-Email: {{contact.email}}`,
-          variables: [
-            "deceased.fullName",
-            "deceased.dni",
-            "deceased.deathDate",
-            "contact.relationship",
-            "contact.fullName",
-            "contact.dni",
-            "contact.phone",
-            "contact.email",
-          ],
-          isApproved: true,
+{{contact.fullName}}`,
+            variables: [
+              "deceased.fullName",
+              "deceased.dni",
+              "deceased.deathDate",
+              "contact.relationship",
+              "contact.fullName",
+            ],
+            isApproved: true,
+          },
         },
       },
-    },
-  });
-  console.log(`  ✔ Template: ${template1.name}`);
+    });
 
-  // 2. Solicitud de baja de suministro
-  const template2 = await prisma.template.create({
-    data: {
-      orgId: org.id,
-      name: "Solicitud de baja de suministro",
-      category: TaskCategory.SUMINISTROS,
-      type: "carta",
-      versions: {
-        create: {
-          version: 1,
-          subject: "Solicitud de baja por fallecimiento del titular - {{deceased.fullName}}",
-          body: `Estimados señores,
+    await prisma.template.create({
+      data: {
+        orgId: org.id,
+        name: "Solicitud de baja de suministro",
+        category: TaskCategory.SUMINISTROS,
+        type: "carta",
+        versions: {
+          create: {
+            version: 1,
+            subject: "Solicitud de baja por fallecimiento - {{deceased.fullName}}",
+            body: `Estimados señores,
 
-Me dirijo a ustedes para solicitar la baja del contrato de suministro a nombre de D./Dña. {{deceased.fullName}}, con DNI {{deceased.dni}}, correspondiente a la dirección {{deceased.address}}, motivada por el fallecimiento del titular en fecha {{deceased.deathDate}}.
-
-Datos del contrato:
-- Titular: {{deceased.fullName}}
-- Número de contrato/referencia: {{contract.reference}}
-- Dirección de suministro: {{deceased.address}}
-
-Soy {{contact.fullName}}, {{contact.relationship}} del/la fallecido/a, y solicito:
-
-1. La baja definitiva del contrato mencionado.
-2. La liquidación final del suministro hasta la fecha de baja.
-3. La devolución del depósito de garantía, si lo hubiere, a la cuenta indicada.
-
-Se adjunta certificado de defunción y copia de mi DNI.
-
-Quedo a la espera de su confirmación.
+Solicito la baja del contrato de suministro a nombre de D./Dña. {{deceased.fullName}} (DNI {{deceased.dni}}), motivada por el fallecimiento del titular en fecha {{deceased.deathDate}}.
 
 Un saludo,
-{{contact.fullName}}
-Teléfono: {{contact.phone}}
-Email: {{contact.email}}`,
-          variables: [
-            "deceased.fullName",
-            "deceased.dni",
-            "deceased.address",
-            "deceased.deathDate",
-            "contract.reference",
-            "contact.fullName",
-            "contact.relationship",
-            "contact.phone",
-            "contact.email",
-          ],
-          isApproved: true,
+{{contact.fullName}}`,
+            variables: [
+              "deceased.fullName",
+              "deceased.dni",
+              "deceased.deathDate",
+              "contact.fullName",
+            ],
+            isApproved: true,
+          },
         },
       },
-    },
-  });
-  console.log(`  ✔ Template: ${template2.name}`);
+    });
 
-  // 3. Recordatorio de documentación pendiente (email, no category)
-  const template3 = await prisma.template.create({
-    data: {
-      orgId: org.id,
-      name: "Recordatorio de documentación pendiente",
-      category: null,
-      type: "email",
-      versions: {
-        create: {
-          version: 1,
-          subject: "Documentación pendiente - Expediente {{case.ref}}",
-          body: `Estimado/a {{contact.fullName}},
+    await prisma.template.create({
+      data: {
+        orgId: org.id,
+        name: "Recordatorio de documentación pendiente",
+        category: null,
+        type: "email",
+        versions: {
+          create: {
+            version: 1,
+            subject: "Documentación pendiente - Expediente {{case.ref}}",
+            body: `Estimado/a {{contact.fullName}},
 
-Le escribimos en relación con el expediente {{case.ref}} abierto para la gestión de los trámites derivados del fallecimiento de D./Dña. {{deceased.fullName}}.
+Le escribimos en relación con el expediente {{case.ref}} del fallecimiento de D./Dña. {{deceased.fullName}}.
 
-Tras revisar el estado actual del expediente, le informamos de que aún tenemos pendiente de recibir la siguiente documentación:
-
+Tenemos pendiente la siguiente documentación:
 {{pending.documentList}}
 
-Le rogamos que nos haga llegar estos documentos a la mayor brevedad posible para poder continuar con la tramitación sin demora. Puede entregarlos en nuestra oficina, enviarlos por correo electrónico a esta dirección, o subirlos directamente a través del portal de seguimiento que le facilitamos al inicio del proceso.
-
-Si tiene cualquier duda o dificultad para obtener alguno de los documentos indicados, no dude en contactarnos y le orientaremos sobre cómo proceder.
-
-Agradecemos su colaboración.
+Puede subir los documentos desde el portal de seguimiento.
 
 Un cordial saludo,
-{{agent.fullName}}
-{{agent.title}}
-{{org.name}}
-Teléfono: {{org.phone}}`,
-          variables: [
-            "contact.fullName",
-            "case.ref",
-            "deceased.fullName",
-            "pending.documentList",
-            "agent.fullName",
-            "agent.title",
-            "org.name",
-            "org.phone",
-          ],
-          isApproved: true,
+{{org.name}}`,
+            variables: [
+              "contact.fullName",
+              "case.ref",
+              "deceased.fullName",
+              "pending.documentList",
+              "org.name",
+            ],
+            isApproved: true,
+          },
         },
       },
-    },
-  });
-  console.log(`  ✔ Template: ${template3.name}`);
+    });
+    console.log(`  Templates: 3 created`);
+  } else {
+    console.log(`  Templates: ${existingTemplates} existing (skipped)`);
+  }
 
-  // ── Sample Case ──────────────────────────────────────────
-  const sampleCase = await prisma.case.create({
-    data: {
-      orgId: org.id,
-      ref: "EXP-2026-0001",
-      status: CaseStatus.IN_PROGRESS,
-      isUrgent: false,
-      hasDeceasedInsurance: true,
-      categories: [TaskCategory.BANCOS, TaskCategory.SUMINISTROS],
+  // ── Demo cases ───────────────────────────────────────────
+  // Wipe previous demo cases so the seed is idempotent and we don't
+  // accumulate duplicates when re-running.
+  await prisma.case.deleteMany({
+    where: { orgId: org.id, ref: { startsWith: "EXP-DEMO-" } },
+  });
+
+  interface CaseSpec {
+    ref: string;
+    status: CaseStatus;
+    deathDaysAgo: number;
+    createdDaysAgo: number;
+    isUrgent?: boolean;
+    hasDeceasedInsurance?: boolean;
+    province: string;
+    categories: TaskCategory[];
+    deceased: { fullName: string; dni: string };
+    contact: { fullName: string; email: string; phone: string; relationship: string };
+    notes: string;
+    tasks: Array<{
+      category: TaskCategory;
+      title: string;
+      description: string;
+      status: TaskStatus;
+      docTag?: string;
+    }>;
+    closedDaysAgo?: number;
+  }
+
+  const specs: CaseSpec[] = [
+    {
+      ref: "EXP-DEMO-0001",
+      status: CaseStatus.INTAKE,
+      deathDaysAgo: 4,
+      createdDaysAgo: 2,
       province: "Madrid",
-      notes: "Caso de ejemplo para demostración. La familia necesita gestionar cuentas bancarias y suministros.",
-      consentAccepted: true,
-      consentDate: new Date(),
-      deceased: {
-        create: {
-          fullName: "María García López",
-          deathDate: new Date("2026-03-15"),
-          dni: "12345678A",
-        },
-      },
+      categories: [TaskCategory.BANCOS, TaskCategory.SUMINISTROS, TaskCategory.TELECOM],
+      deceased: { fullName: "Carmen Molina Rivas", dni: "45678912B" },
       contact: {
-        create: {
-          fullName: "Juan García",
-          phone: "+34 612 345 678",
-          email: "juan.garcia@example.com",
-          relationship: "Hijo",
+        fullName: "Pablo Molina Sanz",
+        email: "pablo.molina@example.com",
+        phone: "+34 611 223 344",
+        relationship: "Hijo",
+      },
+      notes:
+        "Expediente recién abierto tras la visita de ayer. Pendiente de validar documentación y abrir portal.",
+      tasks: [
+        {
+          category: TaskCategory.BANCOS,
+          title: "Solicitar certificado de saldos (BBVA)",
+          description: "Certificado a fecha de fallecimiento para el inventario.",
+          status: TaskStatus.BLOCKED,
+          docTag: "certificado_saldos",
         },
-      },
-      tasks: {
-        create: [
-          {
-            category: TaskCategory.BANCOS,
-            title: "Notificar fallecimiento a Banco Santander",
-            description: "Enviar carta de notificación de fallecimiento y solicitar certificado de posiciones.",
-            status: TaskStatus.DONE,
-            sortOrder: 1,
-          },
-          {
-            category: TaskCategory.BANCOS,
-            title: "Notificar fallecimiento a CaixaBank",
-            description: "Enviar carta de notificación de fallecimiento. Pendiente de localizar número de cuenta.",
-            status: TaskStatus.IN_PROGRESS,
-            sortOrder: 2,
-          },
-          {
-            category: TaskCategory.SUMINISTROS,
-            title: "Solicitar baja de suministro eléctrico",
-            description: "Tramitar la baja del contrato de luz con Iberdrola en el domicilio del fallecido.",
-            status: TaskStatus.PENDING,
-            sortOrder: 3,
-          },
-          {
-            category: TaskCategory.SUMINISTROS,
-            title: "Cambiar titularidad del gas",
-            description: "Gestionar el cambio de titularidad del contrato de gas natural a nombre del heredero.",
-            status: TaskStatus.PENDING,
-            sortOrder: 4,
-          },
-        ],
-      },
+        {
+          category: TaskCategory.BANCOS,
+          title: "Notificar fallecimiento a entidad bancaria (Sabadell)",
+          description: "Cuenta nómina y tarjeta titular único.",
+          status: TaskStatus.PENDING,
+          docTag: "notificacion_banco",
+        },
+        {
+          category: TaskCategory.SUMINISTROS,
+          title: "Cambio de titularidad de suministros (luz, agua, gas)",
+          description: "Vivienda habitual. Heredera única: viuda.",
+          status: TaskStatus.PENDING,
+          docTag: "titularidad_suministros",
+        },
+      ],
     },
-  });
-  console.log(`  ✔ Case: ${sampleCase.ref} (${sampleCase.id})`);
+    {
+      ref: "EXP-DEMO-0002",
+      status: CaseStatus.IN_PROGRESS,
+      deathDaysAgo: 62,
+      createdDaysAgo: 55,
+      hasDeceasedInsurance: true,
+      province: "Barcelona",
+      categories: [TaskCategory.BANCOS, TaskCategory.SEGUROS, TaskCategory.FISCAL],
+      deceased: { fullName: "José Luis Pérez Navarro", dni: "11223344C" },
+      contact: {
+        fullName: "María Pérez Olmedo",
+        email: "maria.perez@example.com",
+        phone: "+34 622 334 455",
+        relationship: "Hija",
+      },
+      notes:
+        "Dos entidades bancarias y póliza de vida en Mapfre. Pendiente liquidación ISD.",
+      tasks: [
+        {
+          category: TaskCategory.BANCOS,
+          title: "Solicitar certificado de saldos",
+          description: "CaixaBank y Santander.",
+          status: TaskStatus.DONE,
+          docTag: "certificado_saldos",
+        },
+        {
+          category: TaskCategory.BANCOS,
+          title: "Gestionar transferencia de titularidad",
+          description: "A nombre de los herederos según escritura.",
+          status: TaskStatus.IN_PROGRESS,
+          docTag: "transferencia_titularidad_banco",
+        },
+        {
+          category: TaskCategory.SEGUROS,
+          title: "Reclamar seguro de vida",
+          description: "Póliza Mapfre. Beneficiarios: cónyuge e hijos.",
+          status: TaskStatus.READY,
+          docTag: "seguro_vida",
+        },
+        {
+          category: TaskCategory.FISCAL,
+          title: "Liquidar modelo 650 ISD",
+          description: "Autoliquidación dentro de plazo de 6 meses.",
+          status: TaskStatus.PENDING,
+          docTag: "modelo_650",
+        },
+      ],
+    },
+    {
+      ref: "EXP-DEMO-0003",
+      status: CaseStatus.PENDING_DOCS,
+      deathDaysAgo: 125,
+      createdDaysAgo: 115,
+      province: "Valencia",
+      categories: [TaskCategory.BANCOS, TaskCategory.FISCAL, TaskCategory.SUSCRIPCIONES],
+      deceased: { fullName: "Rosa Hernández Pardo", dni: "55667788D" },
+      contact: {
+        fullName: "Daniel Hernández",
+        email: "daniel.h@example.com",
+        phone: "+34 633 445 566",
+        relationship: "Hijo",
+      },
+      notes:
+        "Familia lenta aportando documentación. Portal abierto y usado (ha subido 2 documentos).",
+      tasks: [
+        {
+          category: TaskCategory.BANCOS,
+          title: "Notificar fallecimiento a entidad bancaria",
+          description: "Ing Direct - única entidad.",
+          status: TaskStatus.DONE,
+          docTag: "notificacion_banco",
+        },
+        {
+          category: TaskCategory.BANCOS,
+          title: "Gestionar transferencia de titularidad",
+          description: "Pendiente aceptación de herencia notarial.",
+          status: TaskStatus.BLOCKED,
+          docTag: "transferencia_titularidad_banco",
+        },
+        {
+          category: TaskCategory.FISCAL,
+          title: "Preparar documentación fiscal",
+          description: "Inventario completo y valoraciones inmuebles.",
+          status: TaskStatus.IN_PROGRESS,
+          docTag: "doc_fiscal",
+        },
+        {
+          category: TaskCategory.FISCAL,
+          title: "Liquidar modelo 650 ISD",
+          description: "Autoliquidación dentro de plazo de 6 meses.",
+          status: TaskStatus.PENDING,
+          docTag: "modelo_650",
+        },
+        {
+          category: TaskCategory.SUSCRIPCIONES,
+          title: "Identificar y cancelar suscripciones activas",
+          description: "Netflix, Amazon Prime, El País y gimnasio.",
+          status: TaskStatus.READY,
+          docTag: "cancelacion_suscripciones",
+        },
+      ],
+    },
+    {
+      ref: "EXP-DEMO-0004",
+      status: CaseStatus.READY_TO_SEND,
+      deathDaysAgo: 168,
+      createdDaysAgo: 160,
+      isUrgent: true,
+      hasDeceasedInsurance: true,
+      province: "Sevilla",
+      categories: [TaskCategory.BANCOS, TaskCategory.FISCAL, TaskCategory.SEGUROS],
+      deceased: { fullName: "Antonio Ruiz Vega", dni: "22334455E" },
+      contact: {
+        fullName: "Isabel Ruiz Castro",
+        email: "isabel.ruiz@example.com",
+        phone: "+34 644 556 677",
+        relationship: "Viuda",
+      },
+      notes:
+        "URGENTE: Modelo 650 a punto de vencer. Toda la documentación recopilada, revisión final antes de presentar.",
+      tasks: [
+        {
+          category: TaskCategory.FISCAL,
+          title: "Liquidar modelo 650 ISD",
+          description: "Presentar en hacienda autonómica esta semana.",
+          status: TaskStatus.READY,
+          docTag: "modelo_650",
+        },
+        {
+          category: TaskCategory.BANCOS,
+          title: "Gestionar transferencia de titularidad",
+          description: "Pendiente tras pago de ISD.",
+          status: TaskStatus.APPROVED,
+          docTag: "transferencia_titularidad_banco",
+        },
+        {
+          category: TaskCategory.SEGUROS,
+          title: "Reclamar seguro de vida",
+          description: "Indemnización cobrada. Documentación archivada.",
+          status: TaskStatus.DONE,
+          docTag: "seguro_vida",
+        },
+      ],
+    },
+    {
+      ref: "EXP-DEMO-0005",
+      status: CaseStatus.SENT,
+      deathDaysAgo: 205,
+      createdDaysAgo: 195,
+      province: "Bilbao",
+      categories: [TaskCategory.BANCOS, TaskCategory.FISCAL],
+      deceased: { fullName: "Francisco Aguirre Etxebarria", dni: "99887766F" },
+      contact: {
+        fullName: "Nerea Aguirre López",
+        email: "nerea.aguirre@example.com",
+        phone: "+34 655 667 788",
+        relationship: "Hija",
+      },
+      notes:
+        "Modelo 650 presentado. Seguimiento de transferencias bancarias en curso.",
+      tasks: [
+        {
+          category: TaskCategory.FISCAL,
+          title: "Liquidar modelo 650 ISD",
+          description: "Presentado. Justificante archivado.",
+          status: TaskStatus.DONE,
+          docTag: "modelo_650",
+        },
+        {
+          category: TaskCategory.BANCOS,
+          title: "Gestionar transferencia de titularidad",
+          description: "Kutxabank en curso. BBVA completado.",
+          status: TaskStatus.IN_PROGRESS,
+          docTag: "transferencia_titularidad_banco",
+        },
+      ],
+    },
+    {
+      ref: "EXP-DEMO-0006",
+      status: CaseStatus.CLOSED,
+      deathDaysAgo: 310,
+      createdDaysAgo: 300,
+      closedDaysAgo: 20,
+      province: "Madrid",
+      categories: [TaskCategory.BANCOS, TaskCategory.SUMINISTROS, TaskCategory.FISCAL],
+      deceased: { fullName: "Elena Sáenz Morán", dni: "33445566G" },
+      contact: {
+        fullName: "Javier Sáenz",
+        email: "javier.saenz@example.com",
+        phone: "+34 666 778 899",
+        relationship: "Hijo",
+      },
+      notes: "Cerrado. Expediente completo. Cliente muy satisfecho.",
+      tasks: [
+        {
+          category: TaskCategory.FISCAL,
+          title: "Liquidar modelo 650 ISD",
+          description: "Completado.",
+          status: TaskStatus.DONE,
+          docTag: "modelo_650",
+        },
+        {
+          category: TaskCategory.BANCOS,
+          title: "Gestionar transferencia de titularidad",
+          description: "Completado.",
+          status: TaskStatus.DONE,
+          docTag: "transferencia_titularidad_banco",
+        },
+        {
+          category: TaskCategory.SUMINISTROS,
+          title: "Cambio de titularidad de suministros",
+          description: "Completado.",
+          status: TaskStatus.DONE,
+          docTag: "titularidad_suministros",
+        },
+      ],
+    },
+  ];
 
-  console.log("\n✅ Seed complete!");
+  for (const spec of specs) {
+    const deathDate = daysAgo(spec.deathDaysAgo);
+    const createdAt = daysAgo(spec.createdDaysAgo);
+
+    const caseRecord = await prisma.case.create({
+      data: {
+        orgId: org.id,
+        ref: spec.ref,
+        status: spec.status,
+        isUrgent: spec.isUrgent ?? false,
+        hasDeceasedInsurance: spec.hasDeceasedInsurance ?? false,
+        categories: spec.categories,
+        province: spec.province,
+        notes: spec.notes,
+        consentAccepted: true,
+        consentDate: createdAt,
+        createdAt,
+        updatedAt: createdAt,
+        closedAt: spec.closedDaysAgo != null ? daysAgo(spec.closedDaysAgo) : null,
+        deceased: {
+          create: { fullName: spec.deceased.fullName, dni: spec.deceased.dni, deathDate },
+        },
+        contact: { create: spec.contact },
+      },
+    });
+
+    for (let i = 0; i < spec.tasks.length; i++) {
+      const t = spec.tasks[i];
+      const { blockedUntil, deadline, blockReason } = calculateTaskDeadlines(
+        deathDate,
+        t.docTag ?? null,
+        t.title
+      );
+      await prisma.task.create({
+        data: {
+          caseId: caseRecord.id,
+          category: t.category,
+          title: t.title,
+          description: t.description,
+          status: t.status,
+          sortOrder: i + 1,
+          docTag: t.docTag ?? null,
+          blockedUntil: t.status === TaskStatus.BLOCKED ? blockedUntil : null,
+          deadline,
+          blockReason: t.status === TaskStatus.BLOCKED ? blockReason : null,
+          assigneeId: i % 2 === 0 ? admin.id : operator.id,
+        },
+      });
+    }
+
+    console.log(`  Case: ${spec.ref} [${spec.status}] ${spec.deceased.fullName}`);
+  }
+
+  // ── Audit log seed (so dashboard "Actividad reciente" isn't empty) ──
+  const recentCaseIds = await prisma.case.findMany({
+    where: { orgId: org.id, ref: { startsWith: "EXP-DEMO-" } },
+    select: { id: true, ref: true },
+    orderBy: { createdAt: "desc" },
+    take: 3,
+  });
+
+  for (const c of recentCaseIds) {
+    await prisma.auditLog.create({
+      data: {
+        orgId: org.id,
+        userId: admin.id,
+        caseId: c.id,
+        action: "case.created",
+        details: `Expediente ${c.ref} creado`,
+      },
+    });
+  }
+
+  console.log("\nSeed complete.");
+  console.log("Login: admin@baritur.com / admin123");
+  console.log("       operador@baritur.com / admin123");
+  console.log("       viewer@baritur.com / admin123");
 }
 
 main()
@@ -279,7 +598,7 @@ main()
     await prisma.$disconnect();
   })
   .catch(async (e) => {
-    console.error("❌ Seed failed:", e);
+    console.error("Seed failed:", e);
     await prisma.$disconnect();
     process.exit(1);
   });
