@@ -94,6 +94,9 @@ model Organization {
   brandPrimaryColor  String? // hex, e.g. "#1e40af"
   brandSupportEmail  String?
   brandFooterText    String?
+
+  // Onboarding guiado. Se oculta al marcarse dismiss o al completar los 5 pasos.
+  onboardingDismissedAt DateTime?
 }
 
 // ─── USER & MEMBERSHIP ──────────────────────────────────

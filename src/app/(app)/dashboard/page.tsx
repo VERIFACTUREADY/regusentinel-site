@@ -1,6 +1,8 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getOnboardingState } from "@/lib/onboarding";
+import { OnboardingPanel } from "@/components/dashboard/onboarding-panel";
 import Link from "next/link";
 
 const statusColors: Record<string, string> = {
@@ -64,9 +66,12 @@ export default async function DashboardPage() {
     }),
   ]);
 
-  const portalDocs = await prisma.document.count({
-    where: { case: { orgId, deletedAt: null }, isPortalUpload: true },
-  });
+  const [portalDocs, onboarding] = await Promise.all([
+    prisma.document.count({
+      where: { case: { orgId, deletedAt: null }, isPortalUpload: true },
+    }),
+    getOnboardingState(orgId),
+  ]);
 
   const kpis = [
     { label: "Expedientes activos", value: activeCases, color: "text-blue-600" },
@@ -84,6 +89,14 @@ export default async function DashboardPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
+
+      {onboarding.show && (
+        <OnboardingPanel
+          steps={onboarding.steps}
+          completed={onboarding.completed}
+          total={onboarding.total}
+        />
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
