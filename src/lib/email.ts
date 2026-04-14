@@ -69,6 +69,99 @@ export async function sendPortalLink({
 }
 
 /**
+ * Alert sent to the internal team when an ISD deadline approaches or is missed.
+ */
+export async function sendIsdDeadlineAlert({
+  email,
+  caseRef,
+  deceasedName,
+  daysRemaining,
+  deadline,
+  caseUrl,
+}: {
+  email: string;
+  caseRef: string;
+  deceasedName: string;
+  daysRemaining: number; // negative if already passed
+  deadline: Date;
+  caseUrl: string;
+}) {
+  const deadlineStr = deadline.toLocaleDateString("es-ES", {
+    day: "2-digit", month: "long", year: "numeric",
+  });
+
+  const { subject, headline, color, urgency } = (() => {
+    if (daysRemaining < 0) {
+      return {
+        subject: `[URGENTE] Plazo ISD VENCIDO — expediente ${caseRef}`,
+        headline: `El plazo del Modelo 650 ha vencido hace ${Math.abs(daysRemaining)} dias`,
+        color: "#b91c1c",
+        urgency: "VENCIDO",
+      };
+    }
+    if (daysRemaining <= 1) {
+      return {
+        subject: `[CRITICO] Plazo ISD manana — expediente ${caseRef}`,
+        headline: "El plazo del Modelo 650 vence manana",
+        color: "#b91c1c",
+        urgency: "CRITICO",
+      };
+    }
+    if (daysRemaining <= 7) {
+      return {
+        subject: `[ALERTA] Plazo ISD en ${daysRemaining} dias — expediente ${caseRef}`,
+        headline: `Quedan ${daysRemaining} dias para el plazo del Modelo 650`,
+        color: "#c2410c",
+        urgency: "ALERTA",
+      };
+    }
+    if (daysRemaining <= 30) {
+      return {
+        subject: `Plazo ISD en ${daysRemaining} dias — expediente ${caseRef}`,
+        headline: `Quedan ${daysRemaining} dias para presentar el Modelo 650`,
+        color: "#ca8a04",
+        urgency: "AVISO",
+      };
+    }
+    return {
+      subject: `Plazo ISD en 60 dias — expediente ${caseRef}`,
+      headline: "Quedan 60 dias para presentar el Modelo 650",
+      color: "#1d4ed8",
+      urgency: "RECORDATORIO",
+    };
+  })();
+
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+      <p style="background: ${color}; color: white; padding: 6px 12px; display: inline-block; border-radius: 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px;">
+        ${urgency}
+      </p>
+      <h2 style="color: ${color}; margin-top: 12px;">${headline}</h2>
+      <p style="font-size: 15px; color: #1a1a2e;">
+        Expediente <strong>${caseRef}</strong> — ${deceasedName}.
+      </p>
+      <table style="border-collapse: collapse; margin: 16px 0; font-size: 14px;">
+        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Plazo:</td><td><strong>${deadlineStr}</strong></td></tr>
+        <tr><td style="padding: 4px 12px 4px 0; color: #666;">Dias restantes:</td><td><strong>${daysRemaining < 0 ? `${daysRemaining} (vencido)` : daysRemaining}</strong></td></tr>
+      </table>
+      <p style="text-align: center; margin: 32px 0;">
+        <a href="${caseUrl}"
+           style="background-color: ${color}; color: white; padding: 12px 32px;
+                  border-radius: 6px; text-decoration: none; font-weight: 600;">
+          Abrir expediente
+        </a>
+      </p>
+      <hr style="border: none; border-top: 1px solid #eee; margin-top: 32px;" />
+      <p style="color: #999; font-size: 12px;">
+        BARITUR PRO — Motor de plazos ISD. Este aviso se genera automaticamente; no respondas a este correo.
+      </p>
+    </div>
+  `;
+
+  return sendEmail({ to: email, subject, html });
+}
+
+/**
  * Send a reminder to a contact about missing documents.
  */
 export async function sendDocumentReminder({

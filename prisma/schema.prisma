@@ -83,6 +83,7 @@ model Organization {
   usageRecords  UsageRecord[]
   auditLogs     AuditLog[]
   demoRequests  DemoRequest[]
+  notifications NotificationLog[]
 
   retentionDays Int @default(90)
 }
@@ -156,6 +157,7 @@ model Case {
   approvals Approval[]
   promptLogs PromptLog[]
   auditLogs  AuditLog[]
+  notifications NotificationLog[]
 }
 
 model Deceased {
@@ -342,6 +344,43 @@ model UsageRecord {
   org Organization @relation(fields: [orgId], references: [id])
 
   @@unique([orgId, month])
+}
+
+// ─── NOTIFICATIONS ──────────────────────────────────────
+
+enum NotificationKind {
+  ISD_60D
+  ISD_30D
+  ISD_7D
+  ISD_1D
+  ISD_PASSED
+  FAMILY_PENDING_DOCS
+}
+
+enum NotificationChannel {
+  EMAIL_INTERNAL
+  EMAIL_FAMILY
+}
+
+model NotificationLog {
+  id         String              @id @default(cuid())
+  orgId      String
+  caseId     String
+  kind       NotificationKind
+  channel    NotificationChannel
+  recipient  String              // email
+  status     String              @default("sent") // sent | failed
+  error      String?
+
+  createdAt DateTime @default(now())
+
+  org  Organization @relation(fields: [orgId], references: [id])
+  case Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  // One notification of each kind per case (ISD alerts) — family reminders use
+  // a rolling 7-day window handled in application logic.
+  @@index([caseId, kind])
+  @@index([orgId, createdAt])
 }
 
 // ─── DEMO REQUEST ───────────────────────────────────────
