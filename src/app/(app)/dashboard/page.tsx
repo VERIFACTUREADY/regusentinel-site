@@ -3,6 +3,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getOnboardingState } from "@/lib/onboarding";
 import { OnboardingPanel } from "@/components/dashboard/onboarding-panel";
+import { DemoHighlights } from "@/components/dashboard/demo-highlights";
+import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import Link from "next/link";
 
 const statusColors: Record<string, string> = {
@@ -66,12 +68,54 @@ export default async function DashboardPage() {
     }),
   ]);
 
-  const [portalDocs, onboarding] = await Promise.all([
+  const [portalDocs, onboarding, org] = await Promise.all([
     prisma.document.count({
       where: { case: { orgId, deletedAt: null }, isPortalUpload: true },
     }),
     getOnboardingState(orgId),
+    prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { slug: true },
+    }),
   ]);
+
+  // In the public demo org surface 3 "try this" shortcuts so prospects
+  // get to the wow-moments (urgente case, portal familia, pack banco)
+  // in under 30 seconds.
+  const isDemo =
+    process.env.DEMO_ENABLED === "true" && org?.slug === DEMO_ORG_SLUG;
+  let demoHighlights: {
+    urgentCaseId: string | null;
+    urgentCaseRef: string | null;
+    portalToken: string | null;
+    portalCaseRef: string | null;
+    bankPackCaseId: string | null;
+    bankPackCaseRef: string | null;
+  } | null = null;
+  if (isDemo) {
+    const [urgent, portalCase, bankCase] = await Promise.all([
+      prisma.case.findFirst({
+        where: { orgId, ref: "EXP-DEMO-0004" },
+        select: { id: true, ref: true },
+      }),
+      prisma.case.findFirst({
+        where: { orgId, ref: "EXP-DEMO-0003" },
+        select: { portalToken: true, ref: true },
+      }),
+      prisma.case.findFirst({
+        where: { orgId, ref: "EXP-DEMO-0002" },
+        select: { id: true, ref: true },
+      }),
+    ]);
+    demoHighlights = {
+      urgentCaseId: urgent?.id ?? null,
+      urgentCaseRef: urgent?.ref ?? null,
+      portalToken: portalCase?.portalToken ?? null,
+      portalCaseRef: portalCase?.ref ?? null,
+      bankPackCaseId: bankCase?.id ?? null,
+      bankPackCaseRef: bankCase?.ref ?? null,
+    };
+  }
 
   const kpis = [
     { label: "Expedientes activos", value: activeCases, color: "text-blue-600" },
@@ -90,7 +134,9 @@ export default async function DashboardPage() {
     <div>
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
 
-      {onboarding.show && (
+      {demoHighlights && <DemoHighlights {...demoHighlights} />}
+
+      {onboarding.show && !isDemo && (
         <OnboardingPanel
           steps={onboarding.steps}
           completed={onboarding.completed}
