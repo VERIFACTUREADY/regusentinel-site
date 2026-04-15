@@ -13,11 +13,21 @@ const navItems = [
   { href: "/settings/branding", label: "Marca", icon: "M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" },
 ];
 
-export function AppShell({ session, children }: { session: Session; children: React.ReactNode }) {
+export function AppShell({
+  session,
+  isDemoOrg = false,
+  children,
+}: {
+  session: Session;
+  isDemoOrg?: boolean;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      {isDemoOrg && <DemoBanner />}
+      <div className="flex flex-1 min-h-0">
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r flex flex-col shrink-0">
         <div className="p-4 border-b">
@@ -61,6 +71,22 @@ export function AppShell({ session, children }: { session: Session; children: Re
           {children}
         </main>
       </div>
+      </div>
+    </div>
+  );
+}
+
+function DemoBanner() {
+  return (
+    <div className="bg-amber-500 text-amber-950 px-4 py-2 text-sm flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+      <span className="font-semibold">🎬 Estás en la demo de BARITUR PRO.</span>
+      <span className="text-amber-900/80">Datos ficticios. Se reinician cada noche.</span>
+      <Link
+        href="/#demo"
+        className="underline font-medium hover:text-amber-950/70"
+      >
+        Solicitar una reunión →
+      </Link>
     </div>
   );
 }
