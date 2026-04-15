@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 interface Props {
@@ -16,6 +16,8 @@ export function LoginForm({ demoEnabled }: Props) {
   const [loading, setLoading] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const demoAutoTriggered = useRef(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -34,6 +36,16 @@ export function LoginForm({ demoEnabled }: Props) {
       setLoading(false);
     }
   }
+
+  // Deep-link from landing: /login?demo=1 auto-signs in as operator.
+  useEffect(() => {
+    if (!demoEnabled) return;
+    if (demoAutoTriggered.current) return;
+    if (searchParams?.get("demo") !== "1") return;
+    demoAutoTriggered.current = true;
+    void handleDemo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demoEnabled, searchParams]);
 
   async function handleDemo() {
     setError("");
