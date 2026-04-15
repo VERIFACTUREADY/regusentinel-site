@@ -405,6 +405,11 @@ model DemoRequest {
   phone     String?
   message   String?
 
+  // Attribution: where the prospect came from. E.g. "landing_hero",
+  // "demo_banner" (clicked from inside the live demo), "demo_dashboard",
+  // "pricing". Null for legacy rows.
+  source    String?
+
   createdAt DateTime @default(now())
 
   org Organization? @relation(fields: [orgId], references: [id])

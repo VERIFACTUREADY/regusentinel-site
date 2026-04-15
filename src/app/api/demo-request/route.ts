@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
         company: data.company,
         phone: data.phone,
         message: data.message,
+        source: data.source,
       },
     });
 

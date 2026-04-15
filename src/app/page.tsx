@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 const features = [
   {
@@ -50,6 +51,16 @@ export default function LandingPage() {
   const [form, setForm] = useState({ name: "", email: "", company: "", phone: "", message: "" });
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  const searchParams = useSearchParams();
+  const source = searchParams?.get("source") ?? "landing_hero";
+  const fromDemoBanner = source === "demo_banner";
+
+  // Scroll to the form automatically when arriving from the in-app banner.
+  useEffect(() => {
+    if (fromDemoBanner && typeof window !== "undefined") {
+      document.getElementById("demo")?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [fromDemoBanner]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,7 +69,7 @@ export default function LandingPage() {
       const res = await fetch("/api/demo-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, source }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -286,8 +297,19 @@ export default function LandingPage() {
       {/* Demo form */}
       <section id="demo" className="py-16">
         <div className="max-w-xl mx-auto px-4">
-          <h3 className="text-2xl font-bold text-center mb-2">Solicitar demo</h3>
-          <p className="text-center text-gray-500 mb-8 text-sm">Piloto con 5-10 expedientes reales. Medimos before/after: tiempo, re-trabajo y satisfaccion.</p>
+          {fromDemoBanner ? (
+            <>
+              <h3 className="text-2xl font-bold text-center mb-2">Gracias por probar la demo</h3>
+              <p className="text-center text-gray-500 mb-8 text-sm">
+                Cuentanos cuantos expedientes mueves al mes y concretamos una reunion de 20 minutos.
+              </p>
+            </>
+          ) : (
+            <>
+              <h3 className="text-2xl font-bold text-center mb-2">Solicitar demo</h3>
+              <p className="text-center text-gray-500 mb-8 text-sm">Piloto con 5-10 expedientes reales. Medimos before/after: tiempo, re-trabajo y satisfaccion.</p>
+            </>
+          )}
           {sent ? (
             <div className="p-6 bg-green-50 border border-green-200 rounded-lg text-center">
               <p className="text-green-800 font-medium">Solicitud recibida. Nos pondremos en contacto contigo pronto.</p>

@@ -82,7 +82,7 @@ function DemoBanner() {
       <span className="font-semibold">🎬 Estás en la demo de BARITUR PRO.</span>
       <span className="text-amber-900/80">Datos ficticios. Se reinician cada noche.</span>
       <Link
-        href="/#demo"
+        href="/?source=demo_banner#demo"
         className="underline font-medium hover:text-amber-950/70"
       >
         Solicitar una reunión →
