@@ -162,6 +162,86 @@ export async function sendIsdDeadlineAlert({
 }
 
 /**
+ * Notify the internal sales team when a new demo request arrives.
+ * Gated by LEADS_NOTIFY_EMAIL env var.
+ */
+export async function sendNewLeadNotification({
+  name,
+  email,
+  company,
+  phone,
+  message,
+  source,
+  adminUrl,
+}: {
+  name: string;
+  email: string;
+  company?: string | null;
+  phone?: string | null;
+  message?: string | null;
+  source?: string | null;
+  adminUrl: string;
+}) {
+  const notifyEmail = process.env.LEADS_NOTIFY_EMAIL;
+  if (!notifyEmail) return;
+
+  const sourceLabel: Record<string, string> = {
+    landing_hero: "Landing (orgánico)",
+    demo_banner: "Demo → Banner (alta intención)",
+    demo_dashboard: "Demo → Dashboard",
+    pricing: "Página de precios",
+  };
+  const sourceTxt = source ? (sourceLabel[source] ?? source) : "Desconocido";
+  const isHotLead = source === "demo_banner" || source === "demo_dashboard";
+
+  const rows = [
+    ["Nombre", name],
+    ["Email", `<a href="mailto:${email}">${email}</a>`],
+    ["Empresa", company || "—"],
+    ["Teléfono", phone || "—"],
+    ["Mensaje", message || "—"],
+    ["Source", sourceTxt],
+  ]
+    .map(
+      ([k, v]) =>
+        `<tr>
+          <td style="padding:4px 16px 4px 0;color:#666;font-size:14px;white-space:nowrap;">${k}</td>
+          <td style="padding:4px 0;font-size:14px;">${v}</td>
+        </tr>`
+    )
+    .join("");
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+      ${
+        isHotLead
+          ? `<p style="background:#d97706;color:white;padding:6px 12px;display:inline-block;border-radius:4px;font-size:12px;font-weight:700;letter-spacing:0.5px;">🔥 LEAD CALIENTE — viene de la demo</p>`
+          : `<p style="background:#1e40af;color:white;padding:6px 12px;display:inline-block;border-radius:4px;font-size:12px;font-weight:700;letter-spacing:0.5px;">NUEVO LEAD</p>`
+      }
+      <h2 style="color:#1a1a2e;margin-top:12px;">Nueva solicitud de demo</h2>
+      <table style="border-collapse:collapse;margin:16px 0;">
+        ${rows}
+      </table>
+      <p style="text-align:center;margin:32px 0;">
+        <a href="${adminUrl}"
+           style="background-color:#1e40af;color:white;padding:12px 32px;
+                  border-radius:6px;text-decoration:none;font-weight:600;">
+          Ver todos los leads →
+        </a>
+      </p>
+      <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
+      <p style="color:#999;font-size:12px;">BARITUR PRO · Notificación automática de lead</p>
+    </div>
+  `;
+
+  return sendEmail({
+    to: notifyEmail,
+    subject: `${isHotLead ? "🔥 " : ""}Nuevo lead demo — ${name}${company ? ` (${company})` : ""}`,
+    html,
+  });
+}
+
+/**
  * Send a reminder to a contact about missing documents.
  */
 export async function sendDocumentReminder({

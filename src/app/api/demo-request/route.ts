@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { demoRequestSchema } from "@/lib/validations";
+import { sendNewLeadNotification } from "@/lib/email";
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,6 +28,18 @@ export async function POST(req: NextRequest) {
         source: data.source,
       },
     });
+
+    // Fire-and-forget: don't block the response if email delivery fails.
+    const baseUrl = process.env.NEXTAUTH_URL || "https://baritur.pro";
+    sendNewLeadNotification({
+      name: data.name,
+      email: data.email,
+      company: data.company,
+      phone: data.phone,
+      message: data.message,
+      source: data.source,
+      adminUrl: `${baseUrl}/admin/demo-requests`,
+    }).catch((err) => console.error("Lead notification email failed:", err));
 
     return NextResponse.json({ id: request.id, message: "Solicitud recibida" }, { status: 201 });
   } catch (error: any) {
