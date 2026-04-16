@@ -155,6 +155,9 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-primary">BARITUR PRO</h1>
           <div className="flex gap-2 sm:gap-4 items-center">
+            <Link href="/precios" className="hidden sm:inline px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">
+              Precios
+            </Link>
             <Link href="/login" className="hidden sm:inline px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">
               Iniciar sesion
             </Link>
@@ -188,9 +191,9 @@ export default function LandingPage() {
             <a href="#demo" className="inline-block px-8 py-3 border-2 border-primary text-primary text-lg rounded-md hover:bg-blue-50">
               Solicitar demo guiada
             </a>
-            <a href="#plans" className="inline-block px-8 py-3 border border-gray-300 text-gray-700 text-lg rounded-md hover:bg-gray-50">
+            <Link href="/precios" className="inline-block px-8 py-3 border border-gray-300 text-gray-700 text-lg rounded-md hover:bg-gray-50">
               Ver planes
-            </a>
+            </Link>
           </div>
           <p className="mt-4 text-xs text-gray-500">Acceso inmediato con datos ficticios. Sin registro.</p>
         </div>
