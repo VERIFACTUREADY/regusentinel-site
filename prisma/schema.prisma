@@ -410,7 +410,12 @@ model DemoRequest {
   // "pricing". Null for legacy rows.
   source    String?
 
+  // Mini-CRM pipeline. NEW → CONTACTED → MEETING → PILOT → CUSTOMER | LOST
+  leadStatus    String  @default("NEW")
+  internalNotes String?
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   org Organization? @relation(fields: [orgId], references: [id])
 }
