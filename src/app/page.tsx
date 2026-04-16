@@ -81,8 +81,75 @@ export default function LandingPage() {
     }
   }
 
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://baritur.pro/#org",
+        name: "BARITUR PRO",
+        url: "https://baritur.pro",
+        description:
+          "Software B2B para gestorías y funerarias que automatiza los trámites post-fallecimiento en España.",
+        contactPoint: {
+          "@type": "ContactPoint",
+          contactType: "sales",
+          availableLanguage: "Spanish",
+        },
+      },
+      {
+        "@type": "SoftwareApplication",
+        name: "BARITUR PRO",
+        applicationCategory: "BusinessApplication",
+        operatingSystem: "Web",
+        offers: {
+          "@type": "AggregateOffer",
+          priceCurrency: "EUR",
+          lowPrice: "149",
+          highPrice: "749",
+          offerCount: "3",
+        },
+        description:
+          "Plataforma SaaS para gestión post-mortem: motor de plazos ISD, checklist inteligente por categoría, portal familia white-label, pack banco unificado y cumplimiento RGPD/LOPDGDD.",
+      },
+      {
+        "@type": "FAQPage",
+        mainEntity: [
+          {
+            "@type": "Question",
+            name: "¿Qué es el Modelo 650 y cuál es su plazo?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "El Modelo 650 es la autoliquidación del Impuesto de Sucesiones (ISD). El plazo legal es de 6 meses desde la fecha de fallecimiento, prorrogable otros 6 meses si se solicita en los primeros 5 meses.",
+            },
+          },
+          {
+            "@type": "Question",
+            name: "¿Para qué tipo de empresa es BARITUR PRO?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "BARITUR PRO está diseñado para gestorías, asesorías fiscales, funerarias y despachos de abogados que gestionan trámites post-mortem de forma profesional para familias.",
+            },
+          },
+          {
+            "@type": "Question",
+            name: "¿Cuántos trámites genera una herencia?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "Una herencia típica en España implica gestiones ante más de 20 entidades: bancos, Seguridad Social, AEAT, suministros, telecomunicaciones, seguros y plataformas digitales, con plazos críticos entre 15 días hábiles y 6 meses.",
+            },
+          },
+        ],
+      },
+    ],
+  };
+
   return (
     <div className="min-h-screen bg-white">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* Header */}
       <header className="border-b bg-white sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">

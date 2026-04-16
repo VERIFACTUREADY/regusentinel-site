@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /cases
+Disallow: /billing
+Disallow: /settings
+Disallow: /admin
+Disallow: /portal
+Disallow: /api
+
+Sitemap: https://baritur.pro/sitemap.xml
