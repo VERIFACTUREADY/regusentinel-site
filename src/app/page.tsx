@@ -417,7 +417,12 @@ export default function LandingPage() {
           <p>Actuamos exclusivamente con autorizacion del familiar/heredero/representante legal.</p>
           <p>El autopiloto prepara acciones; el envio/ejecucion requiere aprobacion profesional.</p>
           <p>Tratamiento de datos conforme al RGPD y la LOPDGDD (LO 3/2018). Marco post-mortem: art. 3.</p>
-          <p className="mt-4">&copy; {new Date().getFullYear()} BARITUR PRO. Todos los derechos reservados.</p>
+          <p className="mt-4 space-x-3">
+            <Link href="/legal/privacidad" className="text-primary hover:underline">Privacidad</Link>
+            <Link href="/legal/terminos" className="text-primary hover:underline">Terminos</Link>
+            <Link href="/legal/cookies" className="text-primary hover:underline">Cookies</Link>
+          </p>
+          <p className="mt-2">&copy; {new Date().getFullYear()} BARITUR PRO. Todos los derechos reservados.</p>
         </div>
       </footer>
     </div>

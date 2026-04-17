@@ -126,10 +126,57 @@ export default function BillingPage() {
   const currentInterval = (subscription?.interval as Interval) || "MONTHLY";
   const currentDetail = planCatalog[currentPlan];
   const currentPrice = currentInterval === "ANNUAL" ? currentDetail.annual : currentDetail.monthly;
+  const isTrialing = subscription?.status === "trialing";
+  const trialEnd = subscription?.currentPeriodEnd ? new Date(subscription.currentPeriodEnd) : null;
+  const trialDaysLeft = isTrialing && trialEnd
+    ? Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
+
+  const STATUS_LABELS: Record<string, string> = {
+    active: "Activo",
+    trialing: "Periodo de prueba",
+    past_due: "Pago pendiente",
+    canceled: "Cancelado",
+  };
 
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Facturacion</h1>
+
+      {/* Trial alert */}
+      {isTrialing && trialDaysLeft !== null && (
+        <div className={`p-4 rounded-lg border-2 mb-6 ${
+          trialDaysLeft <= 3
+            ? "bg-red-50 border-red-300"
+            : "bg-blue-50 border-blue-200"
+        }`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className={`font-semibold ${trialDaysLeft <= 3 ? "text-red-800" : "text-blue-800"}`}>
+                {trialDaysLeft <= 0
+                  ? "Tu periodo de prueba expira hoy"
+                  : trialDaysLeft === 1
+                    ? "Tu periodo de prueba expira manana"
+                    : `Tu periodo de prueba expira en ${trialDaysLeft} dias`}
+              </h2>
+              <p className={`text-sm mt-1 ${trialDaysLeft <= 3 ? "text-red-700" : "text-blue-700"}`}>
+                Plan {currentDetail.label} en prueba hasta el{" "}
+                {trialEnd!.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}.
+                Activa tu suscripcion para no perder acceso.
+              </p>
+            </div>
+            <div className={`text-3xl font-bold tabular-nums ${trialDaysLeft <= 3 ? "text-red-600" : "text-blue-600"}`}>
+              {trialDaysLeft}d
+            </div>
+          </div>
+          <div className="mt-3 h-2 bg-white/60 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${trialDaysLeft <= 3 ? "bg-red-500" : "bg-blue-500"}`}
+              style={{ width: `${Math.max(5, 100 - (trialDaysLeft / 14) * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Current plan */}
       <div className="bg-white p-6 rounded-lg border mb-8">
@@ -137,12 +184,24 @@ export default function BillingPage() {
           <div>
             <h2 className="text-lg font-semibold">Plan actual: {currentDetail.label}</h2>
             <p className="text-sm text-gray-500 mt-1">
-              Estado: <span className="font-medium">{subscription?.status || "active"}</span>
+              Estado:{" "}
+              <span className={`font-medium ${
+                isTrialing ? "text-blue-600" : subscription?.status === "past_due" ? "text-red-600" : "text-green-600"
+              }`}>
+                {STATUS_LABELS[subscription?.status] || subscription?.status || "Activo"}
+              </span>
             </p>
-            <p className="text-sm text-primary font-medium mt-1">
-              {fmtEUR(currentPrice)}/{currentInterval === "ANNUAL" ? "ano" : "mes"}
-            </p>
-            {subscription?.currentPeriodEnd && (
+            {!isTrialing && (
+              <p className="text-sm text-primary font-medium mt-1">
+                {fmtEUR(currentPrice)}/{currentInterval === "ANNUAL" ? "ano" : "mes"}
+              </p>
+            )}
+            {isTrialing && (
+              <p className="text-sm text-blue-600 font-medium mt-1">
+                Gratis durante el periodo de prueba
+              </p>
+            )}
+            {subscription?.currentPeriodEnd && !isTrialing && (
               <p className="text-sm text-gray-500">
                 Renovacion: {new Date(subscription.currentPeriodEnd).toLocaleDateString("es-ES")}
               </p>
