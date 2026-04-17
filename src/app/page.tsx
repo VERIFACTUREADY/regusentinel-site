@@ -48,7 +48,7 @@ const features = [
 ];
 
 export default function LandingPage() {
-  const [form, setForm] = useState({ name: "", email: "", company: "", phone: "", message: "" });
+  const [form, setForm] = useState({ name: "", email: "", company: "", phone: "", message: "", preferredTime: "" });
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const searchParams = useSearchParams();
@@ -404,6 +404,16 @@ export default function LandingPage() {
               <textarea placeholder="Cuantos expedientes post-fallecimiento gestionais al mes?" rows={3} value={form.message}
                 onChange={(e) => setForm({ ...form, message: e.target.value })}
                 className="w-full px-4 py-2 border rounded-md" />
+              <select
+                value={form.preferredTime || ""}
+                onChange={(e) => setForm({ ...form, preferredTime: e.target.value })}
+                className="w-full px-4 py-2 border rounded-md text-gray-700"
+              >
+                <option value="">Horario preferido para reunirnos (opcional)</option>
+                <option value="manana">Manana (9:00 - 12:00)</option>
+                <option value="mediodia">Mediodia (12:00 - 14:00)</option>
+                <option value="tarde">Tarde (16:00 - 19:00)</option>
+              </select>
               {error && <p className="text-red-600 text-sm">{error}</p>}
               <button type="submit" className="w-full py-3 bg-primary text-white rounded-md hover:bg-primary/90 font-medium">
                 Solicitar demo gratuita

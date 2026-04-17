@@ -18,13 +18,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Demasiadas solicitudes, intente mas tarde" }, { status: 429 });
     }
 
+    const timeLabels: Record<string, string> = {
+      manana: "Mañana (9:00–12:00)",
+      mediodia: "Mediodía (12:00–14:00)",
+      tarde: "Tarde (16:00–19:00)",
+    };
+    const messageWithTime = [
+      data.message,
+      data.preferredTime ? `Horario preferido: ${timeLabels[data.preferredTime] ?? data.preferredTime}` : null,
+    ].filter(Boolean).join("\n") || undefined;
+
     const request = await prisma.demoRequest.create({
       data: {
         name: data.name,
         email: data.email,
         company: data.company,
         phone: data.phone,
-        message: data.message,
+        message: messageWithTime,
         source: data.source,
       },
     });
@@ -36,7 +46,7 @@ export async function POST(req: NextRequest) {
       email: data.email,
       company: data.company,
       phone: data.phone,
-      message: data.message,
+      message: messageWithTime,
       source: data.source,
       adminUrl: `${baseUrl}/admin/demo-requests`,
     }).catch((err) => console.error("Lead notification email failed:", err));

@@ -102,6 +102,7 @@ export const demoRequestSchema = z.object({
   company: z.string().max(200).optional(),
   phone: z.string().max(20).optional(),
   message: z.string().max(2000).optional(),
+  preferredTime: z.enum(["manana", "mediodia", "tarde"]).optional(),
   source: z.string().max(50).optional(),
 });
 
