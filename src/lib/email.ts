@@ -242,6 +242,62 @@ export async function sendNewLeadNotification({
 }
 
 /**
+ * Notify an org owner that their trial is about to expire.
+ */
+export async function sendTrialExpiringNotification({
+  orgName,
+  ownerEmail,
+  ownerName,
+  plan,
+  daysLeft,
+  expiresAt,
+}: {
+  orgName: string;
+  ownerEmail: string;
+  ownerName: string;
+  plan: string;
+  daysLeft: number;
+  expiresAt: Date;
+}) {
+  const expiresStr = expiresAt.toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+
+  const subject =
+    daysLeft <= 1
+      ? `Tu trial de BARITUR PRO expira manana — ${orgName}`
+      : `Tu trial de BARITUR PRO expira en ${daysLeft} dias — ${orgName}`;
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+      <p style="background:#c2410c;color:white;padding:6px 12px;display:inline-block;border-radius:4px;font-size:12px;font-weight:700;">TRIAL EXPIRA PRONTO</p>
+      <h2 style="color:#1a1a2e;margin-top:12px;">Hola ${ownerName},</h2>
+      <p style="font-size:15px;color:#333;">
+        Tu periodo de prueba del plan <strong>${plan}</strong> para <strong>${orgName}</strong>
+        expira el <strong>${expiresStr}</strong> (${daysLeft === 1 ? "manana" : `en ${daysLeft} dias`}).
+      </p>
+      <p style="font-size:15px;color:#333;">
+        Para seguir usando BARITUR PRO sin interrupcion, activa tu suscripcion desde el panel
+        de facturacion o contacta con nuestro equipo.
+      </p>
+      <p style="text-align:center;margin:32px 0;">
+        <a href="https://baritur.pro/billing"
+           style="background-color:#1e40af;color:white;padding:12px 32px;
+                  border-radius:6px;text-decoration:none;font-weight:600;">
+          Activar suscripcion
+        </a>
+      </p>
+      <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
+      <p style="color:#999;font-size:12px;">BARITUR PRO — Gestion post-mortem profesional</p>
+    </div>
+  `;
+
+  return sendEmail({ to: ownerEmail, subject, html });
+}
+
+/**
  * Send a reminder to a contact about missing documents.
  */
 export async function sendDocumentReminder({

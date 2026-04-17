@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { OrgTrialActions } from "./org-trial-actions";
 
 export const metadata = { title: "Métricas de uso" };
 
@@ -111,7 +112,7 @@ export default async function MetricsPage() {
     prisma.organization.findMany({
       include: {
         _count: { select: { cases: true, members: true } },
-        subscription: { select: { plan: true, status: true, interval: true } },
+        subscription: { select: { plan: true, status: true, interval: true, currentPeriodEnd: true } },
         cases: {
           where: { deletedAt: null },
           select: { status: true, createdAt: true },
@@ -230,6 +231,8 @@ export default async function MetricsPage() {
               <th className="px-6 py-3">Plan</th>
               <th className="px-6 py-3">Expedientes</th>
               <th className="px-6 py-3">Miembros</th>
+              <th className="px-6 py-3">Estado</th>
+              <th className="px-6 py-3">Trial</th>
               <th className="px-6 py-3">Último expediente</th>
             </tr>
           </thead>
@@ -242,6 +245,24 @@ export default async function MetricsPage() {
                 FIRMA: "bg-indigo-100 text-indigo-800",
               };
               const plan = org.subscription?.plan ?? "—";
+              const subStatus = org.subscription?.status;
+              const isTrialing = subStatus === "trialing";
+              const trialEnd = org.subscription?.currentPeriodEnd;
+              const trialDaysLeft = isTrialing && trialEnd
+                ? Math.ceil((new Date(trialEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                : null;
+              const statusColors: Record<string, string> = {
+                active: "bg-green-100 text-green-700",
+                trialing: "bg-blue-100 text-blue-700",
+                past_due: "bg-red-100 text-red-700",
+                canceled: "bg-gray-100 text-gray-500",
+              };
+              const statusLabels: Record<string, string> = {
+                active: "Activo",
+                trialing: "Trial",
+                past_due: "Impago",
+                canceled: "Cancelado",
+              };
               return (
                 <tr key={org.id} className="hover:bg-gray-50">
                   <td className="px-6 py-3">
@@ -254,11 +275,34 @@ export default async function MetricsPage() {
                         {plan}
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-400">Sin suscripción</span>
+                      <span className="text-xs text-gray-400">Sin suscripcion</span>
                     )}
                   </td>
                   <td className="px-6 py-3 font-medium">{org._count.cases}</td>
                   <td className="px-6 py-3">{org._count.members}</td>
+                  <td className="px-6 py-3">
+                    {subStatus ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium inline-block w-fit ${statusColors[subStatus] ?? "bg-gray-100"}`}>
+                          {statusLabels[subStatus] ?? subStatus}
+                        </span>
+                        {isTrialing && trialDaysLeft !== null && (
+                          <span className={`text-xs ${trialDaysLeft <= 3 ? "text-red-600 font-semibold" : "text-gray-500"}`}>
+                            {trialDaysLeft <= 0 ? "Expira hoy" : `${trialDaysLeft}d restantes`}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-3">
+                    <OrgTrialActions
+                      orgId={org.id}
+                      currentStatus={subStatus}
+                      currentPlan={org.subscription?.plan}
+                    />
+                  </td>
                   <td className="px-6 py-3 text-gray-500 text-xs">
                     {lastCase
                       ? new Date(lastCase.createdAt).toLocaleDateString("es-ES")

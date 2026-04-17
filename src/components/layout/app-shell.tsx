@@ -13,13 +13,20 @@ const navItems = [
   { href: "/settings/branding", label: "Marca", icon: "M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" },
 ];
 
+export interface TrialInfo {
+  plan: string;
+  daysLeft: number;
+}
+
 export function AppShell({
   session,
   isDemoOrg = false,
+  trialInfo,
   children,
 }: {
   session: Session;
   isDemoOrg?: boolean;
+  trialInfo?: TrialInfo | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -28,6 +35,7 @@ export function AppShell({
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       {isDemoOrg && <DemoBanner />}
+      {trialInfo && <TrialBanner plan={trialInfo.plan} daysLeft={trialInfo.daysLeft} />}
       <div className="flex flex-1 min-h-0">
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r flex flex-col shrink-0">
@@ -102,6 +110,29 @@ export function AppShell({
         </main>
       </div>
       </div>
+    </div>
+  );
+}
+
+function TrialBanner({ plan, daysLeft }: { plan: string; daysLeft: number }) {
+  const urgent = daysLeft <= 3;
+  return (
+    <div
+      className={`px-4 py-2 text-sm flex flex-wrap items-center justify-center gap-x-4 gap-y-1 ${
+        urgent
+          ? "bg-red-500 text-white"
+          : "bg-blue-500 text-white"
+      }`}
+    >
+      <span className="font-semibold">
+        Plan {plan} en prueba — {daysLeft <= 0 ? "expira hoy" : daysLeft === 1 ? "expira manana" : `quedan ${daysLeft} dias`}
+      </span>
+      <Link
+        href="/billing"
+        className="underline font-medium hover:opacity-80"
+      >
+        Activar suscripcion →
+      </Link>
     </div>
   );
 }
