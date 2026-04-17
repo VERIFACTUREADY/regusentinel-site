@@ -139,8 +139,8 @@ export default function PreciosPage() {
       <section className="py-16 bg-gray-50">
         <div className="max-w-4xl mx-auto px-4">
           <h2 className="text-2xl font-bold text-center mb-10">Comparativa detallada</h2>
-          <div className="bg-white border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-white border rounded-lg overflow-x-auto">
+            <table className="w-full text-sm min-w-[600px]">
               <thead>
                 <tr className="border-b bg-gray-50">
                   <th className="px-6 py-4 text-left text-gray-700 font-semibold">Funcionalidad</th>
