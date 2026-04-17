@@ -1,5 +1,7 @@
 import Stripe from "stripe";
 import { prisma } from "./prisma";
+import { logAudit } from "./audit";
+import { sendEmail } from "./email";
 import type { PlanTier, BillingInterval } from "@prisma/client";
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -176,6 +178,9 @@ export async function handleWebhookEvent(
           session.subscription as string
         );
 
+        const previousSub = await prisma.subscription.findUnique({ where: { orgId } });
+        const wasTrialing = previousSub?.status === "trialing";
+
         await prisma.subscription.upsert({
           where: { orgId },
           create: {
@@ -198,6 +203,16 @@ export async function handleWebhookEvent(
             ...(chargedSetupFee ? { setupFeePaid: true, setupFeePaidAt: new Date() } : {}),
           },
         });
+
+        await logAudit({
+          orgId,
+          action: wasTrialing ? "subscription.trial_converted" : "subscription.activated",
+          details: `Plan ${plan} (${interval})${chargedSetupFee ? " + setup fee" : ""}`,
+        }).catch(console.error);
+
+        if (wasTrialing) {
+          await notifyTrialConverted(orgId, plan).catch(console.error);
+        }
       }
       break;
     }
@@ -214,19 +229,28 @@ export async function handleWebhookEvent(
       });
 
       if (existingSub) {
-        const status = subscription.status === "active"
-          ? "active"
-          : subscription.status === "past_due"
-            ? "past_due"
-            : "canceled";
+        const newStatus = mapStripeStatus(subscription.status);
+        const previousStatus = existingSub.status;
 
         await prisma.subscription.update({
           where: { id: existingSub.id },
           data: {
-            status,
+            status: newStatus,
             currentPeriodEnd: new Date(subscription.current_period_end * 1000),
           },
         });
+
+        if (previousStatus !== newStatus) {
+          await logAudit({
+            orgId: existingSub.orgId,
+            action: "subscription.status_changed",
+            details: `${previousStatus} → ${newStatus}`,
+          }).catch(console.error);
+        }
+
+        if (newStatus === "past_due" && previousStatus !== "past_due") {
+          await notifyPaymentFailed(existingSub.orgId).catch(console.error);
+        }
       }
       break;
     }
@@ -247,10 +271,132 @@ export async function handleWebhookEvent(
           where: { id: existingSub.id },
           data: { status: "canceled" },
         });
+
+        await logAudit({
+          orgId: existingSub.orgId,
+          action: "subscription.canceled",
+          details: `Plan ${existingSub.plan} cancelado`,
+        }).catch(console.error);
+      }
+      break;
+    }
+
+    case "invoice.payment_failed": {
+      const invoice = event.data.object as Stripe.Invoice;
+      const customerId =
+        typeof invoice.customer === "string"
+          ? invoice.customer
+          : invoice.customer?.id;
+
+      if (customerId) {
+        const existingSub = await prisma.subscription.findFirst({
+          where: { stripeCustomerId: customerId },
+        });
+
+        if (existingSub) {
+          await logAudit({
+            orgId: existingSub.orgId,
+            action: "billing.payment_failed",
+            details: `Importe: ${((invoice.amount_due ?? 0) / 100).toFixed(2)} EUR`,
+          }).catch(console.error);
+        }
       }
       break;
     }
   }
 
   return { received: true, type: event.type };
+}
+
+function mapStripeStatus(stripeStatus: string): string {
+  switch (stripeStatus) {
+    case "active": return "active";
+    case "trialing": return "trialing";
+    case "past_due": return "past_due";
+    case "canceled":
+    case "unpaid":
+    case "incomplete_expired":
+      return "canceled";
+    default:
+      return stripeStatus;
+  }
+}
+
+async function notifyTrialConverted(orgId: string, plan: string) {
+  const notifyEmail = process.env.LEADS_NOTIFY_EMAIL;
+  if (!notifyEmail) return;
+
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { name: true, slug: true },
+  });
+
+  await sendEmail({
+    to: notifyEmail,
+    subject: `Trial convertido — ${org?.name ?? orgId} → ${plan}`,
+    html: `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+        <p style="background:#16a34a;color:white;padding:6px 12px;display:inline-block;border-radius:4px;font-size:12px;font-weight:700;">CONVERSION</p>
+        <h2 style="color:#1a1a2e;margin-top:12px;">Trial convertido a cliente</h2>
+        <table style="border-collapse:collapse;margin:16px 0;font-size:14px;">
+          <tr><td style="padding:4px 16px 4px 0;color:#666;">Organizacion</td><td><strong>${org?.name ?? orgId}</strong></td></tr>
+          <tr><td style="padding:4px 16px 4px 0;color:#666;">Slug</td><td>${org?.slug ?? "—"}</td></tr>
+          <tr><td style="padding:4px 16px 4px 0;color:#666;">Plan</td><td><strong>${plan}</strong></td></tr>
+        </table>
+      </div>
+    `,
+  });
+}
+
+async function notifyPaymentFailed(orgId: string) {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: {
+      name: true,
+      members: {
+        where: { role: "OWNER" },
+        select: { user: { select: { email: true, name: true } } },
+        take: 1,
+      },
+    },
+  });
+
+  const ownerEmail = org?.members[0]?.user.email;
+  if (!ownerEmail) return;
+
+  await sendEmail({
+    to: ownerEmail,
+    subject: `Problema con tu pago — BARITUR PRO`,
+    html: `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+        <p style="background:#dc2626;color:white;padding:6px 12px;display:inline-block;border-radius:4px;font-size:12px;font-weight:700;">PAGO FALLIDO</p>
+        <h2 style="color:#1a1a2e;margin-top:12px;">Hola ${org?.members[0]?.user.name ?? ""},</h2>
+        <p style="font-size:15px;color:#333;">
+          No hemos podido procesar el pago de tu suscripcion de BARITUR PRO para <strong>${org?.name}</strong>.
+        </p>
+        <p style="font-size:15px;color:#333;">
+          Actualiza tu metodo de pago desde el panel de facturacion para evitar la suspension del servicio.
+          Si el problema persiste tras 7 dias, el acceso se suspendera automaticamente.
+        </p>
+        <p style="text-align:center;margin:32px 0;">
+          <a href="https://baritur.pro/billing"
+             style="background-color:#dc2626;color:white;padding:12px 32px;
+                    border-radius:6px;text-decoration:none;font-weight:600;">
+            Actualizar metodo de pago
+          </a>
+        </p>
+        <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
+        <p style="color:#999;font-size:12px;">BARITUR PRO — Gestion post-mortem profesional</p>
+      </div>
+    `,
+  });
+
+  const notifyEmail = process.env.LEADS_NOTIFY_EMAIL;
+  if (notifyEmail) {
+    await sendEmail({
+      to: notifyEmail,
+      subject: `Pago fallido — ${org?.name}`,
+      html: `<p>El pago de <strong>${org?.name}</strong> ha fallado. Contactar al owner (${ownerEmail}).</p>`,
+    });
+  }
 }
