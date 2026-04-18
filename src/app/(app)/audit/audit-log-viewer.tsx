@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 interface AuditLog {
@@ -55,7 +55,8 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
 
-  const fetchLogs = useCallback(async () => {
+  useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
     const params = new URLSearchParams();
     params.set("page", String(page));
@@ -66,18 +67,21 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
     if (to) params.set("to", to);
     if (search) params.set("search", search);
 
-    const res = await fetch(`/api/audit-logs?${params}`);
-    if (res.ok) {
-      const data = await res.json();
-      setLogs(data.logs);
-      setTotal(data.total);
-    }
-    setLoading(false);
-  }, [page, action, userId, from, to, search]);
+    fetch(`/api/audit-logs?${params}`, { signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && !controller.signal.aborted) {
+          setLogs(data.logs);
+          setTotal(data.total);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
 
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+    return () => controller.abort();
+  }, [page, action, userId, from, to, search]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -98,13 +102,14 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
   }
 
   function exportCsv() {
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const header = "Fecha,Usuario,Accion,Detalles,Expediente,IP";
     const rows = logs.map((l) => {
       const date = new Date(l.createdAt).toLocaleString("es-ES");
       const user = l.user?.name || l.user?.email || "Sistema";
-      const caseRef = l.case?.ref || "";
-      const details = (l.details || "").replace(/"/g, '""');
-      return `"${date}","${user}","${l.action}","${details}","${caseRef}","${l.ip || ""}"`;
+      return [date, user, l.action, l.details || "", l.case?.ref || "", l.ip || ""]
+        .map(esc)
+        .join(",");
     });
     const csv = [header, ...rows].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -113,7 +118,7 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
     a.href = url;
     a.download = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 500);
   }
 
   const hasFilters = action || userId || from || to || search;

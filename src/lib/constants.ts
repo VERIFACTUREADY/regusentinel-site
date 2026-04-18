@@ -23,3 +23,22 @@ export const PLAN_LABELS: Record<string, string> = {
   DESPACHO: "Despacho",
   FIRMA: "Firma",
 };
+
+export const TEMPLATE_TYPE_LABELS: Record<string, string> = {
+  email: "Email",
+  carta: "Carta",
+  solicitud: "Solicitud",
+};
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  BANCOS: "Bancos",
+  SUMINISTROS: "Suministros",
+  TELECOM: "Telecomunicaciones",
+  SUSCRIPCIONES: "Suscripciones",
+  SEGUROS: "Seguros",
+  VIDA_DIGITAL: "Vida digital",
+  FISCAL: "Fiscal",
+  OTROS: "Otros",
+};
+
+export const ALL_CATEGORIES = Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label }));

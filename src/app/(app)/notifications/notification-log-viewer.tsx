@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 interface NotifLog {
@@ -39,7 +39,8 @@ export function NotificationLogViewer() {
   const [channel, setChannel] = useState("");
   const [status, setStatus] = useState("");
 
-  const fetchLogs = useCallback(async () => {
+  useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
     const params = new URLSearchParams();
     params.set("page", String(page));
@@ -48,18 +49,21 @@ export function NotificationLogViewer() {
     if (channel) params.set("channel", channel);
     if (status) params.set("status", status);
 
-    const res = await fetch(`/api/notifications?${params}`);
-    if (res.ok) {
-      const data = await res.json();
-      setLogs(data.logs);
-      setTotal(data.total);
-    }
-    setLoading(false);
-  }, [page, kind, channel, status]);
+    fetch(`/api/notifications?${params}`, { signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && !controller.signal.aborted) {
+          setLogs(data.logs);
+          setTotal(data.total);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
 
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+    return () => controller.abort();
+  }, [page, kind, channel, status]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const hasFilters = kind || channel || status;

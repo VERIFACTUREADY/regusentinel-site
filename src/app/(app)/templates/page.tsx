@@ -3,28 +3,12 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
+import { TEMPLATE_TYPE_LABELS, CATEGORY_LABELS } from "@/lib/constants";
 import { TemplateList } from "./template-list";
 
 export const metadata = {
   title: "Plantillas — BARITUR PRO",
   robots: { index: false },
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  email: "Email",
-  carta: "Carta",
-  solicitud: "Solicitud",
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  BANCOS: "Bancos",
-  SUMINISTROS: "Suministros",
-  TELECOM: "Telecomunicaciones",
-  SUSCRIPCIONES: "Suscripciones",
-  SEGUROS: "Seguros",
-  VIDA_DIGITAL: "Vida digital",
-  FISCAL: "Fiscal",
-  OTROS: "Otros",
 };
 
 export default async function TemplatesPage() {
@@ -48,7 +32,7 @@ export default async function TemplatesPage() {
       id: t.id,
       name: t.name,
       type: t.type,
-      typeLabel: TYPE_LABELS[t.type] ?? t.type,
+      typeLabel: TEMPLATE_TYPE_LABELS[t.type] ?? t.type,
       category: t.category,
       categoryLabel: t.category ? (CATEGORY_LABELS[t.category] ?? t.category) : null,
       latestVersion: latest?.version ?? 0,

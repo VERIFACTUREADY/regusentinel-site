@@ -53,7 +53,6 @@ export default async function ReportsPage() {
     createdThisMonth,
     createdLastMonth,
     urgentCases,
-    avgTasks,
     casesByStatus,
     recentClosed,
     taskStats,
@@ -68,7 +67,6 @@ export default async function ReportsPage() {
     prisma.case.count({ where: { orgId, deletedAt: null, createdAt: { gte: startOfMonth } } }),
     prisma.case.count({ where: { orgId, deletedAt: null, createdAt: { gte: startOfLastMonth, lt: startOfMonth } } }),
     prisma.case.count({ where: { orgId, deletedAt: null, isUrgent: true, status: { notIn: ["CLOSED", "ARCHIVED"] } } }),
-    prisma.task.count({ where: { case: { orgId, deletedAt: null } } }),
     prisma.case.groupBy({
       by: ["status"],
       where: { orgId, deletedAt: null },
@@ -77,6 +75,7 @@ export default async function ReportsPage() {
     prisma.case.findMany({
       where: { orgId, deletedAt: null, status: "CLOSED", closedAt: { gte: startOfYear } },
       select: { createdAt: true, closedAt: true },
+      take: 500,
     }),
     prisma.task.groupBy({
       by: ["status"],

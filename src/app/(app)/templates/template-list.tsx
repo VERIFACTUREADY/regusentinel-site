@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ALL_CATEGORIES, TEMPLATE_TYPE_LABELS } from "@/lib/constants";
 
 interface TemplateItem {
   id: string;
@@ -21,22 +22,7 @@ const TYPE_COLORS: Record<string, string> = {
   solicitud: "bg-purple-100 text-purple-700",
 };
 
-const CATEGORIES = [
-  { value: "BANCOS", label: "Bancos" },
-  { value: "SUMINISTROS", label: "Suministros" },
-  { value: "TELECOM", label: "Telecomunicaciones" },
-  { value: "SUSCRIPCIONES", label: "Suscripciones" },
-  { value: "SEGUROS", label: "Seguros" },
-  { value: "VIDA_DIGITAL", label: "Vida digital" },
-  { value: "FISCAL", label: "Fiscal" },
-  { value: "OTROS", label: "Otros" },
-];
-
-const TYPES = [
-  { value: "email", label: "Email" },
-  { value: "carta", label: "Carta" },
-  { value: "solicitud", label: "Solicitud" },
-];
+const TYPES = Object.entries(TEMPLATE_TYPE_LABELS).map(([value, label]) => ({ value, label }));
 
 export function TemplateList({
   templates,
@@ -128,7 +114,7 @@ export function TemplateList({
                     className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   >
                     <option value="">Sin categoria</option>
-                    {CATEGORIES.map((c) => (
+                    {ALL_CATEGORIES.map((c) => (
                       <option key={c.value} value={c.value}>{c.label}</option>
                     ))}
                   </select>

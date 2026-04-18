@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { TEMPLATE_TYPE_LABELS, CATEGORY_LABELS } from "@/lib/constants";
 
 interface Version {
   id: string;
@@ -13,23 +14,6 @@ interface Version {
   isApproved: boolean;
   createdAt: string;
 }
-
-const TYPE_LABELS: Record<string, string> = {
-  email: "Email",
-  carta: "Carta",
-  solicitud: "Solicitud",
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  BANCOS: "Bancos",
-  SUMINISTROS: "Suministros",
-  TELECOM: "Telecomunicaciones",
-  SUSCRIPCIONES: "Suscripciones",
-  SEGUROS: "Seguros",
-  VIDA_DIGITAL: "Vida digital",
-  FISCAL: "Fiscal",
-  OTROS: "Otros",
-};
 
 export function TemplateEditor({
   templateId,
@@ -80,7 +64,7 @@ export function TemplateEditor({
           <div>
             <h1 className="text-2xl font-bold">{name}</h1>
             <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
-              <span>{TYPE_LABELS[type] ?? type}</span>
+              <span>{TEMPLATE_TYPE_LABELS[type] ?? type}</span>
               {category && <span>{CATEGORY_LABELS[category] ?? category}</span>}
               <span>{versions.length} version{versions.length !== 1 ? "es" : ""}</span>
             </div>

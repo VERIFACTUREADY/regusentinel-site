@@ -23,22 +23,27 @@ export async function GET(req: NextRequest) {
   const to = url.searchParams.get("to");
   const search = url.searchParams.get("search");
 
-  const where: Record<string, unknown> = { orgId: session.user.orgId };
-  if (caseId) where.caseId = caseId;
-  if (userId) where.userId = userId === "system" ? null : userId;
-  if (action) where.action = { startsWith: action };
+  const conditions: Record<string, unknown>[] = [{ orgId: session.user.orgId }];
+  if (caseId) conditions.push({ caseId });
+  if (userId) conditions.push({ userId: userId === "system" ? null : userId });
+  if (action) conditions.push({ action: { startsWith: action } });
   if (from || to) {
-    where.createdAt = {
-      ...(from ? { gte: new Date(from) } : {}),
-      ...(to ? { lte: new Date(to + "T23:59:59.999Z") } : {}),
-    };
+    conditions.push({
+      createdAt: {
+        ...(from ? { gte: new Date(from) } : {}),
+        ...(to ? { lte: new Date(to + "T23:59:59.999Z") } : {}),
+      },
+    });
   }
   if (search) {
-    where.OR = [
-      { action: { contains: search, mode: "insensitive" } },
-      { details: { contains: search, mode: "insensitive" } },
-    ];
+    conditions.push({
+      OR: [
+        { action: { contains: search, mode: "insensitive" } },
+        { details: { contains: search, mode: "insensitive" } },
+      ],
+    });
   }
+  const where = { AND: conditions };
 
   const [logs, total] = await Promise.all([
     prisma.auditLog.findMany({
