@@ -125,10 +125,17 @@ export function LoginForm({ demoEnabled }: Props) {
             </>
           )}
 
-          <div className="mt-6 text-center text-sm text-gray-500">
-            <Link href="/onboarding" className="text-primary hover:underline">
-              Crear nueva cuenta
-            </Link>
+          <div className="mt-6 text-center text-sm text-gray-500 space-y-2">
+            <div>
+              <Link href="/forgot-password" className="text-primary hover:underline">
+                He olvidado mi contrasena
+              </Link>
+            </div>
+            <div>
+              <Link href="/onboarding" className="text-primary hover:underline">
+                Crear nueva cuenta
+              </Link>
+            </div>
           </div>
         </div>
 
