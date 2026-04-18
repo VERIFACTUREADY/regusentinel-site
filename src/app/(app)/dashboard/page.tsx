@@ -27,7 +27,7 @@ export default async function DashboardPage() {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, recentCases, recentLogs, upcomingDeadlines] = await Promise.all([
+  const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, pendingApprovals, recentCases, recentLogs, upcomingDeadlines] = await Promise.all([
     prisma.case.count({
       where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
     }),
@@ -42,6 +42,9 @@ export default async function DashboardPage() {
     }),
     prisma.case.count({
       where: { orgId, deletedAt: null, status: "CLOSED", closedAt: { gte: startOfMonth } },
+    }),
+    prisma.approval.count({
+      where: { case: { orgId }, status: "PENDING" },
     }),
     prisma.case.findMany({
       where: { orgId, deletedAt: null },
@@ -122,7 +125,7 @@ export default async function DashboardPage() {
     { label: "Tareas pendientes", value: pendingTasks, color: "text-orange-600" },
     { label: "Tareas bloqueadas", value: blockedTasks, color: "text-red-600" },
     { label: "Listas para accion", value: readyTasks, color: "text-yellow-600" },
-    { label: "Docs portal familia", value: portalDocs, color: "text-purple-600" },
+    { label: "Aprobaciones pend.", value: pendingApprovals, color: "text-amber-600" },
     { label: "Cerrados este mes", value: closedThisMonth, color: "text-green-600" },
   ];
 
