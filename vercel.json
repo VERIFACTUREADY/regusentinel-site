@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/trial-expiring",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/trial-expired",
+      "schedule": "0 10 * * *"
     }
   ]
 }
