@@ -343,3 +343,67 @@ export async function sendDocumentReminder({
 
   return sendEmail({ to: email, subject, html });
 }
+
+export async function sendWelcomeEmail({
+  email,
+  name,
+  orgName,
+  plan,
+  trialDays,
+}: {
+  email: string;
+  name: string;
+  orgName: string;
+  plan: string;
+  trialDays: number;
+}) {
+  const planLabels: Record<string, string> = {
+    INICIA: "Inicia",
+    DESPACHO: "Despacho",
+    FIRMA: "Firma",
+  };
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+      <div style="background:#1e40af;padding:24px;border-radius:8px 8px 0 0;text-align:center;">
+        <h1 style="color:white;margin:0;font-size:24px;">BARITUR PRO</h1>
+      </div>
+      <div style="padding:32px 24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
+        <h2 style="color:#1a1a2e;margin-top:0;">Bienvenido, ${name}</h2>
+        <p style="font-size:15px;color:#333;">
+          Tu cuenta para <strong>${orgName}</strong> esta lista.
+          Tienes <strong>${trialDays} dias de prueba gratuita</strong> del plan
+          <strong>${planLabels[plan] ?? plan}</strong> para explorar todas las funcionalidades.
+        </p>
+        <div style="background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;margin:24px 0;">
+          <p style="margin:0 0 8px;font-weight:600;color:#1e40af;">Primeros pasos:</p>
+          <ol style="margin:0;padding-left:20px;font-size:14px;color:#333;line-height:1.8;">
+            <li>Crea tu primer expediente desde el Dashboard</li>
+            <li>Configura las categorias de tramites que gestionas</li>
+            <li>Invita a tu equipo desde Usuarios</li>
+            <li>Personaliza tu marca en Ajustes</li>
+          </ol>
+        </div>
+        <p style="text-align:center;margin:32px 0;">
+          <a href="https://baritur.pro/dashboard"
+             style="background-color:#1e40af;color:white;padding:12px 32px;
+                    border-radius:6px;text-decoration:none;font-weight:600;">
+            Ir al Dashboard
+          </a>
+        </p>
+        <p style="font-size:13px;color:#666;">
+          Si tienes dudas, responde a este email o escribe a
+          <a href="mailto:soporte@baritur.pro" style="color:#1e40af;">soporte@baritur.pro</a>.
+        </p>
+        <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
+        <p style="color:#999;font-size:12px;">BARITUR PRO — Gestion post-mortem profesional</p>
+      </div>
+    </div>
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: `Bienvenido a BARITUR PRO — Tu trial de ${trialDays} dias ha comenzado`,
+    html,
+  });
+}

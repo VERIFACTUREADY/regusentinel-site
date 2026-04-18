@@ -7,13 +7,13 @@ import { useRouter } from "next/navigation";
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
-    orgName: "", name: "", email: "", password: "", plan: "INICIA",
+    orgName: "", name: "", email: "", password: "", plan: "INICIA", acceptTerms: false,
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  function update(field: string, value: string) {
+  function update(field: string, value: string | boolean) {
     setForm({ ...form, [field]: value });
   }
 
@@ -113,16 +113,20 @@ export default function OnboardingPage() {
           {step === 3 && (
             <div className="space-y-4">
               <h2 className="text-lg font-semibold">Selecciona tu plan</h2>
+              <p className="text-sm text-gray-500">Todos los planes incluyen 14 dias de prueba gratuita. Sin tarjeta.</p>
               <div className="space-y-3">
                 {[
                   { id: "INICIA", name: "Inicia", price: "149EUR/mes", desc: "Hasta 2 usuarios, 15 exp/mes, sin setup" },
-                  { id: "DESPACHO", name: "Despacho", price: "349EUR/mes + 299EUR setup", desc: "Hasta 5 usuarios, 50 exp/mes, pack banco + white-label" },
+                  { id: "DESPACHO", name: "Despacho", price: "349EUR/mes + 299EUR setup", desc: "Hasta 5 usuarios, 50 exp/mes, pack banco + white-label", recommended: true },
                   { id: "FIRMA", name: "Firma", price: "749EUR/mes + 990EUR setup", desc: "Hasta 20 usuarios, 200 exp/mes, SSO + onboarding asistido" },
                 ].map((p) => (
                   <button key={p.id} onClick={() => update("plan", p.id)}
-                    className={`w-full p-4 border-2 rounded-lg text-left transition ${
+                    className={`w-full p-4 border-2 rounded-lg text-left transition relative ${
                       form.plan === p.id ? "border-primary bg-blue-50" : "border-gray-200 hover:border-gray-300"
                     }`}>
+                    {"recommended" in p && p.recommended && (
+                      <span className="absolute -top-2 right-3 bg-primary text-white text-[10px] px-2 py-0.5 rounded">Recomendado</span>
+                    )}
                     <div className="flex justify-between">
                       <span className="font-semibold">{p.name}</span>
                       <span className="text-sm text-gray-500">{p.price}</span>
@@ -131,11 +135,36 @@ export default function OnboardingPage() {
                   </button>
                 ))}
               </div>
+
+              <label className="flex items-start gap-3 p-3 bg-gray-50 rounded-md cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.acceptTerms}
+                  onChange={(e) => update("acceptTerms", e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <span className="text-xs text-gray-600 leading-relaxed">
+                  He leido y acepto los{" "}
+                  <a href="/legal/terminos" target="_blank" className="text-primary underline">Terminos de servicio</a>
+                  {" "}y la{" "}
+                  <a href="/legal/privacidad" target="_blank" className="text-primary underline">Politica de privacidad</a>.
+                  Consiento el tratamiento de mis datos conforme al RGPD y la LOPDGDD.
+                </span>
+              </label>
+
               <div className="flex gap-2">
                 <button onClick={() => setStep(2)} className="flex-1 py-2 border rounded-md hover:bg-gray-50">Atras</button>
-                <button onClick={handleSubmit} disabled={loading}
+                <button
+                  onClick={() => {
+                    if (!form.acceptTerms) {
+                      setError("Debes aceptar los terminos y la politica de privacidad");
+                      return;
+                    }
+                    handleSubmit();
+                  }}
+                  disabled={loading}
                   className="flex-1 py-2 bg-primary text-white rounded-md hover:bg-primary/90 disabled:opacity-50">
-                  {loading ? "Creando..." : "Crear cuenta"}
+                  {loading ? "Creando..." : "Empezar trial gratuito"}
                 </button>
               </div>
             </div>

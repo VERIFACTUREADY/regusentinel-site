@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { logAudit } from "@/lib/audit";
+import { sendWelcomeEmail } from "@/lib/email";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
+const TRIAL_DAYS = 14;
+
 const registerSchema = z.object({
-  orgName: z.string().min(2),
-  name: z.string().min(2),
+  orgName: z.string().min(2).max(200),
+  name: z.string().min(2).max(200),
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(6).max(128),
   plan: z.enum(["INICIA", "DESPACHO", "FIRMA"]).default("INICIA"),
+  acceptTerms: z.literal(true, {
+    errorMap: () => ({ message: "Debe aceptar los terminos y la politica de privacidad" }),
+  }),
 });
 
 export async function POST(req: NextRequest) {
@@ -32,6 +39,7 @@ export async function POST(req: NextRequest) {
     }
 
     const passwordHash = await bcrypt.hash(data.password, 12);
+    const trialEnd = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
 
     const result = await prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
@@ -47,11 +55,52 @@ export async function POST(req: NextRequest) {
       });
 
       await tx.subscription.create({
-        data: { orgId: org.id, plan: data.plan, status: "active" },
+        data: {
+          orgId: org.id,
+          plan: data.plan,
+          status: "trialing",
+          currentPeriodEnd: trialEnd,
+        },
       });
 
       return { org, user };
     });
+
+    logAudit({
+      orgId: result.org.id,
+      userId: result.user.id,
+      action: "org.created",
+      details: `Plan ${data.plan}, trial ${TRIAL_DAYS} dias`,
+    }).catch(console.error);
+
+    sendWelcomeEmail({
+      email: data.email,
+      name: data.name,
+      orgName: data.orgName,
+      plan: data.plan,
+      trialDays: TRIAL_DAYS,
+    }).catch(console.error);
+
+    const notifyEmail = process.env.LEADS_NOTIFY_EMAIL;
+    if (notifyEmail) {
+      const { sendEmail } = await import("@/lib/email");
+      sendEmail({
+        to: notifyEmail,
+        subject: `Nuevo registro — ${data.orgName} (${data.plan})`,
+        html: `
+          <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+            <p style="background:#16a34a;color:white;padding:6px 12px;display:inline-block;border-radius:4px;font-size:12px;font-weight:700;">NUEVO REGISTRO</p>
+            <h2 style="color:#1a1a2e;margin-top:12px;">Nueva cuenta creada</h2>
+            <table style="border-collapse:collapse;margin:16px 0;font-size:14px;">
+              <tr><td style="padding:4px 16px 4px 0;color:#666;">Organizacion</td><td><strong>${data.orgName}</strong></td></tr>
+              <tr><td style="padding:4px 16px 4px 0;color:#666;">Contacto</td><td>${data.name} &lt;${data.email}&gt;</td></tr>
+              <tr><td style="padding:4px 16px 4px 0;color:#666;">Plan</td><td><strong>${data.plan}</strong></td></tr>
+              <tr><td style="padding:4px 16px 4px 0;color:#666;">Trial</td><td>${TRIAL_DAYS} dias</td></tr>
+            </table>
+          </div>
+        `,
+      }).catch(console.error);
+    }
 
     return NextResponse.json({ orgId: result.org.id, userId: result.user.id }, { status: 201 });
   } catch (error) {
