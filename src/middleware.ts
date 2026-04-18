@@ -47,9 +47,20 @@ export function middleware(req: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+  response.headers.set("x-pathname", pathname);
+  return response;
 }
 
 export const config = {
-  matcher: ["/api/auth/:path*", "/api/register"],
+  matcher: [
+    "/api/auth/:path*",
+    "/api/register",
+    "/dashboard/:path*",
+    "/cases/:path*",
+    "/billing/:path*",
+    "/users/:path*",
+    "/settings/:path*",
+    "/admin/:path*",
+  ],
 };
