@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import { PLAN_PRICING } from "@/lib/stripe";
+import { ROLE_LABELS } from "@/lib/constants";
 import { InviteForm } from "./invite-form";
 import { MemberRow } from "./member-row";
 
@@ -28,14 +29,6 @@ export default async function UsersPage() {
   const maxUsers = PLAN_PRICING[plan]?.maxUsers ?? 2;
   const canInvite = hasPermission(session.user.role, "org.members.invite") && members.length < maxUsers;
   const canManage = hasPermission(session.user.role, "org.members");
-
-  const roleLabels: Record<string, string> = {
-    OWNER: "Owner",
-    MANAGER: "Manager",
-    OPERATOR: "Operador",
-    VIEWER: "Viewer",
-    MANAGED_OPS: "Managed Ops",
-  };
 
   return (
     <div>
@@ -82,7 +75,7 @@ export default async function UsersPage() {
                   name={m.user.name}
                   email={m.user.email}
                   role={m.role}
-                  roleLabel={roleLabels[m.role] ?? m.role}
+                  roleLabel={ROLE_LABELS[m.role] ?? m.role}
                   joinedAt={m.createdAt.toLocaleDateString("es-ES")}
                   isSelf={m.user.id === session.user.id}
                   canManage={canManage}
@@ -106,7 +99,7 @@ export default async function UsersPage() {
                   m.role === "MANAGER" ? "bg-blue-100 text-blue-700" :
                   "bg-gray-100 text-gray-700"
                 }`}>
-                  {roleLabels[m.role] ?? m.role}
+                  {ROLE_LABELS[m.role] ?? m.role}
                 </span>
               </div>
               {canManage && m.user.id !== session.user.id && (
@@ -115,7 +108,7 @@ export default async function UsersPage() {
                   name={m.user.name}
                   email={m.user.email}
                   role={m.role}
-                  roleLabel={roleLabels[m.role] ?? m.role}
+                  roleLabel={ROLE_LABELS[m.role] ?? m.role}
                   joinedAt={m.createdAt.toLocaleDateString("es-ES")}
                   isSelf={false}
                   canManage={canManage}

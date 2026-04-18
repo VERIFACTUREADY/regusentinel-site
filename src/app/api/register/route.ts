@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
-import { sendWelcomeEmail } from "@/lib/email";
+import { sendWelcomeEmail, sendEmail } from "@/lib/email";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -83,7 +83,6 @@ export async function POST(req: NextRequest) {
 
     const notifyEmail = process.env.LEADS_NOTIFY_EMAIL;
     if (notifyEmail) {
-      const { sendEmail } = await import("@/lib/email");
       sendEmail({
         to: notifyEmail,
         subject: `Nuevo registro — ${data.orgName} (${data.plan})`,

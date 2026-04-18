@@ -2,22 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-const ROLES = [
-  { value: "OWNER", label: "Owner" },
-  { value: "MANAGER", label: "Manager" },
-  { value: "OPERATOR", label: "Operador" },
-  { value: "VIEWER", label: "Viewer" },
-  { value: "MANAGED_OPS", label: "Managed Ops" },
-];
-
-const roleBadge: Record<string, string> = {
-  OWNER: "bg-purple-100 text-purple-700",
-  MANAGER: "bg-blue-100 text-blue-700",
-  OPERATOR: "bg-green-100 text-green-700",
-  VIEWER: "bg-gray-100 text-gray-600",
-  MANAGED_OPS: "bg-orange-100 text-orange-700",
-};
+import { ALL_ROLES, ROLE_BADGE_COLORS } from "@/lib/constants";
 
 interface Props {
   userId: string;
@@ -85,7 +70,7 @@ export function MemberRow({ userId, name, email, role, roleLabel, joinedAt, isSe
           disabled={changing}
           className="text-xs border rounded px-2 py-1 flex-1"
         >
-          {ROLES.map((r) => (
+          {ALL_ROLES.map((r) => (
             <option key={r.value} value={r.value}>{r.label}</option>
           ))}
         </select>
@@ -111,14 +96,14 @@ export function MemberRow({ userId, name, email, role, roleLabel, joinedAt, isSe
             value={role}
             onChange={(e) => changeRole(e.target.value)}
             disabled={changing}
-            className={`text-xs px-2 py-1 rounded-full border-0 ${roleBadge[role] ?? "bg-gray-100"} cursor-pointer`}
+            className={`text-xs px-2 py-1 rounded-full border-0 ${ROLE_BADGE_COLORS[role] ?? "bg-gray-100"} cursor-pointer`}
           >
-            {ROLES.map((r) => (
+            {ALL_ROLES.map((r) => (
               <option key={r.value} value={r.value}>{r.label}</option>
             ))}
           </select>
         ) : (
-          <span className={`text-xs px-2 py-1 rounded-full ${roleBadge[role] ?? "bg-gray-100"}`}>
+          <span className={`text-xs px-2 py-1 rounded-full ${ROLE_BADGE_COLORS[role] ?? "bg-gray-100"}`}>
             {roleLabel}{isSelf ? " (tu)" : ""}
           </span>
         )}

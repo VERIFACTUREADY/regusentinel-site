@@ -3,8 +3,8 @@ import type { NextRequest } from "next/server";
 
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
-const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
-const RATE_LIMIT_MAX = 10; // max attempts per window
+const RATE_LIMIT_WINDOW = 15 * 60 * 1000;
+const RATE_LIMIT_MAX = 10;
 
 const RATE_LIMITED_PATHS = [
   "/api/auth/forgot-password",
@@ -27,29 +27,34 @@ export function middleware(req: NextRequest) {
     const now = Date.now();
     const entry = rateLimitMap.get(key);
 
-    if (entry && now < entry.resetAt) {
-      if (entry.count >= RATE_LIMIT_MAX) {
+    if (entry) {
+      if (now >= entry.resetAt) {
+        rateLimitMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
+      } else if (entry.count >= RATE_LIMIT_MAX) {
         return NextResponse.json(
           { error: "Demasiados intentos. Espera unos minutos." },
           { status: 429 }
         );
+      } else {
+        entry.count++;
       }
-      entry.count++;
     } else {
       rateLimitMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
     }
 
-    // Cleanup old entries periodically
-    if (rateLimitMap.size > 10000) {
+    if (rateLimitMap.size > 1000) {
       rateLimitMap.forEach((v, k) => {
         if (now >= v.resetAt) rateLimitMap.delete(k);
       });
     }
   }
 
-  const response = NextResponse.next();
-  response.headers.set("x-pathname", pathname);
-  return response;
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", pathname);
+
+  return NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 }
 
 export const config = {

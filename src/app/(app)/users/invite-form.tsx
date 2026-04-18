@@ -2,13 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-const ROLES = [
-  { value: "OPERATOR", label: "Operador" },
-  { value: "MANAGER", label: "Manager" },
-  { value: "VIEWER", label: "Viewer" },
-  { value: "MANAGED_OPS", label: "Managed Ops" },
-];
+import { INVITABLE_ROLES } from "@/lib/constants";
 
 export function InviteForm() {
   const [open, setOpen] = useState(false);
@@ -74,7 +68,7 @@ export function InviteForm() {
           onChange={(e) => setRole(e.target.value)}
           className="px-3 py-2 border rounded-md text-sm"
         >
-          {ROLES.map((r) => (
+          {INVITABLE_ROLES.map((r) => (
             <option key={r.value} value={r.value}>{r.label}</option>
           ))}
         </select>

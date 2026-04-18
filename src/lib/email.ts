@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { PLAN_LABELS } from "./constants";
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -357,12 +358,6 @@ export async function sendWelcomeEmail({
   plan: string;
   trialDays: number;
 }) {
-  const planLabels: Record<string, string> = {
-    INICIA: "Inicia",
-    DESPACHO: "Despacho",
-    FIRMA: "Firma",
-  };
-
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
       <div style="background:#1e40af;padding:24px;border-radius:8px 8px 0 0;text-align:center;">
@@ -373,7 +368,7 @@ export async function sendWelcomeEmail({
         <p style="font-size:15px;color:#333;">
           Tu cuenta para <strong>${orgName}</strong> esta lista.
           Tienes <strong>${trialDays} dias de prueba gratuita</strong> del plan
-          <strong>${planLabels[plan] ?? plan}</strong> para explorar todas las funcionalidades.
+          <strong>${PLAN_LABELS[plan] ?? plan}</strong> para explorar todas las funcionalidades.
         </p>
         <div style="background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;margin:24px 0;">
           <p style="margin:0 0 8px;font-weight:600;color:#1e40af;">Primeros pasos:</p>

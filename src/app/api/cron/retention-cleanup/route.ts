@@ -10,42 +10,39 @@ export async function GET(req: NextRequest) {
   }
 
   const now = new Date();
-  let totalCleaned = 0;
-  const orgResults: { name: string; cleaned: number; retentionDays: number }[] = [];
 
   const orgs = await prisma.organization.findMany({
     select: { id: true, name: true, retentionDays: true },
   });
 
-  for (const org of orgs) {
-    const cutoff = new Date(now.getTime() - org.retentionDays * 24 * 60 * 60 * 1000);
+  const results = await Promise.all(
+    orgs.map(async (org) => {
+      const cutoff = new Date(now.getTime() - org.retentionDays * 24 * 60 * 60 * 1000);
 
-    // Soft-delete closed cases older than the retention period
-    const result = await prisma.case.updateMany({
-      where: {
-        orgId: org.id,
-        status: "CLOSED",
-        closedAt: { lt: cutoff },
-        deletedAt: null,
-      },
-      data: { deletedAt: now },
-    });
-
-    if (result.count > 0) {
-      totalCleaned += result.count;
-      orgResults.push({
-        name: org.name,
-        cleaned: result.count,
-        retentionDays: org.retentionDays,
+      const result = await prisma.case.updateMany({
+        where: {
+          orgId: org.id,
+          status: "CLOSED",
+          closedAt: { lt: cutoff },
+          deletedAt: null,
+        },
+        data: { deletedAt: now },
       });
 
-      await logAudit({
-        orgId: org.id,
-        action: "retention.cleanup",
-        details: `${result.count} expediente(s) archivado(s) (retencion: ${org.retentionDays} dias)`,
-      }).catch(console.error);
-    }
-  }
+      if (result.count > 0) {
+        await logAudit({
+          orgId: org.id,
+          action: "retention.cleanup",
+          details: `${result.count} expediente(s) archivado(s) (retencion: ${org.retentionDays} dias)`,
+        }).catch(console.error);
+      }
+
+      return { name: org.name, cleaned: result.count, retentionDays: org.retentionDays };
+    }),
+  );
+
+  const orgResults = results.filter((r) => r.cleaned > 0);
+  const totalCleaned = orgResults.reduce((sum, r) => sum + r.cleaned, 0);
 
   if (totalCleaned > 0) {
     const notifyEmail = process.env.LEADS_NOTIFY_EMAIL;
