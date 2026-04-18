@@ -226,8 +226,9 @@ export default async function DashboardPage() {
 
       {/* Recent audit */}
       <div className="bg-white rounded-lg border">
-        <div className="px-6 py-4 border-b">
+        <div className="px-6 py-4 border-b flex justify-between items-center">
           <h2 className="font-semibold">Actividad reciente</h2>
+          <Link href="/audit" className="text-sm text-primary hover:underline">Ver todo</Link>
         </div>
         <div className="divide-y">
           {recentLogs.map((log) => (

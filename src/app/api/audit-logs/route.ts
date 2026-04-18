@@ -17,14 +17,36 @@ export async function GET(req: NextRequest) {
   const page = parseInt(url.searchParams.get("page") || "1");
   const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 100);
   const caseId = url.searchParams.get("caseId");
+  const action = url.searchParams.get("action");
+  const userId = url.searchParams.get("userId");
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+  const search = url.searchParams.get("search");
 
   const where: Record<string, unknown> = { orgId: session.user.orgId };
   if (caseId) where.caseId = caseId;
+  if (userId) where.userId = userId === "system" ? null : userId;
+  if (action) where.action = { startsWith: action };
+  if (from || to) {
+    where.createdAt = {
+      ...(from ? { gte: new Date(from) } : {}),
+      ...(to ? { lte: new Date(to + "T23:59:59.999Z") } : {}),
+    };
+  }
+  if (search) {
+    where.OR = [
+      { action: { contains: search, mode: "insensitive" } },
+      { details: { contains: search, mode: "insensitive" } },
+    ];
+  }
 
   const [logs, total] = await Promise.all([
     prisma.auditLog.findMany({
       where: where as any,
-      include: { user: { select: { name: true, email: true } } },
+      include: {
+        user: { select: { name: true, email: true } },
+        case: { select: { ref: true } },
+      },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
       take: limit,
