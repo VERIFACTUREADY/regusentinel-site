@@ -172,17 +172,21 @@ export default function GeneralSettingsPage() {
 
       {/* Data export */}
       <div className="bg-white p-6 rounded-lg border">
-        <h2 className="font-semibold mb-2">Exportacion de datos</h2>
+        <h2 className="font-semibold mb-2">Exportacion de datos (RGPD)</h2>
         <p className="text-sm text-gray-500 mb-4">
-          Puedes solicitar una exportacion completa de todos los datos de tu organizacion
-          en formato JSON. El archivo se enviara por email al propietario de la cuenta.
+          Descarga una copia completa de todos los datos de tu organizacion en formato JSON:
+          expedientes, tareas, documentos, miembros, plantillas, y registros de actividad.
         </p>
-        <button
-          className="px-4 py-2 border border-gray-300 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50"
-          onClick={() => alert("Funcionalidad disponible proximamente. Contacta soporte@baritur.pro.")}
+        <a
+          href="/api/export"
+          download
+          className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50"
         >
-          Solicitar exportacion
-        </button>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Descargar exportacion JSON
+        </a>
       </div>
     </div>
   );
