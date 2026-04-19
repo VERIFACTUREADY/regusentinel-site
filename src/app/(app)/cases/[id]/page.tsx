@@ -26,13 +26,19 @@ export default function CaseDetailPage() {
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<any[]>([]);
   const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
+  const [notesInput, setNotesInput] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
 
   useEffect(() => { fetchCase(); fetchTemplates(); fetchMembers(); }, [caseId]);
 
   async function fetchCase() {
     setLoading(true);
     const res = await fetch(`/api/cases/${caseId}`);
-    if (res.ok) setCaseData(await res.json());
+    if (res.ok) {
+      const data = await res.json();
+      setCaseData(data);
+      setNotesInput(data.notes || "");
+    }
     setLoading(false);
   }
   async function fetchTemplates() {
@@ -66,6 +72,15 @@ export default function CaseDetailPage() {
       body: JSON.stringify({ taskId, assigneeId }),
     });
     fetchCase();
+  }
+
+  async function saveNotes() {
+    setNotesSaving(true);
+    await fetch(`/api/cases/${caseId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes: notesInput }),
+    });
+    setNotesSaving(false);
   }
 
   async function generateChecklist() {
@@ -223,6 +238,30 @@ export default function CaseDetailPage() {
               </div>
             </div>
           )}
+
+          {/* Notes */}
+          <div className="md:col-span-2 bg-white p-6 rounded-lg border">
+            <h3 className="font-semibold mb-3">Notas internas</h3>
+            <textarea
+              value={notesInput}
+              onChange={(e) => setNotesInput(e.target.value)}
+              rows={4}
+              placeholder="Anota observaciones, instrucciones internas o recordatorios sobre este expediente..."
+              className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <div className="flex items-center gap-3 mt-2">
+              <button
+                onClick={saveNotes}
+                disabled={notesSaving || notesInput === (caseData?.notes || "")}
+                className="px-4 py-1.5 bg-primary text-white text-sm rounded-md hover:bg-primary/90 disabled:opacity-50"
+              >
+                {notesSaving ? "Guardando..." : "Guardar notas"}
+              </button>
+              {notesInput !== (caseData?.notes || "") && (
+                <span className="text-xs text-gray-400">Sin guardar</span>
+              )}
+            </div>
+          </div>
 
           {/* Pipeline visualization */}
           <div className="md:col-span-2 bg-white p-6 rounded-lg border">

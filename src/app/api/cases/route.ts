@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
+  const category = url.searchParams.get("category");
   const search = url.searchParams.get("search");
   const page = parseInt(url.searchParams.get("page") || "1");
   const limit = Math.min(parseInt(url.searchParams.get("limit") || "25"), 100);
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
     { orgId: session.user.orgId, deletedAt: null },
   ];
   if (status) conditions.push({ status });
+  if (category) conditions.push({ categories: { has: category } });
   if (search) {
     conditions.push({
       OR: [

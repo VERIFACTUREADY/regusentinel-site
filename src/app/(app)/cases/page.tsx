@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { CASE_STATUS_COLORS } from "@/lib/constants";
+import { CASE_STATUS_COLORS, ALL_CATEGORIES } from "@/lib/constants";
 
 const STATUS_OPTIONS = [
   { value: "", label: "Todos los estados" },
@@ -17,11 +17,17 @@ const STATUS_OPTIONS = [
   { value: "ARCHIVED", label: "Archivado" },
 ];
 
+const CATEGORY_OPTIONS = [
+  { value: "", label: "Todas las categorias" },
+  ...ALL_CATEGORIES,
+];
+
 interface CaseItem {
   id: string;
   ref: string;
   status: string;
   isUrgent: boolean;
+  categories: string[];
   createdAt: string;
   deceased?: { fullName: string } | null;
   contact?: { fullName: string } | null;
@@ -36,6 +42,7 @@ export default function CasesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -46,6 +53,7 @@ export default function CasesPage() {
     params.set("page", String(page));
     params.set("limit", String(PAGE_SIZE));
     if (statusFilter) params.set("status", statusFilter);
+    if (categoryFilter) params.set("category", categoryFilter);
     if (search) params.set("search", search);
 
     fetch(`/api/cases?${params}`, { signal: controller.signal })
@@ -62,7 +70,7 @@ export default function CasesPage() {
       });
 
     return () => controller.abort();
-  }, [page, statusFilter, search]);
+  }, [page, statusFilter, categoryFilter, search]);
 
   function handleSearchInput(value: string) {
     setSearchInput(value);
@@ -71,6 +79,32 @@ export default function CasesPage() {
       setSearch(value);
       setPage(1);
     }, 300);
+  }
+
+  function exportCSV() {
+    const esc = (v: string) => {
+      if (v.includes(",") || v.includes('"') || v.includes("\n")) {
+        return `"${v.replace(/"/g, '""')}"`;
+      }
+      return v;
+    };
+    const header = ["Referencia", "Fallecido", "Solicitante", "Estado", "Urgente", "Fecha"];
+    const rows = cases.map((c) => [
+      esc(c.ref),
+      esc(c.deceased?.fullName || ""),
+      esc(c.contact?.fullName || ""),
+      esc(STATUS_OPTIONS.find((s) => s.value === c.status)?.label || c.status),
+      c.isUrgent ? "Si" : "No",
+      new Date(c.createdAt).toLocaleDateString("es-ES"),
+    ]);
+    const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `expedientes-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 500);
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -83,6 +117,13 @@ export default function CasesPage() {
           <p className="text-sm text-gray-500 mt-1">{total} expediente{total !== 1 ? "s" : ""}</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={exportCSV}
+            disabled={cases.length === 0}
+            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm font-medium disabled:opacity-50"
+          >
+            Exportar CSV
+          </button>
           <Link href="/cases/import"
             className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm font-medium text-center">
             Importar CSV
@@ -110,6 +151,15 @@ export default function CasesPage() {
         >
           {STATUS_OPTIONS.map((s) => (
             <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+        <select
+          value={categoryFilter}
+          onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+        >
+          {CATEGORY_OPTIONS.map((c) => (
+            <option key={c.value} value={c.value}>{c.label}</option>
           ))}
         </select>
       </div>
