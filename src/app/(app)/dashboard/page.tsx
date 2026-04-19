@@ -5,6 +5,7 @@ import { getOnboardingState } from "@/lib/onboarding";
 import { OnboardingPanel } from "@/components/dashboard/onboarding-panel";
 import { DemoHighlights } from "@/components/dashboard/demo-highlights";
 import { MyTasksWidget } from "@/components/dashboard/my-tasks-widget";
+import { UsageWidget } from "@/components/dashboard/usage-widget";
 import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import { CASE_STATUS_COLORS } from "@/lib/constants";
 import Link from "next/link";
@@ -155,7 +156,14 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      <MyTasksWidget initialTasks={myTasks as any} />
+      <div className="grid lg:grid-cols-4 gap-6 mb-8">
+        <div className="lg:col-span-3">
+          <MyTasksWidget initialTasks={myTasks as any} />
+        </div>
+        <div>
+          <UsageWidget />
+        </div>
+      </div>
 
       {/* Deadline alerts */}
       {upcomingDeadlines.length > 0 && (

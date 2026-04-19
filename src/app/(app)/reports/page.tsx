@@ -59,6 +59,7 @@ export default async function ReportsPage() {
     docCount,
     notifsSent,
     notifsThisMonth,
+    teamWorkload,
   ] = await Promise.all([
     prisma.case.count({ where: { orgId, deletedAt: null } }),
     prisma.case.count({ where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } } }),
@@ -85,7 +86,36 @@ export default async function ReportsPage() {
     prisma.document.count({ where: { case: { orgId, deletedAt: null } } }),
     prisma.notificationLog.count({ where: { orgId } }),
     prisma.notificationLog.count({ where: { orgId, createdAt: { gte: startOfMonth } } }),
+    prisma.task.groupBy({
+      by: ["assigneeId", "status"],
+      where: { case: { orgId, deletedAt: null }, assigneeId: { not: null } },
+      _count: true,
+    }),
   ]);
+
+  const members = await prisma.membership.findMany({
+    where: { orgId },
+    select: { userId: true, user: { select: { name: true, email: true } } },
+  });
+  const memberMap = Object.fromEntries(
+    members.map((m) => [m.userId, m.user.name || m.user.email])
+  );
+
+  const workloadByUser: Record<string, { active: number; done: number; blocked: number; total: number }> = {};
+  for (const row of teamWorkload) {
+    if (!row.assigneeId) continue;
+    if (!workloadByUser[row.assigneeId]) {
+      workloadByUser[row.assigneeId] = { active: 0, done: 0, blocked: 0, total: 0 };
+    }
+    const entry = workloadByUser[row.assigneeId];
+    entry.total += row._count;
+    if (row.status === "DONE" || row.status === "SKIPPED") entry.done += row._count;
+    else if (row.status === "BLOCKED") entry.blocked += row._count;
+    else entry.active += row._count;
+  }
+  const workloadEntries = Object.entries(workloadByUser)
+    .map(([userId, stats]) => ({ userId, name: memberMap[userId] || userId, ...stats }))
+    .sort((a, b) => b.active - a.active);
 
   const avgResolutionDays = recentClosed.length > 0
     ? Math.round(
@@ -198,6 +228,74 @@ export default async function ReportsPage() {
           )}
         </div>
       </div>
+
+      {/* Team workload */}
+      {workloadEntries.length > 0 && (
+        <div className="bg-white rounded-lg border p-6 mb-8">
+          <h2 className="font-semibold mb-4">Carga de trabajo por miembro</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-gray-500">
+                  <th className="pb-3 font-medium">Miembro</th>
+                  <th className="pb-3 font-medium text-center">Activas</th>
+                  <th className="pb-3 font-medium text-center">Bloqueadas</th>
+                  <th className="pb-3 font-medium text-center">Completadas</th>
+                  <th className="pb-3 font-medium text-center">Total</th>
+                  <th className="pb-3 font-medium text-center">Tasa cierre</th>
+                  <th className="pb-3 font-medium w-48">Distribucion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {workloadEntries.map((entry) => {
+                  const completionRate = entry.total > 0 ? Math.round((entry.done / entry.total) * 100) : 0;
+                  const activePct = entry.total > 0 ? (entry.active / entry.total) * 100 : 0;
+                  const blockedPct = entry.total > 0 ? (entry.blocked / entry.total) * 100 : 0;
+                  const donePct = entry.total > 0 ? (entry.done / entry.total) * 100 : 0;
+                  return (
+                    <tr key={entry.userId} className="border-b last:border-0">
+                      <td className="py-3 font-medium text-gray-900">{entry.name}</td>
+                      <td className="py-3 text-center">
+                        <span className="inline-flex items-center justify-center w-8 h-6 bg-blue-100 text-blue-700 rounded text-xs font-semibold">
+                          {entry.active}
+                        </span>
+                      </td>
+                      <td className="py-3 text-center">
+                        <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-semibold ${entry.blocked > 0 ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-400"}`}>
+                          {entry.blocked}
+                        </span>
+                      </td>
+                      <td className="py-3 text-center">
+                        <span className="inline-flex items-center justify-center w-8 h-6 bg-green-100 text-green-700 rounded text-xs font-semibold">
+                          {entry.done}
+                        </span>
+                      </td>
+                      <td className="py-3 text-center font-medium">{entry.total}</td>
+                      <td className="py-3 text-center">
+                        <span className={`font-semibold ${completionRate >= 70 ? "text-green-600" : completionRate >= 40 ? "text-orange-600" : "text-gray-500"}`}>
+                          {completionRate}%
+                        </span>
+                      </td>
+                      <td className="py-3">
+                        <div className="flex h-4 rounded-full overflow-hidden">
+                          {donePct > 0 && <div className="bg-green-400" style={{ width: `${donePct}%` }} title={`Completadas: ${entry.done}`} />}
+                          {activePct > 0 && <div className="bg-blue-400" style={{ width: `${activePct}%` }} title={`Activas: ${entry.active}`} />}
+                          {blockedPct > 0 && <div className="bg-red-400" style={{ width: `${blockedPct}%` }} title={`Bloqueadas: ${entry.blocked}`} />}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center gap-4 mt-4 text-xs text-gray-400">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-400 rounded" /> Completadas</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-400 rounded" /> Activas</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-red-400 rounded" /> Bloqueadas</span>
+          </div>
+        </div>
+      )}
 
       {/* Bottom row */}
       <div className="grid lg:grid-cols-3 gap-6">

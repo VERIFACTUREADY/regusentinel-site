@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { SearchModal } from "./search-modal";
+import { NotificationBell } from "./notification-bell";
 import type { Session } from "next-auth";
 
 const navItems = [
@@ -168,6 +169,7 @@ export function AppShell({
                 Buscar...
                 <kbd className="text-xs border rounded px-1 py-0.5 ml-1">⌘K</kbd>
               </button>
+              <NotificationBell />
               <span className="text-sm text-gray-600 hidden sm:inline">{session.user.name || session.user.email}</span>
               <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-500">{session.user.role}</span>
               <button onClick={() => signOut({ callbackUrl: "/login" })}
