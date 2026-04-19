@@ -379,7 +379,21 @@ export default function CaseDetailPage() {
           ));
           })()}
           {caseData.tasks.length === 0 && (
-            <p className="text-center text-gray-400 py-8">No hay tareas asignadas a este expediente.</p>
+            <div className="text-center py-12 bg-white rounded-lg border">
+              <svg className="w-12 h-12 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              <p className="text-gray-400 mb-4">No hay tareas asignadas a este expediente.</p>
+              <button
+                onClick={generateChecklist}
+                className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md hover:bg-purple-700 inline-flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                Generar checklist con IA
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -582,16 +596,39 @@ export default function CaseDetailPage() {
       )}
 
       {tab === "activity" && (
-        <div className="bg-white rounded-lg border divide-y">
-          {caseData.auditLogs.map((log: any) => (
-            <div key={log.id} className="px-6 py-3 flex justify-between text-sm">
-              <div>
-                <span className="font-medium">{log.action}</span>
-                {log.details && <span className="text-gray-500 ml-2">{log.details}</span>}
-              </div>
-              <span className="text-gray-400 text-xs">{new Date(log.createdAt).toLocaleString("es-ES")}</span>
-            </div>
-          ))}
+        <div className="space-y-0">
+          <div className="relative">
+            <div className="absolute left-5 top-0 bottom-0 w-px bg-gray-200" />
+            {caseData.auditLogs.map((log: any, i: number) => {
+              const isCreate = log.action.includes("created");
+              const isStatus = log.action.includes("status");
+              const isTask = log.action.includes("task");
+              const isDelete = log.action.includes("delete");
+              const isAssign = log.action.includes("assign");
+              const iconColor = isCreate ? "bg-green-500" : isDelete ? "bg-red-500" : isStatus ? "bg-blue-500" : isTask ? "bg-purple-500" : isAssign ? "bg-cyan-500" : "bg-gray-400";
+              const now = Date.now();
+              const logTime = new Date(log.createdAt).getTime();
+              const diffMin = Math.floor((now - logTime) / 60000);
+              const relativeTime = diffMin < 1 ? "ahora" : diffMin < 60 ? `hace ${diffMin}m` : diffMin < 1440 ? `hace ${Math.floor(diffMin / 60)}h` : new Date(log.createdAt).toLocaleString("es-ES");
+
+              return (
+                <div key={log.id} className="relative flex gap-4 pb-6 last:pb-0">
+                  <div className={`relative z-10 w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ml-[14px] ${iconColor}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-sm">
+                        <span className="font-medium text-gray-900">{log.action.replace(/\./g, " · ")}</span>
+                      </p>
+                      <span className="text-xs text-gray-400 shrink-0">{relativeTime}</span>
+                    </div>
+                    {log.details && (
+                      <p className="text-sm text-gray-500 mt-0.5">{log.details}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
           {caseData.auditLogs.length === 0 && (
             <p className="px-6 py-8 text-center text-gray-400">Sin actividad registrada</p>
           )}
