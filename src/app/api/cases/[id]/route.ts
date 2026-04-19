@@ -29,7 +29,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       },
       documents: { include: { task: { select: { id: true, title: true, category: true } } } },
       approvals: true,
-      auditLogs: { orderBy: { createdAt: "desc" }, take: 50 },
+      auditLogs: {
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        include: { user: { select: { name: true, email: true } } },
+      },
     },
   });
 
@@ -60,7 +64,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         },
         documents: { include: { task: { select: { id: true, title: true, category: true } } } },
         approvals: true,
-        auditLogs: { orderBy: { createdAt: "desc" }, take: 50 },
+        auditLogs: {
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        include: { user: { select: { name: true, email: true } } },
+      },
       },
     });
     // Add case-level deadlines

@@ -28,6 +28,8 @@ export default function CaseDetailPage() {
   const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
   const [notesInput, setNotesInput] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
+  const [commentInput, setCommentInput] = useState("");
+  const [commentSaving, setCommentSaving] = useState(false);
 
   useEffect(() => { fetchCase(); fetchTemplates(); fetchMembers(); }, [caseId]);
 
@@ -81,6 +83,21 @@ export default function CaseDetailPage() {
       body: JSON.stringify({ notes: notesInput }),
     });
     setNotesSaving(false);
+  }
+
+  async function postComment() {
+    if (!commentInput.trim()) return;
+    setCommentSaving(true);
+    const res = await fetch(`/api/cases/${caseId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: commentInput.trim() }),
+    });
+    if (res.ok) {
+      setCommentInput("");
+      fetchCase();
+    }
+    setCommentSaving(false);
   }
 
   async function generateChecklist() {
@@ -596,20 +613,60 @@ export default function CaseDetailPage() {
       )}
 
       {tab === "activity" && (
-        <div className="space-y-0">
+        <div>
+          {/* Comment input */}
+          <div className="bg-white rounded-lg border p-4 mb-6">
+            <textarea
+              value={commentInput}
+              onChange={(e) => setCommentInput(e.target.value)}
+              rows={2}
+              placeholder="Escribe un comentario interno..."
+              className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) postComment(); }}
+            />
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs text-gray-400">Cmd+Enter para enviar</span>
+              <button
+                onClick={postComment}
+                disabled={commentSaving || !commentInput.trim()}
+                className="px-3 py-1.5 bg-primary text-white text-sm rounded-md hover:bg-primary/90 disabled:opacity-50"
+              >
+                {commentSaving ? "Enviando..." : "Comentar"}
+              </button>
+            </div>
+          </div>
+
+          {/* Timeline */}
           <div className="relative">
             <div className="absolute left-5 top-0 bottom-0 w-px bg-gray-200" />
-            {caseData.auditLogs.map((log: any, i: number) => {
+            {caseData.auditLogs.map((log: any) => {
+              const isComment = log.action === "case.comment";
               const isCreate = log.action.includes("created");
               const isStatus = log.action.includes("status");
               const isTask = log.action.includes("task");
               const isDelete = log.action.includes("delete");
               const isAssign = log.action.includes("assign");
-              const iconColor = isCreate ? "bg-green-500" : isDelete ? "bg-red-500" : isStatus ? "bg-blue-500" : isTask ? "bg-purple-500" : isAssign ? "bg-cyan-500" : "bg-gray-400";
+              const iconColor = isComment ? "bg-primary" : isCreate ? "bg-green-500" : isDelete ? "bg-red-500" : isStatus ? "bg-blue-500" : isTask ? "bg-purple-500" : isAssign ? "bg-cyan-500" : "bg-gray-400";
               const now = Date.now();
               const logTime = new Date(log.createdAt).getTime();
               const diffMin = Math.floor((now - logTime) / 60000);
               const relativeTime = diffMin < 1 ? "ahora" : diffMin < 60 ? `hace ${diffMin}m` : diffMin < 1440 ? `hace ${Math.floor(diffMin / 60)}h` : new Date(log.createdAt).toLocaleString("es-ES");
+              const userName = log.user?.name || log.user?.email || "Sistema";
+
+              if (isComment) {
+                return (
+                  <div key={log.id} className="relative flex gap-4 pb-6 last:pb-0">
+                    <div className={`relative z-10 w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ml-[14px] ${iconColor}`} />
+                    <div className="flex-1 min-w-0 bg-blue-50 rounded-lg p-3 border border-blue-100">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-sm font-medium text-gray-900">{userName}</span>
+                        <span className="text-xs text-gray-400 shrink-0">{relativeTime}</span>
+                      </div>
+                      <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{log.details}</p>
+                    </div>
+                  </div>
+                );
+              }
 
               return (
                 <div key={log.id} className="relative flex gap-4 pb-6 last:pb-0">
@@ -617,6 +674,8 @@ export default function CaseDetailPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline justify-between gap-2">
                       <p className="text-sm">
+                        <span className="text-gray-500">{userName}</span>
+                        <span className="mx-1.5 text-gray-300">·</span>
                         <span className="font-medium text-gray-900">{log.action.replace(/\./g, " · ")}</span>
                       </p>
                       <span className="text-xs text-gray-400 shrink-0">{relativeTime}</span>
