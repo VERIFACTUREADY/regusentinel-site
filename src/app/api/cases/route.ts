@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
   const status = url.searchParams.get("status");
   const category = url.searchParams.get("category");
   const search = url.searchParams.get("search");
+  const urgent = url.searchParams.get("urgent");
   const page = parseInt(url.searchParams.get("page") || "1");
   const limit = Math.min(parseInt(url.searchParams.get("limit") || "25"), 100);
 
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
   ];
   if (status) conditions.push({ status });
   if (category) conditions.push({ categories: { has: category } });
+  if (urgent === "true") conditions.push({ isUrgent: true });
   if (search) {
     conditions.push({
       OR: [

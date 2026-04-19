@@ -45,11 +45,35 @@ export default function CasesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [urgentFilter, setUrgentFilter] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchLoading, setBatchLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const presets = [
+    { id: "urgent", label: "Urgentes", apply: () => { setUrgentFilter(true); setStatusFilter(""); setCategoryFilter(""); } },
+    { id: "pending_docs", label: "Docs pendientes", apply: () => { setStatusFilter("PENDING_DOCS"); setUrgentFilter(false); setCategoryFilter(""); } },
+    { id: "active", label: "En curso", apply: () => { setStatusFilter("IN_PROGRESS"); setUrgentFilter(false); setCategoryFilter(""); } },
+    { id: "intake", label: "Nuevos", apply: () => { setStatusFilter("INTAKE"); setUrgentFilter(false); setCategoryFilter(""); } },
+    { id: "ready", label: "Listos para enviar", apply: () => { setStatusFilter("READY_TO_SEND"); setUrgentFilter(false); setCategoryFilter(""); } },
+    { id: "closed", label: "Cerrados", apply: () => { setStatusFilter("CLOSED"); setUrgentFilter(false); setCategoryFilter(""); } },
+  ];
+
+  function applyPreset(id: string) {
+    if (activePreset === id) {
+      setActivePreset(null);
+      setStatusFilter("");
+      setUrgentFilter(false);
+      setCategoryFilter("");
+    } else {
+      setActivePreset(id);
+      presets.find((p) => p.id === id)?.apply();
+    }
+    setPage(1);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -60,6 +84,7 @@ export default function CasesPage() {
     if (statusFilter) params.set("status", statusFilter);
     if (categoryFilter) params.set("category", categoryFilter);
     if (search) params.set("search", search);
+    if (urgentFilter) params.set("urgent", "true");
 
     fetch(`/api/cases?${params}`, { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
@@ -76,7 +101,7 @@ export default function CasesPage() {
       });
 
     return () => controller.abort();
-  }, [page, statusFilter, categoryFilter, search, refreshKey]);
+  }, [page, statusFilter, categoryFilter, search, urgentFilter, refreshKey]);
 
   function handleSearchInput(value: string) {
     setSearchInput(value);
@@ -185,6 +210,23 @@ export default function CasesPage() {
         </div>
       </div>
 
+      {/* Quick filter presets */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        {presets.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => applyPreset(p.id)}
+            className={`px-3 py-1 text-xs font-medium rounded-full border transition ${
+              activePreset === p.id
+                ? "bg-primary text-white border-primary"
+                : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <input
@@ -196,7 +238,7 @@ export default function CasesPage() {
         />
         <select
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); setActivePreset(null); setUrgentFilter(false); }}
           className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
         >
           {STATUS_OPTIONS.map((s) => (
@@ -205,7 +247,7 @@ export default function CasesPage() {
         </select>
         <select
           value={categoryFilter}
-          onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+          onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); setActivePreset(null); }}
           className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
         >
           {CATEGORY_OPTIONS.map((c) => (
