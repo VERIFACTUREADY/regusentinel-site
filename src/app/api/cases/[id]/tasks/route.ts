@@ -76,13 +76,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     },
   });
 
-  if (status === "APPROVED" || status === "DONE") {
+  if (status && status !== task.status) {
     await logAudit({
       orgId: session.user.orgId,
       userId: session.user.id,
       caseId: params.id,
       action: `task.${status.toLowerCase()}`,
       details: `Tarea "${task.title}" marcada como ${status}`,
+    });
+  }
+
+  if (assigneeId !== undefined && assigneeId !== task.assigneeId) {
+    await logAudit({
+      orgId: session.user.orgId,
+      userId: session.user.id,
+      caseId: params.id,
+      action: "task.assigned",
+      details: assigneeId
+        ? `Tarea "${task.title}" asignada`
+        : `Tarea "${task.title}" desasignada`,
     });
   }
 

@@ -38,8 +38,9 @@ export default function CaseDetailPage() {
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<any[]>([]);
+  const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
 
-  useEffect(() => { fetchCase(); fetchTemplates(); }, [caseId]);
+  useEffect(() => { fetchCase(); fetchTemplates(); fetchMembers(); }, [caseId]);
 
   async function fetchCase() {
     setLoading(true);
@@ -50,6 +51,10 @@ export default function CaseDetailPage() {
   async function fetchTemplates() {
     const res = await fetch("/api/templates");
     if (res.ok) setTemplates(await res.json());
+  }
+  async function fetchMembers() {
+    const res = await fetch("/api/org/members");
+    if (res.ok) setMembers(await res.json());
   }
 
   async function updateStatus(status: string) {
@@ -64,6 +69,14 @@ export default function CaseDetailPage() {
     await fetch(`/api/cases/${caseId}/tasks`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ taskId, status }),
+    });
+    fetchCase();
+  }
+
+  async function assignTask(taskId: string, assigneeId: string | null) {
+    await fetch(`/api/cases/${caseId}/tasks`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId, assigneeId }),
     });
     fetchCase();
   }
@@ -283,6 +296,11 @@ export default function CaseDetailPage() {
                         )}
                       </div>
                       {task.description && <p className="text-sm text-gray-500 mt-1">{task.description}</p>}
+                      {task.assignee && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          Asignado a: {task.assignee.name || task.assignee.email}
+                        </p>
+                      )}
                       {/* Deadline and blocked info */}
                       <div className="flex flex-wrap gap-2 mt-2">
                         {task.status === "BLOCKED" && task.blockReason && (
@@ -309,6 +327,17 @@ export default function CaseDetailPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-4 shrink-0">
+                      <select
+                        value={task.assigneeId || ""}
+                        onChange={(e) => assignTask(task.id, e.target.value || null)}
+                        className="text-xs px-2 py-1 border rounded max-w-[120px]"
+                        title="Asignar a"
+                      >
+                        <option value="">Sin asignar</option>
+                        {members.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name || m.email}</option>
+                        ))}
+                      </select>
                       <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)}
                         className="text-xs px-2 py-1 border rounded">
                         {taskStatuses.map((s) => <option key={s} value={s}>{s}</option>)}

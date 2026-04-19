@@ -22,7 +22,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       contact: true,
       tasks: {
         orderBy: { sortOrder: "asc" },
-        include: { documents: { select: { id: true, fileName: true } } },
+        include: {
+          documents: { select: { id: true, fileName: true } },
+          assignee: { select: { id: true, name: true, email: true } },
+        },
       },
       documents: { include: { task: { select: { id: true, title: true, category: true } } } },
       approvals: true,
@@ -50,7 +53,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         contact: true,
         tasks: {
           orderBy: { sortOrder: "asc" },
-          include: { documents: { select: { id: true, fileName: true } } },
+          include: {
+            documents: { select: { id: true, fileName: true } },
+            assignee: { select: { id: true, name: true, email: true } },
+          },
         },
         documents: { include: { task: { select: { id: true, title: true, category: true } } } },
         approvals: true,
