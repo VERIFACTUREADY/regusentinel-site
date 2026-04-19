@@ -27,28 +27,18 @@ export function NotificationBell() {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch("/api/notifications/unread")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          setAlerts(data.alerts);
-          setCount(data.unreadCount);
-        }
-      })
-      .catch(() => {});
-
-    const interval = setInterval(() => {
+    function fetchUnread() {
       fetch("/api/notifications/unread")
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
-          if (data) {
-            setAlerts(data.alerts);
-            setCount(data.unreadCount);
-          }
+          if (!data) return;
+          setCount((prev) => (prev !== data.unreadCount ? data.unreadCount : prev));
+          setAlerts(data.alerts);
         })
         .catch(() => {});
-    }, 60000);
-
+    }
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 60000);
     return () => clearInterval(interval);
   }, []);
 

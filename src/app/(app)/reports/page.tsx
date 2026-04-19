@@ -60,6 +60,7 @@ export default async function ReportsPage() {
     notifsSent,
     notifsThisMonth,
     teamWorkload,
+    members,
   ] = await Promise.all([
     prisma.case.count({ where: { orgId, deletedAt: null } }),
     prisma.case.count({ where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } } }),
@@ -91,12 +92,11 @@ export default async function ReportsPage() {
       where: { case: { orgId, deletedAt: null }, assigneeId: { not: null } },
       _count: true,
     }),
+    prisma.membership.findMany({
+      where: { orgId },
+      select: { userId: true, user: { select: { name: true, email: true } } },
+    }),
   ]);
-
-  const members = await prisma.membership.findMany({
-    where: { orgId },
-    select: { userId: true, user: { select: { name: true, email: true } } },
-  });
   const memberMap = Object.fromEntries(
     members.map((m) => [m.userId, m.user.name || m.user.email])
   );

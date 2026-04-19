@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { TASK_STATUS_COLORS, ALL_CATEGORIES } from "@/lib/constants";
 
@@ -62,10 +62,10 @@ export default function TasksPage() {
       .catch(() => {});
   }, []);
 
-  const assigneeOptions = [
+  const assigneeOptions = useMemo(() => [
     ...DEFAULT_ASSIGNEE_OPTIONS,
     ...members.map((m) => ({ value: m.id, label: m.name || m.email })),
-  ];
+  ], [members]);
 
   async function updateTaskStatus(task: TaskItem, newStatus: string) {
     const res = await fetch(`/api/cases/${task.caseId}/tasks`, {

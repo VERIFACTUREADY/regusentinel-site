@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { generateBankPack } from "@/lib/bank-pack";
 import { CASE_STATUS_COLORS, TASK_STATUS_COLORS } from "@/lib/constants";
@@ -31,6 +31,40 @@ export default function CaseDetailPage() {
   const [notesSaving, setNotesSaving] = useState(false);
   const [commentInput, setCommentInput] = useState("");
   const [commentSaving, setCommentSaving] = useState(false);
+
+  const uniqueTasks = useMemo(() => {
+    if (!caseData) return [];
+    const seen = new Set<string>();
+    return caseData.tasks.filter((t: any) => {
+      const key = `${t.category}::${t.title}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [caseData]);
+
+  const taskStats = useMemo(() => {
+    const total = uniqueTasks.length;
+    const done = uniqueTasks.filter((t: any) => t.status === "DONE" || t.status === "SKIPPED").length;
+    const blocked = uniqueTasks.filter((t: any) => t.status === "BLOCKED").length;
+    const inProgress = uniqueTasks.filter((t: any) => t.status === "IN_PROGRESS").length;
+    const overdue = uniqueTasks.filter((t: any) =>
+      t.deadline && t.status !== "DONE" && t.status !== "SKIPPED" && new Date(t.deadline) < new Date()
+    ).length;
+    const progressPct = total > 0 ? Math.round((done / total) * 100) : 0;
+    return { total, done, blocked, inProgress, overdue, progressPct };
+  }, [uniqueTasks]);
+
+  const handleDuplicate = useCallback(async () => {
+    const res = await fetch(`/api/cases/${caseId}/duplicate`, { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      router.push(`/cases/${data.id}`);
+    } else {
+      const err = await res.json().catch(() => null);
+      alert(err?.error || "Error al duplicar");
+    }
+  }, [caseId, router]);
 
   useEffect(() => { fetchCase(); fetchTemplates(); fetchMembers(); }, [caseId]);
 
@@ -162,74 +196,45 @@ export default function CaseDetailPage() {
   return (
     <div>
       {/* Header */}
-      {(() => {
-        const seen = new Set<string>();
-        const uniqueTasks = caseData.tasks.filter((t: any) => {
-          const key = `${t.category}::${t.title}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        const totalTasks = uniqueTasks.length;
-        const doneTasks = uniqueTasks.filter((t: any) => t.status === "DONE" || t.status === "SKIPPED").length;
-        const blockedTasks = uniqueTasks.filter((t: any) => t.status === "BLOCKED").length;
-        const inProgressTasks = uniqueTasks.filter((t: any) => t.status === "IN_PROGRESS").length;
-        const progressPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
-        const overdueTasks = uniqueTasks.filter((t: any) =>
-          t.deadline && t.status !== "DONE" && t.status !== "SKIPPED" && new Date(t.deadline) < new Date()
-        ).length;
-
-        return (
-          <div className="mb-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold">{caseData.ref}</h1>
-                <p className="text-gray-500">{caseData.deceased?.fullName}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                {caseData.isUrgent && <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">Urgente</span>}
-                <button
-                  onClick={async () => {
-                    const res = await fetch(`/api/cases/${caseId}/duplicate`, { method: "POST" });
-                    if (res.ok) {
-                      const data = await res.json();
-                      router.push(`/cases/${data.id}`);
-                    } else {
-                      const err = await res.json().catch(() => null);
-                      alert(err?.error || "Error al duplicar");
-                    }
-                  }}
-                  className="px-3 py-1 border rounded-md text-sm text-gray-600 hover:bg-gray-50"
-                  title="Duplicar expediente"
-                >
-                  Duplicar
-                </button>
-                <select value={caseData.status} onChange={(e) => updateStatus(e.target.value)}
-                  className="px-3 py-1 border rounded-md text-sm">
-                  {statuses.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
-                </select>
-              </div>
-            </div>
-            {totalTasks > 0 && (
-              <div className="mt-3 flex items-center gap-4">
-                <div className="flex-1 bg-gray-200 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full transition-all ${progressPct === 100 ? "bg-green-500" : "bg-primary"}`}
-                    style={{ width: `${progressPct}%` }}
-                  />
-                </div>
-                <div className="flex items-center gap-3 text-xs text-gray-500 shrink-0">
-                  <span className="font-medium text-gray-900">{progressPct}%</span>
-                  <span>{doneTasks}/{totalTasks} tareas</span>
-                  {inProgressTasks > 0 && <span className="text-blue-600">{inProgressTasks} en curso</span>}
-                  {blockedTasks > 0 && <span className="text-red-600">{blockedTasks} bloqueadas</span>}
-                  {overdueTasks > 0 && <span className="text-red-700 font-medium">{overdueTasks} vencidas</span>}
-                </div>
-              </div>
-            )}
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">{caseData.ref}</h1>
+            <p className="text-gray-500">{caseData.deceased?.fullName}</p>
           </div>
-        );
-      })()}
+          <div className="flex items-center gap-3">
+            {caseData.isUrgent && <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">Urgente</span>}
+            <button
+              onClick={handleDuplicate}
+              className="px-3 py-1 border rounded-md text-sm text-gray-600 hover:bg-gray-50"
+              title="Duplicar expediente"
+            >
+              Duplicar
+            </button>
+            <select value={caseData.status} onChange={(e) => updateStatus(e.target.value)}
+              className="px-3 py-1 border rounded-md text-sm">
+              {statuses.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+            </select>
+          </div>
+        </div>
+        {taskStats.total > 0 && (
+          <div className="mt-3 flex items-center gap-4">
+            <div className="flex-1 bg-gray-200 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all ${taskStats.progressPct === 100 ? "bg-green-500" : "bg-primary"}`}
+                style={{ width: `${taskStats.progressPct}%` }}
+              />
+            </div>
+            <div className="flex items-center gap-3 text-xs text-gray-500 shrink-0">
+              <span className="font-medium text-gray-900">{taskStats.progressPct}%</span>
+              <span>{taskStats.done}/{taskStats.total} tareas</span>
+              {taskStats.inProgress > 0 && <span className="text-blue-600">{taskStats.inProgress} en curso</span>}
+              {taskStats.blocked > 0 && <span className="text-red-600">{taskStats.blocked} bloqueadas</span>}
+              {taskStats.overdue > 0 && <span className="text-red-700 font-medium">{taskStats.overdue} vencidas</span>}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Tabs */}
       <div className="flex border-b mb-6 gap-1">
@@ -239,7 +244,7 @@ export default function CaseDetailPage() {
               tab === t ? "border-primary text-primary" : "border-transparent text-gray-500 hover:text-gray-700"
             }`}>
             {tabLabels[t]}
-            {t === "tasks" && ` (${new Set(caseData.tasks.map((tk: any) => `${tk.category}::${tk.title}`)).size})`}
+            {t === "tasks" && ` (${uniqueTasks.length})`}
             {t === "documents" && ` (${caseData.documents.length})`}
           </button>
         ))}
@@ -250,15 +255,6 @@ export default function CaseDetailPage() {
         <div className="grid md:grid-cols-2 gap-6">
           {/* Stats cards */}
           {(() => {
-            const seen = new Set<string>();
-            const uniqueTasks = caseData.tasks.filter((t: any) => {
-              const key = `${t.category}::${t.title}`;
-              if (seen.has(key)) return false;
-              seen.add(key);
-              return true;
-            });
-            const totalTasks = uniqueTasks.length;
-            const doneTasks = uniqueTasks.filter((t: any) => t.status === "DONE" || t.status === "SKIPPED").length;
             const daysSinceDeath = caseData.deceased?.deathDate
               ? Math.floor((Date.now() - new Date(caseData.deceased.deathDate).getTime()) / (1000 * 60 * 60 * 24))
               : null;
@@ -274,11 +270,11 @@ export default function CaseDetailPage() {
             return (
               <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-white p-4 rounded-lg border text-center">
-                  <p className="text-2xl font-bold text-gray-900">{totalTasks > 0 ? `${doneTasks}/${totalTasks}` : "—"}</p>
+                  <p className="text-2xl font-bold text-gray-900">{taskStats.total > 0 ? `${taskStats.done}/${taskStats.total}` : "—"}</p>
                   <p className="text-xs text-gray-500 mt-1">Tareas completadas</p>
-                  {totalTasks > 0 && (
+                  {taskStats.total > 0 && (
                     <div className="mt-2 bg-gray-200 rounded-full h-1.5">
-                      <div className={`h-1.5 rounded-full ${doneTasks === totalTasks ? "bg-green-500" : "bg-primary"}`} style={{ width: `${(doneTasks / totalTasks) * 100}%` }} />
+                      <div className={`h-1.5 rounded-full ${taskStats.done === taskStats.total ? "bg-green-500" : "bg-primary"}`} style={{ width: `${taskStats.progressPct}%` }} />
                     </div>
                   )}
                 </div>
@@ -430,14 +426,6 @@ export default function CaseDetailPage() {
             </div>
           )}
           {(() => {
-            // Deduplicate tasks by category+title (keep first occurrence)
-            const seen = new Set<string>();
-            const uniqueTasks = caseData.tasks.filter((t: any) => {
-              const key = `${t.category}::${t.title}`;
-              if (seen.has(key)) return false;
-              seen.add(key);
-              return true;
-            });
             return Object.entries(
               uniqueTasks.reduce((acc: Record<string, any[]>, t: any) => {
                 (acc[t.category] = acc[t.category] || []).push(t);

@@ -6,6 +6,7 @@ import { hasPermission } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { getChecklistForCategories } from "@/lib/checklist-rules";
 import { calculateTaskDeadlines } from "@/lib/deadline-engine";
+import { PLAN_PRICING } from "@/lib/stripe";
 
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -16,30 +17,34 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
 
-  const original = await prisma.case.findFirst({
-    where: { id: params.id, orgId: session.user.orgId, deletedAt: null },
-    include: { deceased: true, contact: true },
-  });
+  const month = new Date().toISOString().slice(0, 7);
+
+  const [original, sub, usage, caseCount] = await Promise.all([
+    prisma.case.findFirst({
+      where: { id: params.id, orgId: session.user.orgId, deletedAt: null },
+      include: { deceased: true, contact: true },
+    }),
+    prisma.subscription.findUnique({ where: { orgId: session.user.orgId } }),
+    prisma.usageRecord.findUnique({
+      where: { orgId_month: { orgId: session.user.orgId, month } },
+    }),
+    prisma.case.count({ where: { orgId: session.user.orgId } }),
+  ]);
+
   if (!original) {
     return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
   }
 
-  const sub = await prisma.subscription.findUnique({ where: { orgId: session.user.orgId } });
-  if (sub?.plan === "INICIA") {
-    const month = new Date().toISOString().slice(0, 7);
-    const usage = await prisma.usageRecord.findUnique({
-      where: { orgId_month: { orgId: session.user.orgId, month } },
-    });
-    if (usage && usage.casesCreated >= 15) {
-      return NextResponse.json(
-        { error: "Limite de expedientes alcanzado para el plan Inicia (15/mes)." },
-        { status: 403 }
-      );
-    }
+  const plan = (sub?.plan ?? "INICIA") as keyof typeof PLAN_PRICING;
+  const limit = PLAN_PRICING[plan].includedCases;
+  if (usage && usage.casesCreated >= limit) {
+    return NextResponse.json(
+      { error: `Limite de expedientes alcanzado para el plan ${PLAN_PRICING[plan].label} (${limit}/mes).` },
+      { status: 403 }
+    );
   }
 
-  const count = await prisma.case.count({ where: { orgId: session.user.orgId } });
-  const ref = `EXP-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+  const ref = `EXP-${new Date().getFullYear()}-${String(caseCount + 1).padStart(4, "0")}`;
 
   const newCase = await prisma.$transaction(async (tx) => {
     const c = await tx.case.create({
