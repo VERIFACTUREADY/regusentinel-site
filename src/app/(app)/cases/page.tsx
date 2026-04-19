@@ -93,10 +93,16 @@ export default function CasesPage() {
           <h1 className="text-2xl font-bold">Expedientes</h1>
           <p className="text-sm text-gray-500 mt-1">{total} expediente{total !== 1 ? "s" : ""}</p>
         </div>
-        <Link href="/cases/new"
-          className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 text-sm font-medium text-center">
-          Nuevo expediente
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/cases/import"
+            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm font-medium text-center">
+            Importar CSV
+          </Link>
+          <Link href="/cases/new"
+            className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 text-sm font-medium text-center">
+            Nuevo expediente
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
