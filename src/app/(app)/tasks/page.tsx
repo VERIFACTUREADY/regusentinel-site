@@ -51,7 +51,17 @@ export default function TasksPage() {
   const [status, setStatus] = useState("PENDING,IN_PROGRESS,BLOCKED,READY");
   const [category, setCategory] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const controllerRef = useRef<AbortController>();
+
+  async function updateTaskStatus(task: TaskItem, newStatus: string) {
+    const res = await fetch(`/api/cases/${task.caseId}/tasks`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId: task.id, status: newStatus }),
+    });
+    if (res.ok) setRefreshKey((k) => k + 1);
+  }
 
   useEffect(() => {
     controllerRef.current?.abort();
@@ -80,7 +90,7 @@ export default function TasksPage() {
       });
 
     return () => controller.abort();
-  }, [page, assignee, status, category]);
+  }, [page, assignee, status, category, refreshKey]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -199,6 +209,30 @@ export default function TasksPage() {
                         </span>
                       )}
                     </div>
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0 ml-2">
+                    {task.status !== "DONE" && task.status !== "SKIPPED" && task.status !== "BLOCKED" && (
+                      <button
+                        onClick={() => updateTaskStatus(task, "DONE")}
+                        title="Marcar completada"
+                        className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                    )}
+                    {task.status === "PENDING" && (
+                      <button
+                        onClick={() => updateTaskStatus(task, "IN_PROGRESS")}
+                        title="Iniciar"
+                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

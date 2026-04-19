@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOnboardingState } from "@/lib/onboarding";
 import { OnboardingPanel } from "@/components/dashboard/onboarding-panel";
 import { DemoHighlights } from "@/components/dashboard/demo-highlights";
+import { MyTasksWidget } from "@/components/dashboard/my-tasks-widget";
 import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import { CASE_STATUS_COLORS } from "@/lib/constants";
 import Link from "next/link";
@@ -154,51 +155,7 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* My tasks */}
-      {myTasks.length > 0 && (
-        <div className="bg-white rounded-lg border mb-8">
-          <div className="px-6 py-4 border-b flex justify-between items-center">
-            <h2 className="font-semibold">Mis tareas asignadas</h2>
-            <Link href="/tasks" className="text-sm text-primary hover:underline">Ver todas</Link>
-          </div>
-          <div className="divide-y">
-            {myTasks.map((task) => {
-              const deadlineDays = task.deadline ? daysUntil(task.deadline) : null;
-              const expired = deadlineDays !== null && deadlineDays <= 0;
-              const urgent = deadlineDays !== null && deadlineDays > 0 && deadlineDays <= 7;
-              return (
-                <div key={task.id} className="px-6 py-3 flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Link href={`/cases/${task.case.id}`} className="font-mono text-xs text-primary hover:underline shrink-0">
-                      {task.case.ref}
-                    </Link>
-                    {task.case.isUrgent && (
-                      <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full shrink-0">Urgente</span>
-                    )}
-                    <span className="truncate">{task.title}</span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 ml-4">
-                    {task.deadline && (
-                      <span className={`text-xs px-2 py-0.5 rounded ${
-                        expired ? "bg-red-100 text-red-700 font-medium" : urgent ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"
-                      }`}>
-                        {expired ? "VENCIDO" : `${deadlineDays}d`}
-                      </span>
-                    )}
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      task.status === "READY" ? "bg-yellow-100 text-yellow-700" :
-                      task.status === "IN_PROGRESS" ? "bg-blue-100 text-blue-700" :
-                      "bg-gray-100 text-gray-600"
-                    }`}>
-                      {task.status}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <MyTasksWidget initialTasks={myTasks as any} />
 
       {/* Deadline alerts */}
       {upcomingDeadlines.length > 0 && (
