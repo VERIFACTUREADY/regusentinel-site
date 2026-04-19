@@ -17,6 +17,8 @@ const STATUS_OPTIONS = [
   { value: "ARCHIVED", label: "Archivado" },
 ];
 
+const BATCH_STATUS_OPTIONS = STATUS_OPTIONS.filter((s) => s.value);
+
 const CATEGORY_OPTIONS = [
   { value: "", label: "Todas las categorias" },
   ...ALL_CATEGORIES,
@@ -44,6 +46,9 @@ export default function CasesPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
@@ -62,6 +67,7 @@ export default function CasesPage() {
         if (data && !controller.signal.aborted) {
           setCases(data.cases);
           setTotal(data.total);
+          setSelected(new Set());
         }
       })
       .catch(() => {})
@@ -70,7 +76,7 @@ export default function CasesPage() {
       });
 
     return () => controller.abort();
-  }, [page, statusFilter, categoryFilter, search]);
+  }, [page, statusFilter, categoryFilter, search, refreshKey]);
 
   function handleSearchInput(value: string) {
     setSearchInput(value);
@@ -79,6 +85,50 @@ export default function CasesPage() {
       setSearch(value);
       setPage(1);
     }, 300);
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === cases.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(cases.map((c) => c.id)));
+    }
+  }
+
+  async function batchChangeStatus(newStatus: string) {
+    setBatchLoading(true);
+    const res = await fetch("/api/cases/batch", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: Array.from(selected), action: "status", status: newStatus }),
+    });
+    if (res.ok) {
+      setRefreshKey((k) => k + 1);
+    }
+    setBatchLoading(false);
+  }
+
+  async function batchDelete() {
+    if (!confirm(`Eliminar ${selected.size} expediente(s)? Esta accion es reversible desde la base de datos.`)) return;
+    setBatchLoading(true);
+    const res = await fetch("/api/cases/batch", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: Array.from(selected), action: "delete" }),
+    });
+    if (res.ok) {
+      setRefreshKey((k) => k + 1);
+    }
+    setBatchLoading(false);
   }
 
   function exportCSV() {
@@ -164,26 +214,75 @@ export default function CasesPage() {
         </select>
       </div>
 
+      {/* Batch action bar */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <span className="text-sm font-medium text-blue-700">
+            {selected.size} seleccionado{selected.size !== 1 ? "s" : ""}
+          </span>
+          <select
+            onChange={(e) => { if (e.target.value) batchChangeStatus(e.target.value); e.target.value = ""; }}
+            disabled={batchLoading}
+            className="px-2 py-1 border rounded text-sm"
+            defaultValue=""
+          >
+            <option value="" disabled>Cambiar estado...</option>
+            {BATCH_STATUS_OPTIONS.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={batchDelete}
+            disabled={batchLoading}
+            className="px-3 py-1 text-sm text-red-600 border border-red-200 rounded hover:bg-red-50 disabled:opacity-50"
+          >
+            Eliminar
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-sm text-gray-500 hover:text-gray-700 ml-auto"
+          >
+            Deseleccionar
+          </button>
+        </div>
+      )}
+
       {/* Desktop table */}
       <div className="hidden md:block bg-white rounded-lg border">
         <table className="w-full">
           <thead>
             <tr className="border-b text-left text-sm text-gray-500">
-              <th className="px-6 py-3 font-medium">Ref</th>
-              <th className="px-6 py-3 font-medium">Fallecido</th>
-              <th className="px-6 py-3 font-medium">Solicitante</th>
-              <th className="px-6 py-3 font-medium">Estado</th>
-              <th className="px-6 py-3 font-medium">Fecha</th>
+              <th className="px-3 py-3 w-10">
+                <input
+                  type="checkbox"
+                  checked={cases.length > 0 && selected.size === cases.length}
+                  onChange={toggleSelectAll}
+                  className="rounded border-gray-300"
+                />
+              </th>
+              <th className="px-4 py-3 font-medium">Ref</th>
+              <th className="px-4 py-3 font-medium">Fallecido</th>
+              <th className="px-4 py-3 font-medium">Solicitante</th>
+              <th className="px-4 py-3 font-medium">Estado</th>
+              <th className="px-4 py-3 font-medium">Fecha</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400">Cargando...</td></tr>
+              <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400">Cargando...</td></tr>
             ) : cases.length === 0 ? (
-              <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400">No hay expedientes</td></tr>
+              <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400">No hay expedientes</td></tr>
             ) : cases.map((c) => (
-              <tr key={c.id} className="border-b hover:bg-gray-50">
-                <td className="px-6 py-3">
+              <tr key={c.id} className={`border-b hover:bg-gray-50 ${selected.has(c.id) ? "bg-blue-50" : ""}`}>
+                <td className="px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(c.id)}
+                    onChange={() => toggleSelect(c.id)}
+                    className="rounded border-gray-300"
+                  />
+                </td>
+                <td className="px-4 py-3">
                   <Link href={`/cases/${c.id}`} className="font-medium text-primary hover:underline">
                     {c.ref}
                   </Link>
@@ -191,14 +290,14 @@ export default function CasesPage() {
                     <span className="ml-2 text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full">Urgente</span>
                   )}
                 </td>
-                <td className="px-6 py-3 text-sm">{c.deceased?.fullName || "—"}</td>
-                <td className="px-6 py-3 text-sm">{c.contact?.fullName || "—"}</td>
-                <td className="px-6 py-3">
+                <td className="px-4 py-3 text-sm">{c.deceased?.fullName || "—"}</td>
+                <td className="px-4 py-3 text-sm">{c.contact?.fullName || "—"}</td>
+                <td className="px-4 py-3">
                   <span className={`text-xs px-2 py-1 rounded-full ${CASE_STATUS_COLORS[c.status] || ""}`}>
                     {STATUS_OPTIONS.find((s) => s.value === c.status)?.label || c.status}
                   </span>
                 </td>
-                <td className="px-6 py-3 text-sm text-gray-500">
+                <td className="px-4 py-3 text-sm text-gray-500">
                   {new Date(c.createdAt).toLocaleDateString("es-ES")}
                 </td>
               </tr>
@@ -214,24 +313,34 @@ export default function CasesPage() {
         ) : cases.length === 0 ? (
           <div className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">No hay expedientes</div>
         ) : cases.map((c) => (
-          <Link key={c.id} href={`/cases/${c.id}`} className="block bg-white rounded-lg border p-4 hover:bg-gray-50">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-primary font-mono text-sm">{c.ref}</span>
-                {c.isUrgent && (
-                  <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full">Urgente</span>
-                )}
-              </div>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${CASE_STATUS_COLORS[c.status] || ""}`}>
-                {STATUS_OPTIONS.find((s) => s.value === c.status)?.label || c.status}
-              </span>
+          <div key={c.id} className={`bg-white rounded-lg border p-4 ${selected.has(c.id) ? "ring-2 ring-blue-300" : ""}`}>
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={selected.has(c.id)}
+                onChange={() => toggleSelect(c.id)}
+                className="mt-1 rounded border-gray-300"
+              />
+              <Link href={`/cases/${c.id}`} className="flex-1 block hover:bg-gray-50 -m-1 p-1 rounded">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-primary font-mono text-sm">{c.ref}</span>
+                    {c.isUrgent && (
+                      <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full">Urgente</span>
+                    )}
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${CASE_STATUS_COLORS[c.status] || ""}`}>
+                    {STATUS_OPTIONS.find((s) => s.value === c.status)?.label || c.status}
+                  </span>
+                </div>
+                <p className="text-sm font-medium">{c.deceased?.fullName || "—"}</p>
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-xs text-gray-500">{c.contact?.fullName || "—"}</p>
+                  <p className="text-xs text-gray-400">{new Date(c.createdAt).toLocaleDateString("es-ES")}</p>
+                </div>
+              </Link>
             </div>
-            <p className="text-sm font-medium">{c.deceased?.fullName || "—"}</p>
-            <div className="flex items-center justify-between mt-1">
-              <p className="text-xs text-gray-500">{c.contact?.fullName || "—"}</p>
-              <p className="text-xs text-gray-400">{new Date(c.createdAt).toLocaleDateString("es-ES")}</p>
-            </div>
-          </Link>
+          </div>
         ))}
       </div>
 
