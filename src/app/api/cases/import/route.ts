@@ -80,6 +80,9 @@ export async function POST(req: NextRequest) {
   if (!csv || typeof csv !== "string") {
     return NextResponse.json({ error: "CSV vacio" }, { status: 400 });
   }
+  if (csv.length > 1_000_000) {
+    return NextResponse.json({ error: "CSV demasiado grande (max 1 MB)" }, { status: 400 });
+  }
 
   const lines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length < 2) {

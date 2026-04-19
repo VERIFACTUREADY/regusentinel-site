@@ -2,16 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-
-const taskStatusColors: Record<string, string> = {
-  PENDING: "bg-gray-100 text-gray-700",
-  IN_PROGRESS: "bg-blue-100 text-blue-700",
-  BLOCKED: "bg-red-100 text-red-700",
-  READY: "bg-yellow-100 text-yellow-700",
-  APPROVED: "bg-green-100 text-green-700",
-  DONE: "bg-green-200 text-green-800",
-  SKIPPED: "bg-gray-100 text-gray-400",
-};
+import { TASK_STATUS_COLORS, ALL_CATEGORIES } from "@/lib/constants";
 
 const STATUS_OPTIONS = [
   { value: "PENDING,IN_PROGRESS,BLOCKED,READY", label: "Activas" },
@@ -33,14 +24,7 @@ const ASSIGNEE_OPTIONS = [
 
 const CATEGORY_OPTIONS = [
   { value: "", label: "Todas las categorias" },
-  { value: "BANCOS", label: "Bancos" },
-  { value: "SUMINISTROS", label: "Suministros" },
-  { value: "TELECOM", label: "Telecomunicaciones" },
-  { value: "SUSCRIPCIONES", label: "Suscripciones" },
-  { value: "SEGUROS", label: "Seguros" },
-  { value: "VIDA_DIGITAL", label: "Vida digital" },
-  { value: "FISCAL", label: "Fiscal" },
-  { value: "OTROS", label: "Otros" },
+  ...ALL_CATEGORIES,
 ];
 
 interface TaskItem {
@@ -183,7 +167,7 @@ export default function TasksPage() {
                           Urgente
                         </span>
                       )}
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${taskStatusColors[task.status] || ""}`}>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${TASK_STATUS_COLORS[task.status] || ""}`}>
                         {task.status}
                       </span>
                     </div>

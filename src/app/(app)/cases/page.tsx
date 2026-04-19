@@ -2,18 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-
-const statusColors: Record<string, string> = {
-  INTAKE: "bg-gray-100 text-gray-700",
-  VALIDATION: "bg-yellow-100 text-yellow-700",
-  IN_PROGRESS: "bg-blue-100 text-blue-700",
-  PENDING_DOCS: "bg-orange-100 text-orange-700",
-  READY_TO_SEND: "bg-purple-100 text-purple-700",
-  SENT: "bg-indigo-100 text-indigo-700",
-  FOLLOW_UP: "bg-cyan-100 text-cyan-700",
-  CLOSED: "bg-green-100 text-green-700",
-  ARCHIVED: "bg-gray-100 text-gray-500",
-};
+import { CASE_STATUS_COLORS } from "@/lib/constants";
 
 const STATUS_OPTIONS = [
   { value: "", label: "Todos los estados" },
@@ -155,7 +144,7 @@ export default function CasesPage() {
                 <td className="px-6 py-3 text-sm">{c.deceased?.fullName || "—"}</td>
                 <td className="px-6 py-3 text-sm">{c.contact?.fullName || "—"}</td>
                 <td className="px-6 py-3">
-                  <span className={`text-xs px-2 py-1 rounded-full ${statusColors[c.status] || ""}`}>
+                  <span className={`text-xs px-2 py-1 rounded-full ${CASE_STATUS_COLORS[c.status] || ""}`}>
                     {STATUS_OPTIONS.find((s) => s.value === c.status)?.label || c.status}
                   </span>
                 </td>
@@ -183,7 +172,7 @@ export default function CasesPage() {
                   <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full">Urgente</span>
                 )}
               </div>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[c.status] || ""}`}>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${CASE_STATUS_COLORS[c.status] || ""}`}>
                 {STATUS_OPTIONS.find((s) => s.value === c.status)?.label || c.status}
               </span>
             </div>

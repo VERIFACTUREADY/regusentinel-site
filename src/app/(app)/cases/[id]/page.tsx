@@ -3,20 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { generateBankPack } from "@/lib/bank-pack";
-
-const statusColors: Record<string, string> = {
-  INTAKE: "bg-gray-100 text-gray-700", VALIDATION: "bg-yellow-100 text-yellow-700",
-  IN_PROGRESS: "bg-blue-100 text-blue-700", PENDING_DOCS: "bg-orange-100 text-orange-700",
-  READY_TO_SEND: "bg-purple-100 text-purple-700", SENT: "bg-indigo-100 text-indigo-700",
-  FOLLOW_UP: "bg-cyan-100 text-cyan-700", CLOSED: "bg-green-100 text-green-700",
-  ARCHIVED: "bg-gray-100 text-gray-500",
-};
-const taskStatusColors: Record<string, string> = {
-  PENDING: "bg-gray-100 text-gray-700", IN_PROGRESS: "bg-blue-100 text-blue-700",
-  BLOCKED: "bg-red-100 text-red-700", READY: "bg-yellow-100 text-yellow-700",
-  APPROVED: "bg-green-100 text-green-700", DONE: "bg-green-200 text-green-800",
-  SKIPPED: "bg-gray-100 text-gray-400",
-};
+import { CASE_STATUS_COLORS, TASK_STATUS_COLORS } from "@/lib/constants";
 const statuses = ["INTAKE", "VALIDATION", "IN_PROGRESS", "PENDING_DOCS", "READY_TO_SEND", "SENT", "FOLLOW_UP", "CLOSED", "ARCHIVED"];
 const taskStatuses = ["PENDING", "IN_PROGRESS", "BLOCKED", "READY", "APPROVED", "DONE", "SKIPPED"];
 
@@ -243,7 +230,7 @@ export default function CaseDetailPage() {
             <div className="flex gap-1">
               {statuses.map((s) => (
                 <div key={s} className={`flex-1 py-2 text-center text-xs rounded ${
-                  s === caseData.status ? statusColors[s] + " font-bold ring-2 ring-primary" : "bg-gray-50 text-gray-400"
+                  s === caseData.status ? CASE_STATUS_COLORS[s] + " font-bold ring-2 ring-primary" : "bg-gray-50 text-gray-400"
                 }`}>{s.replace(/_/g, " ")}</div>
               ))}
             </div>
@@ -342,7 +329,7 @@ export default function CaseDetailPage() {
                         className="text-xs px-2 py-1 border rounded">
                         {taskStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
                       </select>
-                      <span className={`text-xs px-2 py-1 rounded-full ${taskStatusColors[task.status] || ""}`}>
+                      <span className={`text-xs px-2 py-1 rounded-full ${TASK_STATUS_COLORS[task.status] || ""}`}>
                         {task.status}
                       </span>
                     </div>

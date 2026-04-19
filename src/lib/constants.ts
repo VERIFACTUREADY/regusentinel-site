@@ -42,3 +42,25 @@ export const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export const ALL_CATEGORIES = Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label }));
+
+export const TASK_STATUS_COLORS: Record<string, string> = {
+  PENDING: "bg-gray-100 text-gray-700",
+  IN_PROGRESS: "bg-blue-100 text-blue-700",
+  BLOCKED: "bg-red-100 text-red-700",
+  READY: "bg-yellow-100 text-yellow-700",
+  APPROVED: "bg-green-100 text-green-700",
+  DONE: "bg-green-200 text-green-800",
+  SKIPPED: "bg-gray-100 text-gray-400",
+};
+
+export const CASE_STATUS_COLORS: Record<string, string> = {
+  INTAKE: "bg-gray-100 text-gray-700",
+  VALIDATION: "bg-yellow-100 text-yellow-700",
+  IN_PROGRESS: "bg-blue-100 text-blue-700",
+  PENDING_DOCS: "bg-orange-100 text-orange-700",
+  READY_TO_SEND: "bg-purple-100 text-purple-700",
+  SENT: "bg-indigo-100 text-indigo-700",
+  FOLLOW_UP: "bg-cyan-100 text-cyan-700",
+  CLOSED: "bg-green-100 text-green-700",
+  ARCHIVED: "bg-gray-100 text-gray-500",
+};

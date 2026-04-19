@@ -5,19 +5,8 @@ import { getOnboardingState } from "@/lib/onboarding";
 import { OnboardingPanel } from "@/components/dashboard/onboarding-panel";
 import { DemoHighlights } from "@/components/dashboard/demo-highlights";
 import { DEMO_ORG_SLUG } from "@/lib/demo-data";
+import { CASE_STATUS_COLORS } from "@/lib/constants";
 import Link from "next/link";
-
-const statusColors: Record<string, string> = {
-  INTAKE: "bg-gray-100 text-gray-700",
-  VALIDATION: "bg-yellow-100 text-yellow-700",
-  IN_PROGRESS: "bg-blue-100 text-blue-700",
-  PENDING_DOCS: "bg-orange-100 text-orange-700",
-  READY_TO_SEND: "bg-purple-100 text-purple-700",
-  SENT: "bg-indigo-100 text-indigo-700",
-  FOLLOW_UP: "bg-cyan-100 text-cyan-700",
-  CLOSED: "bg-green-100 text-green-700",
-  ARCHIVED: "bg-gray-100 text-gray-500",
-};
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -27,7 +16,9 @@ export default async function DashboardPage() {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, pendingApprovals, recentCases, recentLogs, upcomingDeadlines] = await Promise.all([
+  const userId = session.user.id;
+
+  const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, pendingApprovals, recentCases, recentLogs, upcomingDeadlines, onboarding, org, myTasks] = await Promise.all([
     prisma.case.count({
       where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
     }),
@@ -48,7 +39,10 @@ export default async function DashboardPage() {
     }),
     prisma.case.findMany({
       where: { orgId, deletedAt: null },
-      include: { deceased: true, contact: true },
+      include: {
+        deceased: { select: { fullName: true } },
+        contact: { select: { fullName: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 5,
     }),
@@ -58,7 +52,6 @@ export default async function DashboardPage() {
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
-    // Tasks with deadlines in the next 30 days
     prisma.task.findMany({
       where: {
         case: { orgId, deletedAt: null },
@@ -69,16 +62,20 @@ export default async function DashboardPage() {
       orderBy: { deadline: "asc" },
       take: 8,
     }),
-  ]);
-
-  const [portalDocs, onboarding, org] = await Promise.all([
-    prisma.document.count({
-      where: { case: { orgId, deletedAt: null }, isPortalUpload: true },
-    }),
     getOnboardingState(orgId),
     prisma.organization.findUnique({
       where: { id: orgId },
       select: { slug: true },
+    }),
+    prisma.task.findMany({
+      where: {
+        assigneeId: userId,
+        case: { orgId, deletedAt: null },
+        status: { in: ["PENDING", "IN_PROGRESS", "READY"] },
+      },
+      include: { case: { select: { id: true, ref: true, isUrgent: true } } },
+      orderBy: [{ deadline: { sort: "asc", nulls: "last" } }, { sortOrder: "asc" }],
+      take: 8,
     }),
   ]);
 
@@ -157,6 +154,52 @@ export default async function DashboardPage() {
         ))}
       </div>
 
+      {/* My tasks */}
+      {myTasks.length > 0 && (
+        <div className="bg-white rounded-lg border mb-8">
+          <div className="px-6 py-4 border-b flex justify-between items-center">
+            <h2 className="font-semibold">Mis tareas asignadas</h2>
+            <Link href="/tasks" className="text-sm text-primary hover:underline">Ver todas</Link>
+          </div>
+          <div className="divide-y">
+            {myTasks.map((task) => {
+              const deadlineDays = task.deadline ? daysUntil(task.deadline) : null;
+              const expired = deadlineDays !== null && deadlineDays <= 0;
+              const urgent = deadlineDays !== null && deadlineDays > 0 && deadlineDays <= 7;
+              return (
+                <div key={task.id} className="px-6 py-3 flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Link href={`/cases/${task.case.id}`} className="font-mono text-xs text-primary hover:underline shrink-0">
+                      {task.case.ref}
+                    </Link>
+                    {task.case.isUrgent && (
+                      <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full shrink-0">Urgente</span>
+                    )}
+                    <span className="truncate">{task.title}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-4">
+                    {task.deadline && (
+                      <span className={`text-xs px-2 py-0.5 rounded ${
+                        expired ? "bg-red-100 text-red-700 font-medium" : urgent ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"
+                      }`}>
+                        {expired ? "VENCIDO" : `${deadlineDays}d`}
+                      </span>
+                    )}
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      task.status === "READY" ? "bg-yellow-100 text-yellow-700" :
+                      task.status === "IN_PROGRESS" ? "bg-blue-100 text-blue-700" :
+                      "bg-gray-100 text-gray-600"
+                    }`}>
+                      {task.status}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Deadline alerts */}
       {upcomingDeadlines.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
@@ -211,7 +254,7 @@ export default async function DashboardPage() {
                 <td className="px-6 py-3 text-sm">{c.deceased?.fullName || "-"}</td>
                 <td className="px-6 py-3 text-sm">{c.contact?.fullName || "-"}</td>
                 <td className="px-6 py-3">
-                  <span className={`text-xs px-2 py-1 rounded-full ${statusColors[c.status] || ""}`}>
+                  <span className={`text-xs px-2 py-1 rounded-full ${CASE_STATUS_COLORS[c.status] || ""}`}>
                     {c.status.replace(/_/g, " ")}
                   </span>
                 </td>
