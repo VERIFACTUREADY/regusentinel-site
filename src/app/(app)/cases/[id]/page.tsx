@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { generateBankPack } from "@/lib/bank-pack";
 import { CASE_STATUS_COLORS, TASK_STATUS_COLORS } from "@/lib/constants";
 const statuses = ["INTAKE", "VALIDATION", "IN_PROGRESS", "PENDING_DOCS", "READY_TO_SEND", "SENT", "FOLLOW_UP", "CLOSED", "ARCHIVED"];
@@ -20,6 +20,7 @@ interface CaseDetail {
 
 export default function CaseDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const caseId = params.id as string;
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [tab, setTab] = useState("overview");
@@ -187,6 +188,22 @@ export default function CaseDetailPage() {
               </div>
               <div className="flex items-center gap-3">
                 {caseData.isUrgent && <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">Urgente</span>}
+                <button
+                  onClick={async () => {
+                    const res = await fetch(`/api/cases/${caseId}/duplicate`, { method: "POST" });
+                    if (res.ok) {
+                      const data = await res.json();
+                      router.push(`/cases/${data.id}`);
+                    } else {
+                      const err = await res.json().catch(() => null);
+                      alert(err?.error || "Error al duplicar");
+                    }
+                  }}
+                  className="px-3 py-1 border rounded-md text-sm text-gray-600 hover:bg-gray-50"
+                  title="Duplicar expediente"
+                >
+                  Duplicar
+                </button>
                 <select value={caseData.status} onChange={(e) => updateStatus(e.target.value)}
                   className="px-3 py-1 border rounded-md text-sm">
                   {statuses.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}

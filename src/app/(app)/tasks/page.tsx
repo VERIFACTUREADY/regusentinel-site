@@ -16,7 +16,7 @@ const STATUS_OPTIONS = [
   { value: "SKIPPED", label: "Omitida" },
 ];
 
-const ASSIGNEE_OPTIONS = [
+const DEFAULT_ASSIGNEE_OPTIONS = [
   { value: "me", label: "Mis tareas" },
   { value: "", label: "Todas" },
   { value: "unassigned", label: "Sin asignar" },
@@ -52,7 +52,20 @@ export default function TasksPage() {
   const [category, setCategory] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
   const controllerRef = useRef<AbortController>();
+
+  useEffect(() => {
+    fetch("/api/org/members")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setMembers)
+      .catch(() => {});
+  }, []);
+
+  const assigneeOptions = [
+    ...DEFAULT_ASSIGNEE_OPTIONS,
+    ...members.map((m) => ({ value: m.id, label: m.name || m.email })),
+  ];
 
   async function updateTaskStatus(task: TaskItem, newStatus: string) {
     const res = await fetch(`/api/cases/${task.caseId}/tasks`, {
@@ -112,7 +125,7 @@ export default function TasksPage() {
           onChange={(e) => { setAssignee(e.target.value); setPage(1); }}
           className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
         >
-          {ASSIGNEE_OPTIONS.map((o) => (
+          {assigneeOptions.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
@@ -135,6 +148,24 @@ export default function TasksPage() {
           ))}
         </select>
       </div>
+
+      {/* Overdue alert */}
+      {!loading && (() => {
+        const overdue = tasks.filter(
+          (t) => t.deadline && t.status !== "DONE" && t.status !== "SKIPPED" && new Date(t.deadline) < new Date()
+        );
+        if (overdue.length === 0) return null;
+        return (
+          <div className="mb-4 flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <svg className="w-5 h-5 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <span className="text-sm font-medium text-red-800">
+              {overdue.length} tarea{overdue.length !== 1 ? "s" : ""} con plazo vencido
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Tasks list */}
       <div className="space-y-2">
