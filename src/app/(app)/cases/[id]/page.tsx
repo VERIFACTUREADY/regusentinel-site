@@ -161,19 +161,58 @@ export default function CaseDetailPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">{caseData.ref}</h1>
-          <p className="text-gray-500">{caseData.deceased?.fullName}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          {caseData.isUrgent && <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">Urgente</span>}
-          <select value={caseData.status} onChange={(e) => updateStatus(e.target.value)}
-            className="px-3 py-1 border rounded-md text-sm">
-            {statuses.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
-          </select>
-        </div>
-      </div>
+      {(() => {
+        const seen = new Set<string>();
+        const uniqueTasks = caseData.tasks.filter((t: any) => {
+          const key = `${t.category}::${t.title}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        const totalTasks = uniqueTasks.length;
+        const doneTasks = uniqueTasks.filter((t: any) => t.status === "DONE" || t.status === "SKIPPED").length;
+        const blockedTasks = uniqueTasks.filter((t: any) => t.status === "BLOCKED").length;
+        const inProgressTasks = uniqueTasks.filter((t: any) => t.status === "IN_PROGRESS").length;
+        const progressPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+        const overdueTasks = uniqueTasks.filter((t: any) =>
+          t.deadline && t.status !== "DONE" && t.status !== "SKIPPED" && new Date(t.deadline) < new Date()
+        ).length;
+
+        return (
+          <div className="mb-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">{caseData.ref}</h1>
+                <p className="text-gray-500">{caseData.deceased?.fullName}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                {caseData.isUrgent && <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">Urgente</span>}
+                <select value={caseData.status} onChange={(e) => updateStatus(e.target.value)}
+                  className="px-3 py-1 border rounded-md text-sm">
+                  {statuses.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                </select>
+              </div>
+            </div>
+            {totalTasks > 0 && (
+              <div className="mt-3 flex items-center gap-4">
+                <div className="flex-1 bg-gray-200 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${progressPct === 100 ? "bg-green-500" : "bg-primary"}`}
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <div className="flex items-center gap-3 text-xs text-gray-500 shrink-0">
+                  <span className="font-medium text-gray-900">{progressPct}%</span>
+                  <span>{doneTasks}/{totalTasks} tareas</span>
+                  {inProgressTasks > 0 && <span className="text-blue-600">{inProgressTasks} en curso</span>}
+                  {blockedTasks > 0 && <span className="text-red-600">{blockedTasks} bloqueadas</span>}
+                  {overdueTasks > 0 && <span className="text-red-700 font-medium">{overdueTasks} vencidas</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Tabs */}
       <div className="flex border-b mb-6 gap-1">
@@ -192,6 +231,75 @@ export default function CaseDetailPage() {
       {/* Tab content */}
       {tab === "overview" && (
         <div className="grid md:grid-cols-2 gap-6">
+          {/* Stats cards */}
+          {(() => {
+            const seen = new Set<string>();
+            const uniqueTasks = caseData.tasks.filter((t: any) => {
+              const key = `${t.category}::${t.title}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+            const totalTasks = uniqueTasks.length;
+            const doneTasks = uniqueTasks.filter((t: any) => t.status === "DONE" || t.status === "SKIPPED").length;
+            const daysSinceDeath = caseData.deceased?.deathDate
+              ? Math.floor((Date.now() - new Date(caseData.deceased.deathDate).getTime()) / (1000 * 60 * 60 * 24))
+              : null;
+            const linkedDocs = caseData.documents.filter((d: any) => d.task).length;
+            const nextDeadline = caseData.caseDeadlines
+              ? [caseData.caseDeadlines.certificatesAvailable, caseData.caseDeadlines.isdExtensionRequestDeadline, caseData.caseDeadlines.isdDeadline]
+                  .map((d) => new Date(d))
+                  .filter((d) => d.getTime() > Date.now())
+                  .sort((a, b) => a.getTime() - b.getTime())[0]
+              : null;
+            const daysToNextDeadline = nextDeadline ? Math.ceil((nextDeadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+
+            return (
+              <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-lg border text-center">
+                  <p className="text-2xl font-bold text-gray-900">{totalTasks > 0 ? `${doneTasks}/${totalTasks}` : "—"}</p>
+                  <p className="text-xs text-gray-500 mt-1">Tareas completadas</p>
+                  {totalTasks > 0 && (
+                    <div className="mt-2 bg-gray-200 rounded-full h-1.5">
+                      <div className={`h-1.5 rounded-full ${doneTasks === totalTasks ? "bg-green-500" : "bg-primary"}`} style={{ width: `${(doneTasks / totalTasks) * 100}%` }} />
+                    </div>
+                  )}
+                </div>
+                <div className="bg-white p-4 rounded-lg border text-center">
+                  <p className="text-2xl font-bold text-gray-900">{caseData.documents.length}</p>
+                  <p className="text-xs text-gray-500 mt-1">Documentos</p>
+                  {caseData.documents.length > 0 && (
+                    <p className="text-xs text-green-600 mt-1">{linkedDocs} vinculados</p>
+                  )}
+                </div>
+                <div className="bg-white p-4 rounded-lg border text-center">
+                  <p className={`text-2xl font-bold ${daysSinceDeath !== null && daysSinceDeath > 150 ? "text-red-600" : "text-gray-900"}`}>
+                    {daysSinceDeath !== null ? daysSinceDeath : "—"}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Dias desde fallecimiento</p>
+                  {daysSinceDeath !== null && daysSinceDeath > 150 && (
+                    <p className="text-xs text-red-500 mt-1">Plazo ISD proximo</p>
+                  )}
+                </div>
+                <div className="bg-white p-4 rounded-lg border text-center">
+                  {daysToNextDeadline !== null ? (
+                    <>
+                      <p className={`text-2xl font-bold ${daysToNextDeadline <= 14 ? "text-red-600" : daysToNextDeadline <= 30 ? "text-orange-600" : "text-gray-900"}`}>
+                        {daysToNextDeadline}d
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Proximo plazo</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-2xl font-bold text-green-600">OK</p>
+                      <p className="text-xs text-gray-500 mt-1">Sin plazos urgentes</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="bg-white p-6 rounded-lg border space-y-3">
             <h3 className="font-semibold">Fallecido</h3>
             <p><strong>Nombre:</strong> {caseData.deceased?.fullName}</p>
