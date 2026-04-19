@@ -20,27 +20,36 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
   const search = url.searchParams.get("search");
+  const page = parseInt(url.searchParams.get("page") || "1");
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "25"), 100);
 
-  const where: Record<string, unknown> = {
-    orgId: session.user.orgId,
-    deletedAt: null,
-  };
-  if (status) where.status = status;
+  const conditions: Record<string, unknown>[] = [
+    { orgId: session.user.orgId, deletedAt: null },
+  ];
+  if (status) conditions.push({ status });
   if (search) {
-    where.OR = [
-      { ref: { contains: search, mode: "insensitive" } },
-      { deceased: { fullName: { contains: search, mode: "insensitive" } } },
-      { contact: { fullName: { contains: search, mode: "insensitive" } } },
-    ];
+    conditions.push({
+      OR: [
+        { ref: { contains: search, mode: "insensitive" } },
+        { deceased: { fullName: { contains: search, mode: "insensitive" } } },
+        { contact: { fullName: { contains: search, mode: "insensitive" } } },
+      ],
+    });
   }
+  const where = { AND: conditions };
 
-  const cases = await prisma.case.findMany({
-    where: where as any,
-    include: { deceased: true, contact: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const [cases, total] = await Promise.all([
+    prisma.case.findMany({
+      where: where as any,
+      include: { deceased: true, contact: true },
+      orderBy: [{ isUrgent: "desc" }, { createdAt: "desc" }],
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.case.count({ where: where as any }),
+  ]);
 
-  return NextResponse.json(cases);
+  return NextResponse.json({ cases, total, page, limit });
 }
 
 export async function POST(req: NextRequest) {
