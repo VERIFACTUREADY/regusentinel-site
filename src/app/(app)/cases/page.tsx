@@ -192,6 +192,10 @@ export default function CasesPage() {
           <p className="text-sm text-gray-500 mt-1">{total} expediente{total !== 1 ? "s" : ""}</p>
         </div>
         <div className="flex gap-2">
+          <Link href="/cases/kanban"
+            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm font-medium text-center">
+            Kanban
+          </Link>
           <button
             onClick={exportCSV}
             disabled={cases.length === 0}
