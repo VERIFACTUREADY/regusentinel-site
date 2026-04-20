@@ -26,9 +26,15 @@ export async function POST(req: NextRequest) {
 
   const checklist = await generateChecklist(c, session.user.id);
 
-  // Create tasks from checklist
+  const deathDate = c.deceased?.deathDate ? new Date(c.deceased.deathDate) : null;
+
   const createdTasks = [];
   for (const item of checklist) {
+    let deadline: Date | null = null;
+    if (deathDate && item.deadlineOffsetDays) {
+      deadline = new Date(deathDate.getTime() + item.deadlineOffsetDays * 24 * 60 * 60 * 1000);
+    }
+
     const task = await prisma.task.create({
       data: {
         caseId,
@@ -36,6 +42,7 @@ export async function POST(req: NextRequest) {
         title: item.title,
         description: item.description,
         sortOrder: item.sortOrder,
+        deadline,
       },
     });
     createdTasks.push(task);

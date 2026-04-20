@@ -30,7 +30,7 @@ async function callAI(prompt: string): Promise<string> {
 export async function generateChecklist(
   caseData: CaseData,
   userId: string
-): Promise<{ category: TaskCategory; title: string; description: string; sortOrder: number }[]> {
+): Promise<{ category: TaskCategory; title: string; description: string; sortOrder: number; deadlineOffsetDays?: number | null }[]> {
   const stubResult = getChecklistForCategories(caseData.categories);
 
   if (HAS_AI) {
