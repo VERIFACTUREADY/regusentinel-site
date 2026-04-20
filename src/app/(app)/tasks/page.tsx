@@ -53,6 +53,8 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchLoading, setBatchLoading] = useState(false);
   const controllerRef = useRef<AbortController>();
 
   useEffect(() => {
@@ -76,6 +78,34 @@ export default function TasksPage() {
     if (res.ok) setRefreshKey((k) => k + 1);
   }
 
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === tasks.length) setSelected(new Set());
+    else setSelected(new Set(tasks.map((t) => t.id)));
+  }
+
+  async function batchAction(action: { status?: string; assigneeId?: string }) {
+    setBatchLoading(true);
+    const res = await fetch("/api/tasks/batch", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskIds: Array.from(selected), ...action }),
+    });
+    if (res.ok) {
+      setSelected(new Set());
+      setRefreshKey((k) => k + 1);
+    }
+    setBatchLoading(false);
+  }
+
   useEffect(() => {
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -95,6 +125,7 @@ export default function TasksPage() {
         if (data && !controller.signal.aborted) {
           setTasks(data.tasks);
           setTotal(data.total);
+          setSelected(new Set());
         }
       })
       .catch(() => {})
@@ -149,6 +180,53 @@ export default function TasksPage() {
         </select>
       </div>
 
+      {/* Batch action bar */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <input
+            type="checkbox"
+            checked={selected.size === tasks.length}
+            onChange={toggleSelectAll}
+            className="rounded border-gray-300"
+          />
+          <span className="text-sm font-medium text-blue-700">
+            {selected.size} seleccionada{selected.size !== 1 ? "s" : ""}
+          </span>
+          <button
+            onClick={() => batchAction({ status: "DONE" })}
+            disabled={batchLoading}
+            className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+          >
+            Completar
+          </button>
+          <button
+            onClick={() => batchAction({ status: "IN_PROGRESS" })}
+            disabled={batchLoading}
+            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          >
+            Iniciar
+          </button>
+          <select
+            onChange={(e) => { if (e.target.value !== "") batchAction({ assigneeId: e.target.value }); e.target.value = ""; }}
+            disabled={batchLoading}
+            className="px-2 py-1 border rounded text-sm"
+            defaultValue=""
+          >
+            <option value="" disabled>Reasignar a...</option>
+            <option value="">Sin asignar</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>{m.name || m.email}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-sm text-gray-500 hover:text-gray-700 ml-auto"
+          >
+            Deseleccionar
+          </button>
+        </div>
+      )}
+
       {/* Overdue alert */}
       {!loading && (() => {
         const overdue = tasks.filter(
@@ -195,6 +273,12 @@ export default function TasksPage() {
                 }`}
               >
                 <div className="flex items-start justify-between gap-4">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(task.id)}
+                    onChange={() => toggleSelect(task.id)}
+                    className="mt-1 rounded border-gray-300 shrink-0"
+                  />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <Link

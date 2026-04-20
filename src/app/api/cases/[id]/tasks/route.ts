@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
+import { sendEmail } from "@/lib/email";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -96,6 +97,37 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         ? `Tarea "${task.title}" asignada`
         : `Tarea "${task.title}" desasignada`,
     });
+
+    if (assigneeId && assigneeId !== session.user.id) {
+      const [assignee, caseData] = await Promise.all([
+        prisma.user.findUnique({ where: { id: assigneeId }, select: { email: true, name: true } }),
+        prisma.case.findUnique({ where: { id: params.id }, select: { ref: true } }),
+      ]);
+      if (assignee?.email) {
+        sendEmail({
+          to: assignee.email,
+          subject: `Tarea asignada: ${task.title} — ${caseData?.ref || ""}`,
+          html: `
+            <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+              <h2 style="color:#1a1a2e;">Nueva tarea asignada</h2>
+              <p style="font-size:15px;color:#333;">
+                Hola ${assignee.name || ""},<br/>
+                Se te ha asignado la tarea <strong>${task.title}</strong> en el expediente <strong>${caseData?.ref || params.id}</strong>.
+              </p>
+              <p style="text-align:center;margin:24px 0;">
+                <a href="${process.env.NEXTAUTH_URL || "https://app.baritur.pro"}/cases/${params.id}"
+                   style="background-color:#1e40af;color:white;padding:12px 32px;
+                          border-radius:6px;text-decoration:none;font-weight:600;">
+                  Ver expediente
+                </a>
+              </p>
+              <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
+              <p style="color:#999;font-size:12px;">BARITUR PRO — Gestion post-mortem profesional</p>
+            </div>
+          `,
+        }).catch(console.error);
+      }
+    }
   }
 
   return NextResponse.json(updated);
