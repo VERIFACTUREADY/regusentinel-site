@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { CATEGORY_LABELS } from "@/lib/constants";
 
 export const metadata = {
   title: "Informes — BARITUR PRO",
@@ -44,6 +45,7 @@ export default async function ReportsPage() {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const startOfYear = new Date(now.getFullYear(), 0, 1);
+  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
   const [
     totalCases,
@@ -61,6 +63,8 @@ export default async function ReportsPage() {
     notifsThisMonth,
     teamWorkload,
     members,
+    recentCases6m,
+    overdueTaskCount,
   ] = await Promise.all([
     prisma.case.count({ where: { orgId, deletedAt: null } }),
     prisma.case.count({ where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } } }),
@@ -95,6 +99,17 @@ export default async function ReportsPage() {
     prisma.membership.findMany({
       where: { orgId },
       select: { userId: true, user: { select: { name: true, email: true } } },
+    }),
+    prisma.case.findMany({
+      where: { orgId, deletedAt: null, createdAt: { gte: sixMonthsAgo } },
+      select: { createdAt: true, closedAt: true, status: true, categories: true },
+    }),
+    prisma.task.count({
+      where: {
+        case: { orgId, deletedAt: null },
+        deadline: { lt: now },
+        status: { notIn: ["DONE", "SKIPPED"] },
+      },
     }),
   ]);
   const memberMap = Object.fromEntries(
@@ -132,6 +147,30 @@ export default async function ReportsPage() {
 
   const taskMap = Object.fromEntries(taskStats.map((t) => [t.status, t._count]));
   const totalTasks = Object.values(taskMap).reduce((a, b) => a + b, 0);
+
+  const MONTH_NAMES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  const monthlyData: { label: string; created: number; closed: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+    const created = recentCases6m.filter(
+      (c) => new Date(c.createdAt) >= mStart && new Date(c.createdAt) < mEnd
+    ).length;
+    const closed = recentCases6m.filter(
+      (c) => c.closedAt && c.status === "CLOSED" && new Date(c.closedAt) >= mStart && new Date(c.closedAt) < mEnd
+    ).length;
+    monthlyData.push({ label: MONTH_NAMES[mStart.getMonth()], created, closed });
+  }
+  const maxMonthly = Math.max(...monthlyData.flatMap((m) => [m.created, m.closed]), 1);
+
+  const categoryCount: Record<string, number> = {};
+  for (const c of recentCases6m) {
+    for (const cat of (c.categories as string[]) || []) {
+      categoryCount[cat] = (categoryCount[cat] || 0) + 1;
+    }
+  }
+  const categoryEntries = Object.entries(categoryCount).sort((a, b) => b[1] - a[1]);
+  const maxCategoryCount = categoryEntries.length > 0 ? categoryEntries[0][1] : 1;
 
   function delta(current: number, previous: number) {
     if (previous === 0) return current > 0 ? "+100%" : "—";
@@ -229,6 +268,70 @@ export default async function ReportsPage() {
         </div>
       </div>
 
+      {/* Monthly activity chart */}
+      <div className="grid lg:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white rounded-lg border p-6">
+          <h2 className="font-semibold mb-4">Actividad mensual (6 meses)</h2>
+          <div className="flex items-end justify-between gap-2" style={{ height: 160 }}>
+            {monthlyData.map((m) => (
+              <div key={m.label} className="flex-1 flex flex-col items-center gap-1">
+                <div className="w-full flex items-end justify-center gap-1" style={{ height: 120 }}>
+                  <div
+                    className="w-4 bg-blue-400 rounded-t"
+                    style={{ height: `${(m.created / maxMonthly) * 100}%`, minHeight: m.created > 0 ? 4 : 0 }}
+                    title={`Creados: ${m.created}`}
+                  />
+                  <div
+                    className="w-4 bg-green-400 rounded-t"
+                    style={{ height: `${(m.closed / maxMonthly) * 100}%`, minHeight: m.closed > 0 ? 4 : 0 }}
+                    title={`Cerrados: ${m.closed}`}
+                  />
+                </div>
+                <span className="text-xs text-gray-500">{m.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-4 mt-4 text-xs text-gray-400">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-400 rounded" /> Creados</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-400 rounded" /> Cerrados</span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold">Expedientes por categoria</h2>
+            {overdueTaskCount > 0 && (
+              <Link
+                href="/tasks/timeline"
+                className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium hover:bg-red-200"
+              >
+                {overdueTaskCount} tarea{overdueTaskCount !== 1 ? "s" : ""} vencida{overdueTaskCount !== 1 ? "s" : ""}
+              </Link>
+            )}
+          </div>
+          {categoryEntries.length === 0 ? (
+            <p className="text-gray-400 text-sm">Sin datos</p>
+          ) : (
+            <div className="space-y-3">
+              {categoryEntries.map(([cat, count]) => (
+                <div key={cat}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-600">{CATEGORY_LABELS[cat] || cat}</span>
+                    <span className="font-medium">{count}</span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full"
+                      style={{ width: `${(count / maxCategoryCount) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Team workload */}
       {workloadEntries.length > 0 && (
         <div className="bg-white rounded-lg border p-6 mb-8">
@@ -321,6 +424,8 @@ export default async function ReportsPage() {
         <div className="bg-white rounded-lg border p-6">
           <h2 className="font-semibold mb-4">Accesos rapidos</h2>
           <div className="space-y-2">
+            <Link href="/tasks/timeline" className="block text-sm text-primary hover:underline">Cronograma de plazos →</Link>
+            <Link href="/cases/kanban" className="block text-sm text-primary hover:underline">Tablero Kanban →</Link>
             <Link href="/audit" className="block text-sm text-primary hover:underline">Audit Trail →</Link>
             <Link href="/templates" className="block text-sm text-primary hover:underline">Plantillas →</Link>
             <Link href="/cases" className="block text-sm text-primary hover:underline">Todos los expedientes →</Link>
