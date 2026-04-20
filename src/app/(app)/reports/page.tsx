@@ -103,6 +103,7 @@ export default async function ReportsPage() {
     prisma.case.findMany({
       where: { orgId, deletedAt: null, createdAt: { gte: sixMonthsAgo } },
       select: { createdAt: true, closedAt: true, status: true, categories: true },
+      take: 2000,
     }),
     prisma.task.count({
       where: {
@@ -149,26 +150,30 @@ export default async function ReportsPage() {
   const totalTasks = Object.values(taskMap).reduce((a, b) => a + b, 0);
 
   const MONTH_NAMES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-  const monthlyData: { label: string; created: number; closed: number }[] = [];
+  const monthBuckets: { start: number; end: number; label: string; created: number; closed: number }[] = [];
   for (let i = 5; i >= 0; i--) {
     const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-    const created = recentCases6m.filter(
-      (c) => new Date(c.createdAt) >= mStart && new Date(c.createdAt) < mEnd
-    ).length;
-    const closed = recentCases6m.filter(
-      (c) => c.closedAt && c.status === "CLOSED" && new Date(c.closedAt) >= mStart && new Date(c.closedAt) < mEnd
-    ).length;
-    monthlyData.push({ label: MONTH_NAMES[mStart.getMonth()], created, closed });
+    monthBuckets.push({ start: mStart.getTime(), end: mEnd.getTime(), label: MONTH_NAMES[mStart.getMonth()], created: 0, closed: 0 });
   }
-  const maxMonthly = Math.max(...monthlyData.flatMap((m) => [m.created, m.closed]), 1);
-
   const categoryCount: Record<string, number> = {};
   for (const c of recentCases6m) {
+    const createdAt = new Date(c.createdAt).getTime();
+    for (const b of monthBuckets) {
+      if (createdAt >= b.start && createdAt < b.end) { b.created++; break; }
+    }
+    if (c.closedAt && c.status === "CLOSED") {
+      const closedAt = new Date(c.closedAt).getTime();
+      for (const b of monthBuckets) {
+        if (closedAt >= b.start && closedAt < b.end) { b.closed++; break; }
+      }
+    }
     for (const cat of (c.categories as string[]) || []) {
       categoryCount[cat] = (categoryCount[cat] || 0) + 1;
     }
   }
+  const monthlyData = monthBuckets.map(({ label, created, closed }) => ({ label, created, closed }));
+  const maxMonthly = Math.max(...monthlyData.flatMap((m) => [m.created, m.closed]), 1);
   const categoryEntries = Object.entries(categoryCount).sort((a, b) => b[1] - a[1]);
   const maxCategoryCount = categoryEntries.length > 0 ? categoryEntries[0][1] : 1;
 

@@ -28,33 +28,30 @@ export async function POST(req: NextRequest) {
 
   const deathDate = c.deceased?.deathDate ? new Date(c.deceased.deathDate) : null;
 
-  const createdTasks = [];
-  for (const item of checklist) {
+  const taskData = checklist.map((item) => {
     let deadline: Date | null = null;
     if (deathDate && item.deadlineOffsetDays) {
       deadline = new Date(deathDate.getTime() + item.deadlineOffsetDays * 24 * 60 * 60 * 1000);
     }
+    return {
+      caseId,
+      category: item.category,
+      title: item.title,
+      description: item.description,
+      sortOrder: item.sortOrder,
+      deadline,
+    };
+  });
 
-    const task = await prisma.task.create({
-      data: {
-        caseId,
-        category: item.category,
-        title: item.title,
-        description: item.description,
-        sortOrder: item.sortOrder,
-        deadline,
-      },
-    });
-    createdTasks.push(task);
-  }
+  await prisma.task.createMany({ data: taskData });
 
   await logAudit({
     orgId: session.user.orgId,
     userId: session.user.id,
     caseId,
     action: "autopilot.checklist_generated",
-    details: `${createdTasks.length} tareas generadas por autopilot`,
+    details: `${taskData.length} tareas generadas por autopilot`,
   });
 
-  return NextResponse.json({ tasks: createdTasks });
+  return NextResponse.json({ count: taskData.length });
 }

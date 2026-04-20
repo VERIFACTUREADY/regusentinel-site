@@ -43,23 +43,16 @@ export async function GET(req: NextRequest) {
     take: 200,
   });
 
-  const overdue = tasks.filter(
-    (t) => t.deadline && t.status !== "DONE" && new Date(t.deadline) < now
-  ).length;
-
-  const thisWeek = tasks.filter((t) => {
-    if (!t.deadline || t.status === "DONE") return false;
-    const d = new Date(t.deadline);
-    const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    return d >= now && d <= weekEnd;
-  }).length;
-
-  const thisMonth = tasks.filter((t) => {
-    if (!t.deadline || t.status === "DONE") return false;
-    const d = new Date(t.deadline);
-    const monthEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    return d >= now && d <= monthEnd;
-  }).length;
+  const weekEnd = now.getTime() + 7 * 24 * 60 * 60 * 1000;
+  const monthEnd = now.getTime() + 30 * 24 * 60 * 60 * 1000;
+  let overdue = 0, thisWeek = 0, thisMonth = 0;
+  for (const t of tasks) {
+    if (!t.deadline || t.status === "DONE") continue;
+    const dl = new Date(t.deadline).getTime();
+    if (dl < now.getTime()) { overdue++; continue; }
+    if (dl <= weekEnd) thisWeek++;
+    if (dl <= monthEnd) thisMonth++;
+  }
 
   return NextResponse.json({ tasks, overdue, thisWeek, thisMonth });
 }

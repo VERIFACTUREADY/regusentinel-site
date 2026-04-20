@@ -14,6 +14,9 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
 
+  const orgId = session.user.orgId;
+  const userId = session.user.id;
+
   const body = await req.json();
   const { taskIds, status, assigneeId } = body;
 
@@ -22,7 +25,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const tasks = await prisma.task.findMany({
-    where: { id: { in: taskIds }, case: { orgId: session.user.orgId, deletedAt: null } },
+    where: { id: { in: taskIds }, case: { orgId, deletedAt: null } },
     select: { id: true, title: true, caseId: true, status: true },
   });
 
@@ -47,15 +50,15 @@ export async function PATCH(req: NextRequest) {
       : `${tasks.length} tareas desasignadas`;
 
   const caseIds = Array.from(new Set(tasks.map((t) => t.caseId)));
-  for (const caseId of caseIds) {
-    await logAudit({
-      orgId: session.user.orgId,
-      userId: session.user.id,
+  await Promise.all(caseIds.map((caseId) =>
+    logAudit({
+      orgId,
+      userId,
       caseId,
       action,
       details,
-    });
-  }
+    })
+  ));
 
   return NextResponse.json({ updated: tasks.length });
 }

@@ -60,8 +60,6 @@ export default function TimelinePage() {
       } else if (task.status === "DONE") {
         key = "COMPLETADAS";
       } else {
-        const weekStart = new Date(d);
-        weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
         const weekNum = Math.ceil(
           (d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000)
         );
@@ -162,7 +160,9 @@ export default function TimelinePage() {
         <div className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">
           No hay tareas con plazos
         </div>
-      ) : (
+      ) : (() => {
+        const now = new Date();
+        return (
         <div className="space-y-6">
           {Object.entries(grouped).map(([key, tasks]) => (
             <div key={key}>
@@ -187,7 +187,6 @@ export default function TimelinePage() {
               <div className="ml-1.5 border-l-2 border-gray-200 pl-5 space-y-2">
                 {tasks.map((task) => {
                   const deadline = new Date(task.deadline);
-                  const now = new Date();
                   const daysLeft = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
                   const isOverdue = daysLeft < 0 && task.status !== "DONE";
                   const isUrgent = daysLeft >= 0 && daysLeft <= 7 && task.status !== "DONE";
@@ -258,7 +257,8 @@ export default function TimelinePage() {
             </div>
           ))}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
