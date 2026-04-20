@@ -157,29 +157,9 @@ export default function CasesPage() {
   }
 
   function exportCSV() {
-    const esc = (v: string) => {
-      if (v.includes(",") || v.includes('"') || v.includes("\n")) {
-        return `"${v.replace(/"/g, '""')}"`;
-      }
-      return v;
-    };
-    const header = ["Referencia", "Fallecido", "Solicitante", "Estado", "Urgente", "Fecha"];
-    const rows = cases.map((c) => [
-      esc(c.ref),
-      esc(c.deceased?.fullName || ""),
-      esc(c.contact?.fullName || ""),
-      esc(STATUS_OPTIONS.find((s) => s.value === c.status)?.label || c.status),
-      c.isUrgent ? "Si" : "No",
-      new Date(c.createdAt).toLocaleDateString("es-ES"),
-    ]);
-    const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `expedientes-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 500);
+    const params = new URLSearchParams();
+    if (statusFilter) params.set("status", statusFilter);
+    window.open(`/api/cases/export-csv?${params}`, "_blank");
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
