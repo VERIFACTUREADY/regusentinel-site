@@ -29,6 +29,8 @@ const ALL_PERMISSIONS = [
   "autopilot.run",
   "autopilot.approve",
   "autopilot.configure",
+  "workflow.read",
+  "workflow.manage",
 ] as const;
 
 type Permission = (typeof ALL_PERMISSIONS)[number];

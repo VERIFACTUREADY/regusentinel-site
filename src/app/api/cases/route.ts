@@ -7,6 +7,7 @@ import { createCaseSchema } from "@/lib/validations";
 import { getChecklistForCategories } from "@/lib/checklist-rules";
 import { logAudit } from "@/lib/audit";
 import { calculateTaskDeadlines } from "@/lib/deadline-engine";
+import { triggerWorkflow } from "@/lib/workflow-engine";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -157,6 +158,13 @@ export async function POST(req: NextRequest) {
       action: "case.created",
       details: `Expediente ${ref} creado`,
     });
+
+    triggerWorkflow({
+      type: "CASE_CREATED",
+      orgId: session.user.orgId,
+      caseId: newCase.id,
+      userId: session.user.id,
+    }).catch(console.error);
 
     const full = await prisma.case.findUnique({
       where: { id: newCase.id },

@@ -84,6 +84,7 @@ model Organization {
   auditLogs     AuditLog[]
   demoRequests  DemoRequest[]
   notifications NotificationLog[]
+  workflowRules WorkflowRule[]
 
   retentionDays Int @default(90)
 
@@ -169,6 +170,7 @@ model Case {
   promptLogs PromptLog[]
   auditLogs  AuditLog[]
   notifications NotificationLog[]
+  workflowLogs  WorkflowLog[]
 }
 
 model Deceased {
@@ -392,6 +394,65 @@ model NotificationLog {
   // a rolling 7-day window handled in application logic.
   @@index([caseId, kind])
   @@index([orgId, createdAt])
+}
+
+// ─── WORKFLOW AUTOMATION ────────────────────────────────
+
+enum WorkflowTrigger {
+  CASE_STATUS_CHANGED
+  TASK_STATUS_CHANGED
+  CASE_CREATED
+  DOCUMENT_UPLOADED
+}
+
+enum WorkflowAction {
+  SEND_EMAIL_CONTACT
+  SEND_EMAIL_TEAM
+  ADD_CASE_COMMENT
+  CHANGE_CASE_STATUS
+}
+
+enum WorkflowLogStatus {
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+model WorkflowRule {
+  id          String          @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  isActive    Boolean         @default(true)
+  trigger     WorkflowTrigger
+  conditions  Json
+  action      WorkflowAction
+  actionConfig Json
+  execCount   Int             @default(0)
+  lastRunAt   DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  org  Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  logs WorkflowLog[]
+
+  @@index([orgId, isActive])
+}
+
+model WorkflowLog {
+  id        String            @id @default(cuid())
+  ruleId    String
+  caseId    String?
+  status    WorkflowLogStatus
+  details   Json?
+  error     String?
+  createdAt DateTime          @default(now())
+
+  rule WorkflowRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  case Case?        @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@index([ruleId, createdAt])
+  @@index([caseId])
 }
 
 // ─── DEMO REQUEST ───────────────────────────────────────

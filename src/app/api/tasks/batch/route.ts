@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
+import { triggerWorkflow } from "@/lib/workflow-engine";
 
 export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -26,7 +27,7 @@ export async function PATCH(req: NextRequest) {
 
   const tasks = await prisma.task.findMany({
     where: { id: { in: taskIds }, case: { orgId, deletedAt: null } },
-    select: { id: true, title: true, caseId: true, status: true },
+    select: { id: true, title: true, caseId: true, status: true, category: true },
   });
 
   if (tasks.length === 0) {
@@ -59,6 +60,23 @@ export async function PATCH(req: NextRequest) {
       details,
     })
   ));
+
+  // Fire-and-forget workflow triggers for task status changes
+  if (status) {
+    Promise.allSettled(
+      tasks.map((t) =>
+        triggerWorkflow({
+          type: "TASK_STATUS_CHANGED",
+          orgId,
+          caseId: t.caseId,
+          userId,
+          taskId: t.id,
+          taskStatus: status,
+          taskCategory: t.category,
+        })
+      )
+    ).catch(console.error);
+  }
 
   return NextResponse.json({ updated: tasks.length });
 }

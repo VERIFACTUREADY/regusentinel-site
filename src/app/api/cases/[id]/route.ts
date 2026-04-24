@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { getCaseDeadlines } from "@/lib/deadline-engine";
+import { triggerWorkflow } from "@/lib/workflow-engine";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -119,6 +120,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       action: "case.status_changed",
       details: `${c.status} -> ${status}`,
     });
+    // Fire-and-forget workflow triggers
+    triggerWorkflow({
+      type: "CASE_STATUS_CHANGED",
+      orgId: session.user.orgId,
+      caseId: params.id,
+      userId: session.user.id,
+      fromStatus: c.status,
+      toStatus: status,
+    }).catch(console.error);
   }
 
   return NextResponse.json(updated);
