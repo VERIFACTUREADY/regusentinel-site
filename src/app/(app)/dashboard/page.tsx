@@ -6,6 +6,7 @@ import { OnboardingPanel } from "@/components/dashboard/onboarding-panel";
 import { DemoHighlights } from "@/components/dashboard/demo-highlights";
 import { MyTasksWidget } from "@/components/dashboard/my-tasks-widget";
 import { UsageWidget } from "@/components/dashboard/usage-widget";
+import { DeadlineCalendar } from "@/components/dashboard/deadline-calendar";
 import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import { CASE_STATUS_COLORS } from "@/lib/constants";
 import Link from "next/link";
@@ -20,7 +21,13 @@ export default async function DashboardPage() {
 
   const userId = session.user.id;
 
-  const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, pendingApprovals, recentCases, recentLogs, upcomingDeadlines, onboarding, org, myTasks] = await Promise.all([
+  const calMonth = now.getMonth();
+  const calYear = now.getFullYear();
+  const calFrom = new Date(calYear, calMonth, 1);
+  const calTo = new Date(calYear, calMonth + 1, 0, 23, 59, 59);
+  const weekEnd = new Date(now.getTime() + 7 * 86400000);
+
+  const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, pendingApprovals, recentCases, recentLogs, upcomingDeadlines, onboarding, org, myTasks, calendarTasks] = await Promise.all([
     prisma.case.count({
       where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
     }),
@@ -79,6 +86,18 @@ export default async function DashboardPage() {
       orderBy: [{ deadline: { sort: "asc", nulls: "last" } }, { sortOrder: "asc" }],
       take: 8,
     }),
+    // Calendar widget: tasks with deadlines in current month
+    prisma.task.findMany({
+      where: {
+        case: { orgId, deletedAt: null },
+        OR: [
+          { deadline: { gte: calFrom, lte: calTo } },
+          { dueDate: { gte: calFrom, lte: calTo } },
+        ],
+        status: { notIn: ["DONE", "SKIPPED"] },
+      },
+      select: { deadline: true, dueDate: true },
+    }),
   ]);
 
   // In the public demo org surface 3 "try this" shortcuts so prospects
@@ -128,6 +147,24 @@ export default async function DashboardPage() {
     { label: "Cerrados este mes", value: closedThisMonth, color: "text-green-600" },
   ];
 
+  // Build per-day buckets for the calendar widget
+  const calByDay: Record<number, { overdue: number; soon: number; future: number }> = {};
+  for (const t of calendarTasks) {
+    const date = t.deadline ?? t.dueDate;
+    if (!date) continue;
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    const day = d.getDate();
+    const bucket = (calByDay[day] ??= { overdue: 0, soon: 0, future: 0 });
+    if (d < now) bucket.overdue++;
+    else if (d <= weekEnd) bucket.soon++;
+    else bucket.future++;
+  }
+  const calendarDays = Object.entries(calByDay).map(([day, counts]) => ({
+    date: `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+    ...counts,
+  }));
+
   function daysUntil(date: Date): number {
     return Math.ceil((new Date(date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   }
@@ -160,7 +197,8 @@ export default async function DashboardPage() {
         <div className="lg:col-span-3">
           <MyTasksWidget initialTasks={myTasks as any} />
         </div>
-        <div>
+        <div className="space-y-4">
+          <DeadlineCalendar days={calendarDays} year={calYear} month={calMonth} />
           <UsageWidget />
         </div>
       </div>
