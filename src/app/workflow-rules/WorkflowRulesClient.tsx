@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { ALL_CATEGORIES } from "@/lib/constants";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -69,16 +70,7 @@ const TASK_STATUS_OPTIONS = [
   { value: "SKIPPED", label: "Omitida" },
 ];
 
-const TASK_CATEGORY_OPTIONS = [
-  { value: "BANCOS", label: "Bancos" },
-  { value: "SUMINISTROS", label: "Suministros" },
-  { value: "TELECOM", label: "Telecom" },
-  { value: "SUSCRIPCIONES", label: "Suscripciones" },
-  { value: "SEGUROS", label: "Seguros" },
-  { value: "VIDA_DIGITAL", label: "Vida digital" },
-  { value: "FISCAL", label: "Fiscal" },
-  { value: "OTROS", label: "Otros" },
-];
+const TASK_CATEGORY_OPTIONS = ALL_CATEGORIES;
 
 const TRIGGER_COLORS: Record<WorkflowTrigger, string> = {
   CASE_STATUS_CHANGED: "bg-blue-100 text-blue-800",
@@ -178,7 +170,12 @@ function RuleModal({
   }
 
   function setCondition(key: string, value: string) {
-    setForm((f) => ({ ...f, conditions: { ...f.conditions, [key]: value || undefined! } }));
+    setForm((f) => {
+      const conditions = { ...f.conditions };
+      if (value) conditions[key] = value;
+      else delete conditions[key];
+      return { ...f, conditions };
+    });
   }
 
   function setActionConfig(key: string, value: string) {
@@ -220,7 +217,6 @@ function RuleModal({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        {/* Header */}
         <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-semibold text-gray-900">
             {rule ? "Editar regla" : "Nueva regla de automatización"}
@@ -228,7 +224,6 @@ function RuleModal({
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
 
-        {/* Body */}
         <div className="overflow-y-auto flex-1 px-6 py-4 space-y-5">
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
@@ -236,7 +231,6 @@ function RuleModal({
             </div>
           )}
 
-          {/* Name + description */}
           <div className="space-y-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -264,7 +258,6 @@ function RuleModal({
 
           <hr />
 
-          {/* Trigger */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Disparador — ¿cuándo se ejecuta?
@@ -286,7 +279,6 @@ function RuleModal({
             </div>
           </div>
 
-          {/* Conditions */}
           {(form.trigger === "CASE_STATUS_CHANGED" || form.trigger === "TASK_STATUS_CHANGED") && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -294,8 +286,7 @@ function RuleModal({
               </label>
               <div className="bg-gray-50 rounded-lg p-4 space-y-3">
                 {form.trigger === "CASE_STATUS_CHANGED" && (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Estado anterior (opcional)</label>
                         <select
@@ -322,8 +313,7 @@ function RuleModal({
                           ))}
                         </select>
                       </div>
-                    </div>
-                  </>
+                  </div>
                 )}
                 {form.trigger === "TASK_STATUS_CHANGED" && (
                   <div className="grid grid-cols-2 gap-3">
@@ -361,7 +351,6 @@ function RuleModal({
 
           <hr />
 
-          {/* Action */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Acción — ¿qué hace?
@@ -383,7 +372,6 @@ function RuleModal({
             </div>
           </div>
 
-          {/* Action config */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Configuración de la acción
@@ -449,7 +437,6 @@ function RuleModal({
 
           <hr />
 
-          {/* Active toggle */}
           <div className="flex items-center gap-3">
             <button
               onClick={() => setField("isActive", !form.isActive)}
@@ -469,7 +456,6 @@ function RuleModal({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t flex justify-end gap-3 flex-shrink-0 bg-gray-50 rounded-b-xl">
           <button
             onClick={onClose}
@@ -547,7 +533,7 @@ function RuleCard({
   }
 
   const lastLog = rule.logs[0];
-  const successCount = useMemo(() => rule.logs.filter((l) => l.status === "SUCCESS").length, [rule.logs]);
+  const successCount = rule.logs.filter((l) => l.status === "SUCCESS").length;
 
   return (
     <div className={`bg-white border rounded-xl shadow-sm overflow-hidden ${!rule.isActive ? "opacity-70" : ""}`}>

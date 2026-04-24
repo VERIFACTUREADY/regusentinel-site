@@ -7,6 +7,7 @@ import type {
   TaskStatus,
   WorkflowTrigger,
   WorkflowAction,
+  Prisma,
 } from "@prisma/client";
 
 export interface WorkflowEvent {
@@ -14,10 +15,8 @@ export interface WorkflowEvent {
   orgId: string;
   caseId: string;
   userId?: string;
-  // CASE_STATUS_CHANGED
   fromStatus?: CaseStatus;
   toStatus?: CaseStatus;
-  // TASK_STATUS_CHANGED
   taskId?: string;
   taskStatus?: TaskStatus;
   taskCategory?: TaskCategory;
@@ -30,20 +29,16 @@ interface RuleConditions {
   taskCategory?: string;
 }
 
-interface EmailActionConfig {
+interface ActionConfig {
   subject?: string;
   body?: string;
-}
-
-interface CommentActionConfig {
   comment?: string;
-}
-
-interface StatusActionConfig {
   newStatus?: string;
 }
 
-type ActionConfig = EmailActionConfig & CommentActionConfig & StatusActionConfig;
+type CaseWithRelations = Prisma.CaseGetPayload<{
+  include: { deceased: true; contact: true; org: true };
+}>;
 
 export async function triggerWorkflow(event: WorkflowEvent): Promise<void> {
   const rules = await prisma.workflowRule.findMany({
@@ -59,17 +54,10 @@ export async function triggerWorkflow(event: WorkflowEvent): Promise<void> {
 
   await Promise.allSettled(
     rules.map(async (rule) => {
-      const conditions = rule.conditions as RuleConditions;
-      if (!evaluateConditions(conditions, event)) {
-        await prisma.workflowLog.create({
-          data: { ruleId: rule.id, caseId: event.caseId, status: "SKIPPED" },
-        });
-        return;
-      }
+      if (!evaluateConditions(rule.conditions as RuleConditions, event)) return;
 
       try {
-        const config = rule.actionConfig as ActionConfig;
-        await executeAction(rule.action, config, event, caseData);
+        await executeAction(rule.action, rule.actionConfig as ActionConfig, event, caseData);
         await Promise.all([
           prisma.workflowRule.update({
             where: { id: rule.id },
@@ -87,14 +75,7 @@ export async function triggerWorkflow(event: WorkflowEvent): Promise<void> {
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         await prisma.workflowLog
-          .create({
-            data: {
-              ruleId: rule.id,
-              caseId: event.caseId,
-              status: "FAILED",
-              error,
-            },
-          })
+          .create({ data: { ruleId: rule.id, caseId: event.caseId, status: "FAILED", error } })
           .catch(console.error);
       }
     })
@@ -113,11 +94,11 @@ async function executeAction(
   action: WorkflowAction,
   config: ActionConfig,
   event: WorkflowEvent,
-  caseData: Awaited<ReturnType<typeof loadCase>>
+  caseData: CaseWithRelations
 ): Promise<void> {
   switch (action) {
     case "SEND_EMAIL_CONTACT": {
-      if (!caseData?.contact?.email) return;
+      if (!caseData.contact?.email) return;
       const subject = interpolate(config.subject || "Actualización de su expediente", caseData);
       const body = interpolate(config.body || "", caseData);
       await sendEmail({ to: caseData.contact.email, subject, html: buildHtml(subject, body) });
@@ -133,9 +114,7 @@ async function executeAction(
       const body = interpolate(config.body || "", caseData);
       await Promise.all(
         members.map((m) =>
-          sendEmail({ to: m.user.email, subject, html: buildHtml(subject, body) }).catch(
-            console.error
-          )
+          sendEmail({ to: m.user.email, subject, html: buildHtml(subject, body) }).catch(console.error)
         )
       );
       break;
@@ -157,10 +136,7 @@ async function executeAction(
       const newStatus = config.newStatus as CaseStatus;
       await prisma.case.update({
         where: { id: event.caseId },
-        data: {
-          status: newStatus,
-          ...(newStatus === "CLOSED" && { closedAt: new Date() }),
-        },
+        data: { status: newStatus, ...(newStatus === "CLOSED" && { closedAt: new Date() }) },
       });
       await logAudit({
         orgId: event.orgId,
@@ -173,18 +149,7 @@ async function executeAction(
   }
 }
 
-// Helper type for caseData shape
-type CaseWithRelations = Awaited<ReturnType<typeof loadCase>>;
-
-async function loadCase(caseId: string) {
-  return prisma.case.findUnique({
-    where: { id: caseId },
-    include: { deceased: true, contact: true, org: true },
-  });
-}
-
 function interpolate(template: string, caseData: CaseWithRelations): string {
-  if (!caseData) return template;
   return template
     .replace(/\{\{deceased\.fullName\}\}/g, caseData.deceased?.fullName ?? "")
     .replace(/\{\{contact\.fullName\}\}/g, caseData.contact?.fullName ?? "")

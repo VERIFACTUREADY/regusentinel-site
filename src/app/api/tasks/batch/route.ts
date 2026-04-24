@@ -61,20 +61,20 @@ export async function PATCH(req: NextRequest) {
     })
   ));
 
-  // Fire-and-forget workflow triggers for task status changes
   if (status) {
+    // Trigger once per unique case, not per task
     Promise.allSettled(
-      tasks.map((t) =>
-        triggerWorkflow({
+      caseIds.map((caseId) => {
+        const t = tasks.find((t) => t.caseId === caseId)!;
+        return triggerWorkflow({
           type: "TASK_STATUS_CHANGED",
           orgId,
-          caseId: t.caseId,
+          caseId,
           userId,
-          taskId: t.id,
           taskStatus: status,
           taskCategory: t.category,
-        })
-      )
+        });
+      })
     ).catch(console.error);
   }
 
