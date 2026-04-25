@@ -26,6 +26,10 @@ export default function CaseDetailPage() {
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<any[]>([]);
+  const [caseTemplates, setCaseTemplates] = useState<any[]>([]);
+  const [applyTplOpen, setApplyTplOpen] = useState(false);
+  const [selectedCaseTpl, setSelectedCaseTpl] = useState("");
+  const [applyTplLoading, setApplyTplLoading] = useState(false);
   const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
   const [notesInput, setNotesInput] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
@@ -66,7 +70,7 @@ export default function CaseDetailPage() {
     }
   }, [caseId, router]);
 
-  useEffect(() => { fetchCase(); fetchTemplates(); fetchMembers(); }, [caseId]);
+  useEffect(() => { fetchCase(); fetchTemplates(); fetchMembers(); fetchCaseTemplates(); }, [caseId]);
 
   async function fetchCase() {
     setLoading(true);
@@ -85,6 +89,32 @@ export default function CaseDetailPage() {
   async function fetchMembers() {
     const res = await fetch("/api/org/members");
     if (res.ok) setMembers(await res.json());
+  }
+
+  async function fetchCaseTemplates() {
+    const res = await fetch("/api/case-templates");
+    if (res.ok) setCaseTemplates(await res.json());
+  }
+
+  async function applyTemplate() {
+    if (!selectedCaseTpl) return;
+    setApplyTplLoading(true);
+    const res = await fetch(`/api/cases/${caseId}/apply-template`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId: selectedCaseTpl }),
+    });
+    setApplyTplLoading(false);
+    if (res.ok) {
+      const data = await res.json();
+      setApplyTplOpen(false);
+      setSelectedCaseTpl("");
+      fetchCase();
+      alert(`Plantilla aplicada: ${data.added} tarea(s) añadida(s)`);
+    } else {
+      const err = await res.json().catch(() => null);
+      alert(err?.error || "Error al aplicar plantilla");
+    }
   }
 
   async function updateStatus(status: string) {
@@ -418,11 +448,20 @@ export default function CaseDetailPage() {
       {tab === "tasks" && (
         <div>
           {caseData.tasks.length > 0 && (
-            <div className="flex justify-end mb-4">
+            <div className="flex items-center justify-between mb-4">
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-full text-sm font-medium">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
                 Checklist generado por IA
               </span>
+              {caseTemplates.length > 0 && (
+                <button
+                  onClick={() => setApplyTplOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                  Aplicar plantilla
+                </button>
+              )}
             </div>
           )}
           {(() => {
@@ -514,15 +553,26 @@ export default function CaseDetailPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               </svg>
               <p className="text-gray-400 mb-4">No hay tareas asignadas a este expediente.</p>
-              <button
-                onClick={generateChecklist}
-                className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md hover:bg-purple-700 inline-flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-                Generar checklist con IA
-              </button>
+              <div className="flex items-center justify-center gap-3 flex-wrap">
+                <button
+                  onClick={generateChecklist}
+                  className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md hover:bg-purple-700 inline-flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  Generar checklist con IA
+                </button>
+                {caseTemplates.length > 0 && (
+                  <button
+                    onClick={() => setApplyTplOpen(true)}
+                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 inline-flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                    Aplicar plantilla
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -820,6 +870,68 @@ export default function CaseDetailPage() {
               className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-50">
               Vista para imprimir
             </a>
+          </div>
+        </div>
+      )}
+
+      {/* Apply Template Modal */}
+      {applyTplOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-lg font-semibold">Aplicar plantilla de tareas</h2>
+              <button onClick={() => { setApplyTplOpen(false); setSelectedCaseTpl(""); }}
+                className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
+              <p className="text-sm text-gray-500 mb-4">Las tareas ya existentes en el expediente no se duplicarán.</p>
+              {caseTemplates.map((tpl: any) => (
+                <label key={tpl.id} className={`flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition-colors ${
+                  selectedCaseTpl === tpl.id ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                }`}>
+                  <input
+                    type="radio"
+                    name="caseTemplate"
+                    value={tpl.id}
+                    checked={selectedCaseTpl === tpl.id}
+                    onChange={() => setSelectedCaseTpl(tpl.id)}
+                    className="mt-1"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium">{tpl.name}</span>
+                      {tpl.isDefault && (
+                        <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">Por defecto</span>
+                      )}
+                      <span className="text-xs text-gray-400">{tpl.tasks?.length ?? 0} tareas</span>
+                    </div>
+                    {tpl.description && <p className="text-sm text-gray-500 mt-0.5">{tpl.description}</p>}
+                    {tpl.categories?.length > 0 && (
+                      <div className="flex gap-1 flex-wrap mt-1">
+                        {tpl.categories.map((c: string) => (
+                          <span key={c} className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">{c}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t">
+              <button onClick={() => { setApplyTplOpen(false); setSelectedCaseTpl(""); }}
+                className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">
+                Cancelar
+              </button>
+              <button
+                onClick={applyTemplate}
+                disabled={!selectedCaseTpl || applyTplLoading}
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {applyTplLoading ? "Aplicando..." : "Aplicar plantilla"}
+              </button>
+            </div>
           </div>
         </div>
       )}

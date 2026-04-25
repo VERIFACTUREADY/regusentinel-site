@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 const categories = [
@@ -20,6 +20,7 @@ export default function NewCasePage() {
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [caseTemplates, setCaseTemplates] = useState<any[]>([]);
   const router = useRouter();
 
   const [form, setForm] = useState({
@@ -34,9 +35,17 @@ export default function NewCasePage() {
     isUrgent: false,
     hasDeceasedInsurance: false,
     categories: [] as string[],
+    caseTemplateId: "",
     consentAccepted: false,
     termsAccepted: false,
   });
+
+  useEffect(() => {
+    fetch("/api/case-templates")
+      .then((r) => r.ok ? r.json() : [])
+      .then(setCaseTemplates)
+      .catch(() => {});
+  }, []);
 
   function update(field: string, value: any) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -77,6 +86,7 @@ export default function NewCasePage() {
           hasDeceasedInsurance: form.hasDeceasedInsurance,
           categories: form.categories,
           consentAccepted: form.consentAccepted,
+          caseTemplateId: form.caseTemplateId || null,
         }),
       });
 
@@ -99,7 +109,7 @@ export default function NewCasePage() {
 
       {/* Step indicator */}
       <div className="flex mb-8 gap-1">
-        {["Fallecido", "Solicitante", "Detalles", "Consentimiento"].map((label, i) => (
+        {["Fallecido", "Solicitante", "Detalles", "Plantilla", "Consentimiento"].map((label, i) => (
           <div key={i} className="flex-1">
             <div className={`h-2 rounded ${i + 1 <= step ? "bg-primary" : "bg-gray-200"}`} />
             <p className="text-xs text-gray-500 mt-1">{label}</p>
@@ -220,6 +230,75 @@ export default function NewCasePage() {
 
         {step === 4 && (
           <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Plantilla de tareas <span className="text-sm font-normal text-gray-500">(opcional)</span></h2>
+            {caseTemplates.length === 0 ? (
+              <div className="p-4 bg-gray-50 rounded-md text-sm text-gray-500 text-center">
+                <p>No hay plantillas de tareas configuradas.</p>
+                <p className="mt-1">Se generará un checklist automático según las categorías seleccionadas.</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-gray-500">
+                  Elige una plantilla para pre-poblar las tareas del expediente. Si no seleccionas ninguna, se generará un checklist automático.
+                </p>
+                <div className="space-y-2">
+                  <label className={`flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition-colors ${
+                    form.caseTemplateId === "" ? "border-primary bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                  }`}>
+                    <input
+                      type="radio"
+                      name="templateStep"
+                      checked={form.caseTemplateId === ""}
+                      onChange={() => update("caseTemplateId", "")}
+                      className="mt-1"
+                    />
+                    <div>
+                      <p className="font-medium">Checklist automático (IA)</p>
+                      <p className="text-sm text-gray-500">Genera tareas según las categorías seleccionadas</p>
+                    </div>
+                  </label>
+                  {caseTemplates.map((tpl: any) => (
+                    <label key={tpl.id} className={`flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition-colors ${
+                      form.caseTemplateId === tpl.id ? "border-primary bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                    }`}>
+                      <input
+                        type="radio"
+                        name="templateStep"
+                        checked={form.caseTemplateId === tpl.id}
+                        onChange={() => update("caseTemplateId", tpl.id)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{tpl.name}</span>
+                          {tpl.isDefault && (
+                            <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">Por defecto</span>
+                          )}
+                          <span className="text-xs text-gray-400">{tpl.tasks?.length ?? 0} tareas</span>
+                        </div>
+                        {tpl.description && <p className="text-sm text-gray-500 mt-0.5">{tpl.description}</p>}
+                        {tpl.categories?.length > 0 && (
+                          <div className="flex gap-1 flex-wrap mt-1">
+                            {tpl.categories.map((c: string) => (
+                              <span key={c} className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">{c}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => setStep(3)} className="flex-1 py-2 border rounded-md">Atras</button>
+              <button onClick={() => setStep(5)} className="flex-1 py-2 bg-primary text-white rounded-md hover:bg-primary/90">Siguiente</button>
+            </div>
+          </div>
+        )}
+
+        {step === 5 && (
+          <div className="space-y-4">
             <h2 className="text-lg font-semibold">Consentimiento y confirmacion</h2>
 
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
@@ -252,11 +331,14 @@ export default function NewCasePage() {
               <p><strong>Fallecido:</strong> {form.deceasedName}</p>
               <p><strong>Solicitante:</strong> {form.contactName} ({form.relationship || "Sin especificar"})</p>
               <p><strong>Categorias:</strong> {form.categories.join(", ")}</p>
+              {form.caseTemplateId && (
+                <p><strong>Plantilla:</strong> {caseTemplates.find((t) => t.id === form.caseTemplateId)?.name ?? form.caseTemplateId}</p>
+              )}
               {form.isUrgent && <p className="text-red-600 font-medium">URGENTE</p>}
             </div>
 
             <div className="flex gap-2">
-              <button onClick={() => setStep(3)} className="flex-1 py-2 border rounded-md">Atras</button>
+              <button onClick={() => setStep(4)} className="flex-1 py-2 border rounded-md">Atras</button>
               <button onClick={handleSubmit} disabled={loading}
                 className="flex-1 py-2 bg-primary text-white rounded-md hover:bg-primary/90 disabled:opacity-50">
                 {loading ? "Creando..." : "Crear expediente"}

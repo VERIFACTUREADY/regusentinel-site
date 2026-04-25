@@ -31,6 +31,8 @@ const ALL_PERMISSIONS = [
   "autopilot.configure",
   "workflow.read",
   "workflow.manage",
+  "casetemplates.read",
+  "casetemplates.manage",
 ] as const;
 
 type Permission = (typeof ALL_PERMISSIONS)[number];
@@ -57,12 +59,12 @@ const PERMISSIONS_MAP: Record<Role, string[]> = {
     "documents.update",
     "documents.delete",
     "templates.read",
+    "casetemplates.read",
   ],
 
   [Role.VIEWER]: ALL_PERMISSIONS.filter((p) => p.endsWith(".read")),
 
   [Role.MANAGED_OPS]: [
-    // Same as OPERATOR
     "cases.create",
     "cases.read",
     "cases.update",
@@ -75,7 +77,7 @@ const PERMISSIONS_MAP: Record<Role, string[]> = {
     "documents.update",
     "documents.delete",
     "templates.read",
-    // Plus autopilot
+    "casetemplates.read",
     "autopilot.run",
     "autopilot.approve",
     "autopilot.configure",

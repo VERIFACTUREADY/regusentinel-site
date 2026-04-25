@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const { caseTemplateId } = body;
     const data = createCaseSchema.parse(body);
 
     // Check plan limits (includedCases per mes; excedentes facturados aparte).
@@ -119,25 +120,60 @@ export async function POST(req: NextRequest) {
         include: { deceased: true, contact: true },
       });
 
-      // Auto-generate tasks from checklist rules with deadlines
-      const tasks = getChecklistForCategories(data.categories);
       const deathDate = data.deathDate ? new Date(data.deathDate) : new Date();
-      for (const task of tasks) {
-        const deadlines = calculateTaskDeadlines(deathDate, task.docTag, task.title);
-        await tx.task.create({
-          data: {
-            caseId: c.id,
-            category: task.category,
-            title: task.title,
-            description: task.description,
-            sortOrder: task.sortOrder,
-            docTag: task.docTag,
-            blockedUntil: deadlines.blockedUntil,
-            deadline: deadlines.deadline,
-            blockReason: deadlines.blockReason,
-            status: deadlines.blockedUntil && deadlines.blockedUntil > new Date() ? "BLOCKED" : "PENDING",
-          },
+
+      if (caseTemplateId) {
+        // Apply the chosen template instead of auto-checklist
+        const tpl = await tx.caseTemplate.findFirst({
+          where: { id: caseTemplateId, orgId: session.user.orgId! },
+          include: { tasks: { orderBy: { sortOrder: "asc" } } },
         });
+        if (tpl) {
+          for (let i = 0; i < tpl.tasks.length; i++) {
+            const t = tpl.tasks[i];
+            const deadline = t.deadlineOffsetDays
+              ? new Date(deathDate.getTime() + t.deadlineOffsetDays * 86400000)
+              : null;
+            const deadlines = t.deadlineOffsetDays
+              ? calculateTaskDeadlines(deathDate, null, t.title)
+              : { blockedUntil: null, blockReason: null };
+            await tx.task.create({
+              data: {
+                caseId: c.id,
+                category: t.category,
+                title: t.title,
+                description: t.description ?? null,
+                sortOrder: i,
+                deadline,
+                blockedUntil: deadlines.blockedUntil ?? null,
+                blockReason: deadlines.blockReason ?? null,
+                status: (deadlines.blockedUntil && deadlines.blockedUntil > new Date()
+                  ? "BLOCKED"
+                  : "PENDING") as "BLOCKED" | "PENDING",
+              },
+            });
+          }
+        }
+      } else {
+        // Auto-generate tasks from checklist rules with deadlines
+        const tasks = getChecklistForCategories(data.categories);
+        for (const task of tasks) {
+          const deadlines = calculateTaskDeadlines(deathDate, task.docTag, task.title);
+          await tx.task.create({
+            data: {
+              caseId: c.id,
+              category: task.category,
+              title: task.title,
+              description: task.description,
+              sortOrder: task.sortOrder,
+              docTag: task.docTag,
+              blockedUntil: deadlines.blockedUntil,
+              deadline: deadlines.deadline,
+              blockReason: deadlines.blockReason,
+              status: deadlines.blockedUntil && deadlines.blockedUntil > new Date() ? "BLOCKED" : "PENDING",
+            },
+          });
+        }
       }
 
       // Update usage record

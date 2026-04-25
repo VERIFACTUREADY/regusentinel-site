@@ -83,8 +83,9 @@ model Organization {
   usageRecords  UsageRecord[]
   auditLogs     AuditLog[]
   demoRequests  DemoRequest[]
-  notifications NotificationLog[]
-  workflowRules WorkflowRule[]
+  notifications  NotificationLog[]
+  workflowRules  WorkflowRule[]
+  caseTemplates  CaseTemplate[]
 
   retentionDays Int @default(90)
 
@@ -394,6 +395,38 @@ model NotificationLog {
   // a rolling 7-day window handled in application logic.
   @@index([caseId, kind])
   @@index([orgId, createdAt])
+}
+
+// ─── CASE TASK TEMPLATES ────────────────────────────────
+
+model CaseTemplate {
+  id          String         @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  categories  TaskCategory[]
+  isDefault   Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  org   Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tasks CaseTemplateTask[]
+
+  @@index([orgId])
+}
+
+model CaseTemplateTask {
+  id                 String       @id @default(cuid())
+  templateId         String
+  category           TaskCategory
+  title              String
+  description        String?
+  deadlineOffsetDays Int?
+  sortOrder          Int          @default(0)
+
+  template CaseTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, sortOrder])
 }
 
 // ─── WORKFLOW AUTOMATION ────────────────────────────────
