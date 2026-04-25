@@ -22,11 +22,21 @@ export default function PortalPage() {
   const token = params.token as string;
   const [data, setData] = useState<any>(null);
   const [docs, setDocs] = useState<any[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [msgAuthor, setMsgAuthor] = useState("");
+  const [msgContent, setMsgContent] = useState("");
+  const [msgSending, setMsgSending] = useState(false);
+  const [msgError, setMsgError] = useState("");
 
-  useEffect(() => { fetchData(); fetchDocs(); }, [token]);
+  useEffect(() => {
+    const saved = typeof localStorage !== "undefined" ? localStorage.getItem("portalAuthorName") : null;
+    if (saved) setMsgAuthor(saved);
+  }, []);
+
+  useEffect(() => { fetchData(); fetchDocs(); fetchMessages(); }, [token]);
 
   async function fetchData() {
     const res = await fetch(`/api/portal/${token}`);
@@ -38,6 +48,33 @@ export default function PortalPage() {
   async function fetchDocs() {
     const res = await fetch(`/api/portal/${token}/documents`);
     if (res.ok) setDocs(await res.json());
+  }
+
+  async function fetchMessages() {
+    const res = await fetch(`/api/portal/${token}/messages`);
+    if (res.ok) setMessages(await res.json());
+  }
+
+  async function sendMessage() {
+    if (!msgContent.trim()) return;
+    setMsgSending(true);
+    setMsgError("");
+    if (msgAuthor.trim()) {
+      localStorage.setItem("portalAuthorName", msgAuthor.trim());
+    }
+    const res = await fetch(`/api/portal/${token}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: msgContent.trim(), authorName: msgAuthor.trim() || null }),
+    });
+    setMsgSending(false);
+    if (res.ok) {
+      setMsgContent("");
+      fetchMessages();
+    } else {
+      const data = await res.json().catch(() => null);
+      setMsgError(data?.error || "Error al enviar el mensaje");
+    }
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -254,6 +291,70 @@ export default function PortalPage() {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Messages */}
+        <div className="bg-white p-6 rounded-lg border">
+          <h3 className="font-semibold mb-4 flex items-center gap-2">
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+            Mensajes con la gestoría
+          </h3>
+
+          {/* Thread */}
+          {messages.length > 0 && (
+            <div className="space-y-3 mb-6 max-h-80 overflow-y-auto pr-1">
+              {messages.map((msg: any) => (
+                <div
+                  key={msg.id}
+                  className={`flex ${msg.fromFamily ? "justify-end" : "justify-start"}`}
+                >
+                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    msg.fromFamily
+                      ? "rounded-tr-sm text-white"
+                      : "rounded-tl-sm bg-gray-100 text-gray-800"
+                  }`}
+                  style={msg.fromFamily ? { backgroundColor: primary } : undefined}
+                  >
+                    <p className="text-xs opacity-70 mb-1">
+                      {msg.fromFamily ? (msg.authorName || "Familia") : "Gestoría"}
+                      {" · "}
+                      {new Date(msg.createdAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Send form */}
+          <div className="space-y-3">
+            <input
+              type="text"
+              placeholder="Tu nombre (opcional)"
+              value={msgAuthor}
+              onChange={(e) => setMsgAuthor(e.target.value)}
+              className="w-full px-3 py-2 border rounded-md text-sm"
+            />
+            <textarea
+              rows={3}
+              placeholder="Escribe tu mensaje aquí..."
+              value={msgContent}
+              onChange={(e) => setMsgContent(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendMessage(); }}
+              className="w-full px-3 py-2 border rounded-md text-sm resize-none"
+            />
+            {msgError && <p className="text-sm text-red-600">{msgError}</p>}
+            <button
+              onClick={sendMessage}
+              disabled={msgSending || !msgContent.trim()}
+              className="w-full py-2 rounded-md text-sm font-medium text-white disabled:opacity-50"
+              style={{ backgroundColor: primary }}
+            >
+              {msgSending ? "Enviando..." : "Enviar mensaje"}
+            </button>
+            <p className="text-xs text-gray-400 text-center">Cmd+Enter para enviar</p>
+          </div>
         </div>
 
         {/* Footer: white-label aware */}

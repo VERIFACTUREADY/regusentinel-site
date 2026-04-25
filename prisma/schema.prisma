@@ -172,6 +172,7 @@ model Case {
   auditLogs  AuditLog[]
   notifications NotificationLog[]
   workflowLogs  WorkflowLog[]
+  portalMessages PortalMessage[]
 }
 
 model Deceased {
@@ -193,6 +194,21 @@ model CaseContact {
   relationship String?
 
   case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+// ─── PORTAL MESSAGE ─────────────────────────────────────
+
+model PortalMessage {
+  id         String    @id @default(cuid())
+  caseId     String
+  fromFamily Boolean
+  authorName String?
+  content    String
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+  case       Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
 }
 
 // ─── TASK ───────────────────────────────────────────────

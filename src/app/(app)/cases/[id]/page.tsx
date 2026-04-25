@@ -31,6 +31,10 @@ export default function CaseDetailPage() {
   const [selectedCaseTpl, setSelectedCaseTpl] = useState("");
   const [applyTplLoading, setApplyTplLoading] = useState(false);
   const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
+  const [portalMessages, setPortalMessages] = useState<any[]>([]);
+  const [portalReply, setPortalReply] = useState("");
+  const [portalReplySending, setPortalReplySending] = useState(false);
+  const [portalUnread, setPortalUnread] = useState(0);
   const [notesInput, setNotesInput] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
   const [commentInput, setCommentInput] = useState("");
@@ -70,7 +74,7 @@ export default function CaseDetailPage() {
     }
   }, [caseId, router]);
 
-  useEffect(() => { fetchCase(); fetchTemplates(); fetchMembers(); fetchCaseTemplates(); }, [caseId]);
+  useEffect(() => { fetchCase(); fetchTemplates(); fetchMembers(); fetchCaseTemplates(); fetchPortalMessages(); }, [caseId]);
 
   async function fetchCase() {
     setLoading(true);
@@ -94,6 +98,33 @@ export default function CaseDetailPage() {
   async function fetchCaseTemplates() {
     const res = await fetch("/api/case-templates");
     if (res.ok) setCaseTemplates(await res.json());
+  }
+
+  async function fetchPortalMessages() {
+    const res = await fetch(`/api/cases/${caseId}/portal-messages`);
+    if (res.ok) {
+      const data = await res.json();
+      setPortalMessages(data);
+      setPortalUnread(data.filter((m: any) => m.fromFamily && !m.readAt).length);
+    }
+  }
+
+  async function sendPortalReply() {
+    if (!portalReply.trim()) return;
+    setPortalReplySending(true);
+    const res = await fetch(`/api/cases/${caseId}/portal-messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: portalReply.trim() }),
+    });
+    setPortalReplySending(false);
+    if (res.ok) {
+      setPortalReply("");
+      fetchPortalMessages();
+    } else {
+      const err = await res.json().catch(() => null);
+      alert(err?.error || "Error al enviar mensaje");
+    }
   }
 
   async function applyTemplate() {
@@ -217,10 +248,10 @@ export default function CaseDetailPage() {
   if (loading) return <div className="text-center py-12 text-gray-400">Cargando...</div>;
   if (!caseData) return <div className="text-center py-12 text-gray-400">Expediente no encontrado</div>;
 
-  const tabs = ["overview", "tasks", "documents", "bankpack", "templates", "activity", "export"];
+  const tabs = ["overview", "tasks", "documents", "bankpack", "templates", "portal", "activity", "export"];
   const tabLabels: Record<string, string> = {
     overview: "Resumen", tasks: "Tareas", documents: "Documentos",
-    bankpack: "Paquete banco", templates: "Plantillas", activity: "Actividad", export: "Exportar",
+    bankpack: "Paquete banco", templates: "Plantillas", portal: "Portal", activity: "Actividad", export: "Exportar",
   };
 
   return (
@@ -276,6 +307,9 @@ export default function CaseDetailPage() {
             {tabLabels[t]}
             {t === "tasks" && ` (${uniqueTasks.length})`}
             {t === "documents" && ` (${caseData.documents.length})`}
+            {t === "portal" && portalUnread > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center w-4 h-4 text-xs bg-red-500 text-white rounded-full">{portalUnread}</span>
+            )}
           </button>
         ))}
       </div>
@@ -364,14 +398,21 @@ export default function CaseDetailPage() {
             <p><strong>Creado:</strong> {new Date(caseData.createdAt).toLocaleDateString("es-ES")}</p>
           </div>
           <div className="bg-white p-6 rounded-lg border space-y-3">
-            <h3 className="font-semibold">Portal familia</h3>
-            <p className="text-sm text-gray-600">Comparte este enlace con la familia para que suban documentos:</p>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Portal familia</h3>
+              {portalUnread > 0 && (
+                <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">{portalUnread} mensaje{portalUnread !== 1 ? "s" : ""} nuevo{portalUnread !== 1 ? "s" : ""}</span>
+              )}
+            </div>
             <div className="flex gap-2">
               <input type="text" readOnly value={`${typeof window !== 'undefined' ? window.location.origin : ''}/portal/${caseData.portalToken}`}
                 className="flex-1 px-3 py-2 border rounded-md text-sm bg-gray-50" />
               <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/portal/${caseData.portalToken}`)}
                 className="px-3 py-2 border rounded-md text-sm hover:bg-gray-50">Copiar</button>
             </div>
+            <button onClick={() => setTab("portal")} className="text-sm text-primary hover:underline">
+              {portalUnread > 0 ? `Ver mensajes (${portalUnread} nuevo${portalUnread !== 1 ? "s" : ""}) →` : "Ver portal y mensajes →"}
+            </button>
           </div>
 
           {/* Case-level deadlines */}
@@ -772,6 +813,104 @@ export default function CaseDetailPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {tab === "portal" && (
+        <div className="space-y-6">
+          {/* Portal link */}
+          <div className="bg-white p-6 rounded-lg border">
+            <h3 className="font-semibold mb-3">Portal de la familia</h3>
+            <p className="text-sm text-gray-500 mb-3">
+              Comparte este enlace con la familia. Pueden ver el estado, subir documentos y enviarte mensajes.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                readOnly
+                value={`${typeof window !== "undefined" ? window.location.origin : ""}/portal/${caseData.portalToken}`}
+                className="flex-1 px-3 py-2 border rounded-md text-sm bg-gray-50"
+              />
+              <button
+                onClick={() => navigator.clipboard.writeText(`${window.location.origin}/portal/${caseData.portalToken}`)}
+                className="px-3 py-2 border rounded-md text-sm hover:bg-gray-50"
+              >
+                Copiar
+              </button>
+              <a
+                href={`/portal/${caseData.portalToken}`}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-2 border rounded-md text-sm hover:bg-gray-50 inline-flex items-center gap-1"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                Ver
+              </a>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className="bg-white rounded-lg border">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold">Mensajes con la familia</h3>
+              {portalUnread > 0 && (
+                <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">
+                  {portalUnread} sin leer
+                </span>
+              )}
+            </div>
+
+            <div className="divide-y max-h-[28rem] overflow-y-auto">
+              {portalMessages.length === 0 ? (
+                <p className="px-6 py-10 text-center text-gray-400">
+                  Sin mensajes aún. La familia puede escribirte desde el portal.
+                </p>
+              ) : (
+                portalMessages.map((msg: any) => (
+                  <div
+                    key={msg.id}
+                    className={`flex p-4 ${msg.fromFamily ? "bg-blue-50/40" : ""}`}
+                  >
+                    <div className={`flex-1 ${msg.fromFamily ? "" : "pl-8"}`}>
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span className={`text-xs font-semibold ${msg.fromFamily ? "text-blue-700" : "text-gray-700"}`}>
+                          {msg.fromFamily ? (msg.authorName || "Familia") : "Tú (gestoría)"}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {new Date(msg.createdAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        {msg.fromFamily && !msg.readAt && (
+                          <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-600 rounded">Nuevo</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap">{msg.content}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-4 border-t space-y-2">
+              <textarea
+                value={portalReply}
+                onChange={(e) => setPortalReply(e.target.value)}
+                rows={3}
+                placeholder="Escribe un mensaje a la familia..."
+                className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendPortalReply(); }}
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-400">Cmd+Enter para enviar</span>
+                <button
+                  onClick={sendPortalReply}
+                  disabled={portalReplySending || !portalReply.trim()}
+                  className="px-4 py-1.5 bg-primary text-white text-sm rounded-md hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {portalReplySending ? "Enviando..." : "Enviar a familia"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
