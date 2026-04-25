@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Mentes Maestras — Consulta a las grandes figuras de la historia</title>
+    <meta
+      name="description"
+      content="Plantea tu problema y descubre cómo lo resolverían figuras como Einstein, Musk, Jobs, Curie o Sun Tzu. Una IA aplica su forma real de pensar a tu situación."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600;9..144,800&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <div class="aurora" aria-hidden="true">
+      <span class="aurora-blob aurora-blob--1"></span>
+      <span class="aurora-blob aurora-blob--2"></span>
+      <span class="aurora-blob aurora-blob--3"></span>
+    </div>
+
+    <header class="site-header">
+      <div class="brand">
+        <span class="brand-mark">M<span>·</span>M</span>
+        <span class="brand-name">Mentes Maestras</span>
+      </div>
+      <nav class="site-nav">
+        <a href="#figuras">Figuras</a>
+        <a href="#como-funciona">Cómo funciona</a>
+        <a href="#consulta">Consultar</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="kicker">Un consejo de quienes cambiaron el mundo</p>
+        <h1>
+          Plantea tu problema.<br />
+          Que <em>respondan</em> ellos.
+        </h1>
+        <p class="lede">
+          Elige una figura histórica, cuéntale tu situación, idea o decisión.
+          Una IA leerá su biografía, su forma de pensar y su voz para
+          contestarte como lo haría esa persona en tu lugar.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn--primary" href="#figuras">Elegir mente maestra</a>
+          <a class="btn btn--ghost" href="#como-funciona">Cómo funciona</a>
+        </div>
+      </section>
+
+      <section id="figuras" class="figures-section">
+        <header class="section-head">
+          <h2>Catálogo de mentes</h2>
+          <p>15 figuras de la ciencia, la empresa, el arte, la estrategia y la filosofía.</p>
+        </header>
+        <div id="figures-grid" class="figures-grid" aria-live="polite">
+          <div class="figures-loading">Cargando figuras…</div>
+        </div>
+      </section>
+
+      <section id="consulta" class="consult-section" aria-labelledby="consult-title">
+        <header class="section-head">
+          <h2 id="consult-title">Tu consulta</h2>
+          <p id="selected-line">Aún no has elegido a nadie.</p>
+        </header>
+
+        <form id="ask-form" class="ask-form" autocomplete="off">
+          <label for="question" class="visually-hidden">Tu pregunta</label>
+          <textarea
+            id="question"
+            name="question"
+            rows="5"
+            maxlength="4000"
+            placeholder="Ejemplo: Tengo una startup que vende software a abogados pero crece despacio. Sé que el producto es bueno. ¿Qué harías tú?"
+          ></textarea>
+          <div class="ask-row">
+            <span id="char-count" class="char-count">0 / 4000</span>
+            <button id="ask-btn" type="submit" class="btn btn--primary" disabled>
+              <span class="btn-label">Pedir consejo</span>
+              <span class="btn-spinner" aria-hidden="true"></span>
+            </button>
+          </div>
+        </form>
+
+        <article id="response" class="response" hidden>
+          <header class="response-head">
+            <span id="response-avatar" class="response-avatar"></span>
+            <div>
+              <h3 id="response-name"></h3>
+              <p id="response-meta"></p>
+            </div>
+          </header>
+          <div id="response-body" class="response-body"></div>
+          <footer id="response-footer" class="response-footer" hidden>
+            <button type="button" id="copy-btn" class="btn btn--ghost btn--small">
+              Copiar respuesta
+            </button>
+            <button type="button" id="new-btn" class="btn btn--ghost btn--small">
+              Otra consulta
+            </button>
+          </footer>
+        </article>
+
+        <div id="error-box" class="error-box" hidden></div>
+      </section>
+
+      <section id="como-funciona" class="how-section">
+        <header class="section-head">
+          <h2>Cómo funciona</h2>
+        </header>
+        <ol class="how-steps">
+          <li>
+            <span class="how-num">1</span>
+            <h3>Elige una mente</h3>
+            <p>
+              Cada figura tiene una ficha con su biografía, sus principios y
+              cómo hablaba. Esa ficha guía a la IA durante toda la conversación.
+            </p>
+          </li>
+          <li>
+            <span class="how-num">2</span>
+            <h3>Cuenta tu situación</h3>
+            <p>
+              Una idea, una decisión, un dilema. Cuanto más concreto, mejor
+              consejo. Lo que escribas no se guarda en disco en este servidor.
+            </p>
+          </li>
+          <li>
+            <span class="how-num">3</span>
+            <h3>Recibe su respuesta</h3>
+            <p>
+              La IA contesta en primera persona aplicando el marco mental de
+              esa figura: principios, ejemplos propios y su forma de hablar.
+            </p>
+          </li>
+        </ol>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        Mentes Maestras · Las respuestas son interpretaciones generadas por IA,
+        no citas literales. Úsalas como inspiración, no como verdad histórica.
+      </p>
+    </footer>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "mentes-maestras",
+  "version": "1.0.0",
+  "description": "Consulta a las mentes más brillantes de la historia. Plantea tu problema y descubre cómo lo resolverían figuras como Einstein, Musk, Jobs o Sun Tzu.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.65.0",
+    "dotenv": "^17.0.0",
+    "express": "^4.21.2"
+  }
+}
