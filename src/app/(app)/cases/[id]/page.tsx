@@ -39,6 +39,11 @@ export default function CaseDetailPage() {
   const [notesSaving, setNotesSaving] = useState(false);
   const [commentInput, setCommentInput] = useState("");
   const [commentSaving, setCommentSaving] = useState(false);
+  const [taskNoteOpenId, setTaskNoteOpenId] = useState<string | null>(null);
+  const [taskNotesCache, setTaskNotesCache] = useState<Record<string, { id: string; content: string; createdAt: string; user: { name: string | null; email: string } }[]>>({});
+  const [taskNotesLoading, setTaskNotesLoading] = useState(false);
+  const [taskNoteInput, setTaskNoteInput] = useState("");
+  const [taskNoteSaving, setTaskNoteSaving] = useState(false);
 
   const uniqueTasks = useMemo(() => {
     if (!caseData) return [];
@@ -194,6 +199,35 @@ export default function CaseDetailPage() {
       fetchCase();
     }
     setCommentSaving(false);
+  }
+
+  async function toggleTaskNotes(taskId: string) {
+    if (taskNoteOpenId === taskId) { setTaskNoteOpenId(null); return; }
+    setTaskNoteOpenId(taskId);
+    if (!taskNotesCache[taskId]) {
+      setTaskNotesLoading(true);
+      const res = await fetch(`/api/tasks/${taskId}/notes`);
+      const data = res.ok ? await res.json() : [];
+      setTaskNotesCache((c) => ({ ...c, [taskId]: data }));
+      setTaskNotesLoading(false);
+    }
+  }
+
+  async function saveTaskNote(taskId: string) {
+    if (!taskNoteInput.trim()) return;
+    setTaskNoteSaving(true);
+    const res = await fetch(`/api/tasks/${taskId}/notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: taskNoteInput.trim() }),
+    });
+    if (res.ok) {
+      const note = await res.json();
+      setTaskNotesCache((c) => ({ ...c, [taskId]: [...(c[taskId] ?? []), note] }));
+      setTaskNoteInput("");
+      fetchCase();
+    }
+    setTaskNoteSaving(false);
   }
 
   async function generateChecklist() {
@@ -516,72 +550,128 @@ export default function CaseDetailPage() {
               <h3 className="font-semibold text-sm text-gray-500 mb-2">{cat}</h3>
               <div className="space-y-2">
                 {(tasks as any[]).map((task: any) => (
-                  <div key={task.id} className={`bg-white p-4 rounded-lg border flex items-start justify-between ${
+                  <div key={task.id} className={`bg-white p-4 rounded-lg border ${
                     task.status === "BLOCKED" ? "border-l-4 border-l-red-400" :
                     task.status === "READY" ? "border-l-4 border-l-yellow-400" :
                     task.status === "DONE" ? "border-l-4 border-l-green-400" : ""
                   }`}>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium">{task.title}</p>
-                        {task.documents && task.documents.length > 0 && (
-                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded" title={`${task.documents.length} doc(s) vinculado(s)`}>
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                            {task.documents.length}
-                          </span>
-                        )}
-                      </div>
-                      {task.description && <p className="text-sm text-gray-500 mt-1">{task.description}</p>}
-                      {task.assignee && (
-                        <p className="text-xs text-blue-600 mt-1">
-                          Asignado a: {task.assignee.name || task.assignee.email}
-                        </p>
-                      )}
-                      {/* Deadline and blocked info */}
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {task.status === "BLOCKED" && task.blockReason && (
-                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                            {task.blockReason}
-                          </span>
-                        )}
-                        {task.blockedUntil && task.status === "BLOCKED" && (
-                          <span className="text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded">
-                            Disponible: {new Date(task.blockedUntil).toLocaleDateString("es-ES")}
-                          </span>
-                        )}
-                        {task.deadline && task.status !== "DONE" && task.status !== "SKIPPED" && (() => {
-                          const days = Math.ceil((new Date(task.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                          const expired = days <= 0;
-                          const urgent = days > 0 && days <= 14;
-                          return (
-                            <span className={`text-xs px-2 py-0.5 rounded ${expired ? "bg-red-100 text-red-700 font-medium" : urgent ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600"}`}>
-                              {expired ? "VENCIDO" : `Plazo: ${days}d`} - {new Date(task.deadline).toLocaleDateString("es-ES")}
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium">{task.title}</p>
+                          {task.documents && task.documents.length > 0 && (
+                            <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded" title={`${task.documents.length} doc(s) vinculado(s)`}>
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                              {task.documents.length}
                             </span>
-                          );
-                        })()}
+                          )}
+                        </div>
+                        {task.description && <p className="text-sm text-gray-500 mt-1">{task.description}</p>}
+                        {task.assignee && (
+                          <p className="text-xs text-blue-600 mt-1">
+                            Asignado a: {task.assignee.name || task.assignee.email}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {task.status === "BLOCKED" && task.blockReason && (
+                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                              {task.blockReason}
+                            </span>
+                          )}
+                          {task.blockedUntil && task.status === "BLOCKED" && (
+                            <span className="text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded">
+                              Disponible: {new Date(task.blockedUntil).toLocaleDateString("es-ES")}
+                            </span>
+                          )}
+                          {task.deadline && task.status !== "DONE" && task.status !== "SKIPPED" && (() => {
+                            const days = Math.ceil((new Date(task.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                            const expired = days <= 0;
+                            const urgent = days > 0 && days <= 14;
+                            return (
+                              <span className={`text-xs px-2 py-0.5 rounded ${expired ? "bg-red-100 text-red-700 font-medium" : urgent ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600"}`}>
+                                {expired ? "VENCIDO" : `Plazo: ${days}d`} - {new Date(task.deadline).toLocaleDateString("es-ES")}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4 shrink-0">
+                        <button
+                          onClick={() => { toggleTaskNotes(task.id); setTaskNoteInput(""); }}
+                          title="Notas de gestión"
+                          className={`p-1.5 rounded transition relative ${taskNoteOpenId === task.id ? "text-amber-600 bg-amber-50" : "text-gray-400 hover:text-amber-600 hover:bg-amber-50"}`}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                          {task._count?.notes > 0 && (
+                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 text-[9px] bg-amber-500 text-white rounded-full flex items-center justify-center font-bold">{task._count.notes > 9 ? "9+" : task._count.notes}</span>
+                          )}
+                        </button>
+                        <select
+                          value={task.assigneeId || ""}
+                          onChange={(e) => assignTask(task.id, e.target.value || null)}
+                          className="text-xs px-2 py-1 border rounded max-w-[120px]"
+                          title="Asignar a"
+                        >
+                          <option value="">Sin asignar</option>
+                          {members.map((m) => (
+                            <option key={m.id} value={m.id}>{m.name || m.email}</option>
+                          ))}
+                        </select>
+                        <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)}
+                          className="text-xs px-2 py-1 border rounded">
+                          {taskStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <span className={`text-xs px-2 py-1 rounded-full ${TASK_STATUS_COLORS[task.status] || ""}`}>
+                          {task.status}
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 ml-4 shrink-0">
-                      <select
-                        value={task.assigneeId || ""}
-                        onChange={(e) => assignTask(task.id, e.target.value || null)}
-                        className="text-xs px-2 py-1 border rounded max-w-[120px]"
-                        title="Asignar a"
-                      >
-                        <option value="">Sin asignar</option>
-                        {members.map((m) => (
-                          <option key={m.id} value={m.id}>{m.name || m.email}</option>
-                        ))}
-                      </select>
-                      <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)}
-                        className="text-xs px-2 py-1 border rounded">
-                        {taskStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                      <span className={`text-xs px-2 py-1 rounded-full ${TASK_STATUS_COLORS[task.status] || ""}`}>
-                        {task.status}
-                      </span>
-                    </div>
+                    {/* Inline task notes panel */}
+                    {taskNoteOpenId === task.id && (
+                      <div className="mt-3 pt-3 border-t border-amber-100">
+                        {taskNotesLoading && !taskNotesCache[task.id] ? (
+                          <p className="text-xs text-gray-400 py-2">Cargando notas...</p>
+                        ) : (
+                          <>
+                            {(taskNotesCache[task.id] ?? []).length === 0 ? (
+                              <p className="text-xs text-gray-400 mb-2">Sin notas aún. Anota llamadas, respuestas, documentos pendientes...</p>
+                            ) : (
+                              <div className="space-y-2 mb-3 max-h-48 overflow-y-auto">
+                                {(taskNotesCache[task.id] ?? []).map((note) => (
+                                  <div key={note.id} className="flex gap-2 text-sm">
+                                    <span className="text-xs text-gray-400 shrink-0 pt-0.5 w-24">
+                                      {new Date(note.createdAt).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                    </span>
+                                    <div>
+                                      <span className="text-xs font-medium text-gray-500">{note.user.name || note.user.email}: </span>
+                                      <span className="text-gray-700 whitespace-pre-wrap">{note.content}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={taskNoteInput}
+                                onChange={(e) => setTaskNoteInput(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveTaskNote(task.id); } }}
+                                placeholder="Escribe una nota y pulsa Enter..."
+                                className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-amber-400"
+                              />
+                              <button
+                                onClick={() => saveTaskNote(task.id)}
+                                disabled={taskNoteSaving || !taskNoteInput.trim()}
+                                className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 disabled:opacity-50"
+                              >
+                                Guardar
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

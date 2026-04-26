@@ -51,6 +51,7 @@ export async function GET(req: NextRequest) {
       include: {
         case: { select: { id: true, ref: true, isUrgent: true } },
         assignee: { select: { id: true, name: true, email: true } },
+        _count: { select: { notes: true } },
       },
       orderBy: [{ deadline: { sort: "asc", nulls: "last" } }, { sortOrder: "asc" }],
       skip: (page - 1) * limit,

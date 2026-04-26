@@ -27,6 +27,13 @@ const CATEGORY_OPTIONS = [
   ...ALL_CATEGORIES,
 ];
 
+interface TaskNote {
+  id: string;
+  content: string;
+  createdAt: string;
+  user: { name: string | null; email: string };
+}
+
 interface TaskItem {
   id: string;
   title: string;
@@ -39,6 +46,7 @@ interface TaskItem {
   caseId: string;
   case: { id: string; ref: string; isUrgent: boolean };
   assignee: { id: string; name: string | null; email: string } | null;
+  _count: { notes: number };
 }
 
 const PAGE_SIZE = 50;
@@ -55,6 +63,11 @@ export default function TasksPage() {
   const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchLoading, setBatchLoading] = useState(false);
+  const [openNotesId, setOpenNotesId] = useState<string | null>(null);
+  const [notesCache, setNotesCache] = useState<Record<string, TaskNote[]>>({});
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [noteInput, setNoteInput] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
   const controllerRef = useRef<AbortController>();
 
   useEffect(() => {
@@ -90,6 +103,34 @@ export default function TasksPage() {
   function toggleSelectAll() {
     if (selected.size === tasks.length) setSelected(new Set());
     else setSelected(new Set(tasks.map((t) => t.id)));
+  }
+
+  async function toggleNotes(taskId: string) {
+    if (openNotesId === taskId) { setOpenNotesId(null); return; }
+    setOpenNotesId(taskId);
+    if (!notesCache[taskId]) {
+      setNotesLoading(true);
+      const res = await fetch(`/api/tasks/${taskId}/notes`);
+      if (res.ok) { const data = await res.json(); setNotesCache((c) => ({ ...c, [taskId]: data })); }
+      setNotesLoading(false);
+    }
+  }
+
+  async function saveNote(taskId: string) {
+    if (!noteInput.trim()) return;
+    setNoteSaving(true);
+    const res = await fetch(`/api/tasks/${taskId}/notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: noteInput.trim() }),
+    });
+    if (res.ok) {
+      const note = await res.json();
+      setNotesCache((c) => ({ ...c, [taskId]: [...(c[taskId] ?? []), note] }));
+      setNoteInput("");
+      setRefreshKey((k) => k + 1);
+    }
+    setNoteSaving(false);
   }
 
   async function batchAction(action: { status?: string; assigneeId?: string }) {
@@ -345,6 +386,16 @@ export default function TasksPage() {
                     </div>
                   </div>
                   <div className="flex flex-col gap-1 shrink-0 ml-2">
+                    <button
+                      onClick={() => { toggleNotes(task.id); setNoteInput(""); }}
+                      title="Notas de gestión"
+                      className={`p-1.5 rounded transition relative ${openNotesId === task.id ? "text-amber-600 bg-amber-50" : "text-gray-400 hover:text-amber-600 hover:bg-amber-50"}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                      {task._count.notes > 0 && (
+                        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 text-[9px] bg-amber-500 text-white rounded-full flex items-center justify-center font-bold">{task._count.notes > 9 ? "9+" : task._count.notes}</span>
+                      )}
+                    </button>
                     {task.status !== "DONE" && task.status !== "SKIPPED" && task.status !== "BLOCKED" && (
                       <button
                         onClick={() => updateTaskStatus(task, "DONE")}
@@ -369,6 +420,52 @@ export default function TasksPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Inline notes panel */}
+                {openNotesId === task.id && (
+                  <div className="mt-3 pt-3 border-t border-amber-100">
+                    {notesLoading && !notesCache[task.id] ? (
+                      <p className="text-xs text-gray-400 py-2">Cargando notas...</p>
+                    ) : (
+                      <>
+                        {(notesCache[task.id] ?? []).length === 0 ? (
+                          <p className="text-xs text-gray-400 mb-2">Sin notas aún. Anota llamadas, respuestas, documentos pendientes...</p>
+                        ) : (
+                          <div className="space-y-2 mb-3 max-h-48 overflow-y-auto">
+                            {(notesCache[task.id] ?? []).map((note) => (
+                              <div key={note.id} className="flex gap-2 text-sm">
+                                <span className="text-xs text-gray-400 shrink-0 pt-0.5 w-24">
+                                  {new Date(note.createdAt).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                                <div>
+                                  <span className="text-xs font-medium text-gray-500">{note.user.name || note.user.email}: </span>
+                                  <span className="text-gray-700 whitespace-pre-wrap">{note.content}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={noteInput}
+                            onChange={(e) => setNoteInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveNote(task.id); } }}
+                            placeholder="Escribe una nota y pulsa Enter..."
+                            className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-amber-400"
+                          />
+                          <button
+                            onClick={() => saveNote(task.id)}
+                            disabled={noteSaving || !noteInput.trim()}
+                            className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 disabled:opacity-50"
+                          >
+                            Guardar
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })

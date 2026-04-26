@@ -26,6 +26,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         include: {
           documents: { select: { id: true, fileName: true } },
           assignee: { select: { id: true, name: true, email: true } },
+          _count: { select: { notes: true } },
         },
       },
       documents: { include: { task: { select: { id: true, title: true, category: true } } } },
@@ -61,6 +62,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
           include: {
             documents: { select: { id: true, fileName: true } },
             assignee: { select: { id: true, name: true, email: true } },
+            _count: { select: { notes: true } },
           },
         },
         documents: { include: { task: { select: { id: true, title: true, category: true } } } },

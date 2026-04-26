@@ -118,6 +118,7 @@ model User {
   approvals     Approval[]
   auditLogs     AuditLog[]
   promptLogs    PromptLog[]
+  taskNotes     TaskNote[]
 }
 
 model Membership {
@@ -239,6 +240,21 @@ model Task {
   dependents Task[] @relation("TaskDependency")
   approval  Approval?
   documents Document[] @relation("TaskDocuments")
+  notes     TaskNote[]
+}
+
+// ─── TASK NOTE ──────────────────────────────────────────
+
+model TaskNote {
+  id        String   @id @default(cuid())
+  taskId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([taskId, createdAt])
 }
 
 // ─── DOCUMENT ───────────────────────────────────────────
