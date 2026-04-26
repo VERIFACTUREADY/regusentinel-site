@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = {
@@ -9,5 +10,5 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   const demoEnabled = process.env.DEMO_ENABLED === "true";
-  return <LoginForm demoEnabled={demoEnabled} />;
+  return <Suspense><LoginForm demoEnabled={demoEnabled} /></Suspense>;
 }
