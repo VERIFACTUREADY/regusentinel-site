@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { sendEmail } from "@/lib/email";
+import { triggerWorkflow } from "@/lib/workflow-engine";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -85,6 +86,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       action: `task.${status.toLowerCase()}`,
       details: `Tarea "${task.title}" marcada como ${status}`,
     });
+    triggerWorkflow({
+      type: "TASK_STATUS_CHANGED",
+      orgId: session.user.orgId,
+      caseId: params.id,
+      userId: session.user.id,
+      taskId,
+      taskStatus: status,
+      taskCategory: task.category,
+    }).catch(console.error);
   }
 
   if (assigneeId !== undefined && assigneeId !== task.assigneeId) {
