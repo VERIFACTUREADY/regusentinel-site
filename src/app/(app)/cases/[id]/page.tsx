@@ -11,6 +11,7 @@ interface CaseDetail {
   id: string; ref: string; status: string; isUrgent: boolean; hasDeceasedInsurance: boolean;
   categories: string[]; province: string | null; notes: string | null;
   portalToken: string; portalEnabled: boolean;
+  consentAccepted: boolean; consentDate: string | null; legitimationNote: string | null;
   deceased: { fullName: string; deathDate: string | null; dni: string | null } | null;
   contact: { fullName: string; phone: string | null; email: string | null; relationship: string | null } | null;
   tasks: any[]; documents: any[]; approvals: any[]; auditLogs: any[];
@@ -37,6 +38,8 @@ export default function CaseDetailPage() {
   const [portalUnread, setPortalUnread] = useState(0);
   const [notesInput, setNotesInput] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
+  const [legitimationInput, setLegitimationInput] = useState("");
+  const [legitimationSaving, setLegitimationSaving] = useState(false);
   const [commentInput, setCommentInput] = useState("");
   const [commentSaving, setCommentSaving] = useState(false);
   const [taskNoteOpenId, setTaskNoteOpenId] = useState<string | null>(null);
@@ -88,6 +91,7 @@ export default function CaseDetailPage() {
       const data = await res.json();
       setCaseData(data);
       setNotesInput(data.notes || "");
+      setLegitimationInput(data.legitimationNote || "");
     }
     setLoading(false);
   }
@@ -184,6 +188,25 @@ export default function CaseDetailPage() {
       body: JSON.stringify({ notes: notesInput }),
     });
     setNotesSaving(false);
+  }
+
+  async function saveLegitimation() {
+    setLegitimationSaving(true);
+    await fetch(`/api/cases/${caseId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ legitimationNote: legitimationInput }),
+    });
+    setLegitimationSaving(false);
+    fetchCase();
+  }
+
+  async function toggleConsent() {
+    const newValue = !caseData?.consentAccepted;
+    await fetch(`/api/cases/${caseId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ consentAccepted: newValue }),
+    });
+    fetchCase();
   }
 
   async function postComment() {

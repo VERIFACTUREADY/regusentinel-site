@@ -101,7 +101,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!c) return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
 
   const body = await req.json();
-  const { status, notes, isUrgent } = body;
+  const { status, notes, isUrgent, legitimationNote, consentAccepted } = body;
 
   const updated = await prisma.case.update({
     where: { id: params.id },
@@ -110,6 +110,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(notes !== undefined && { notes }),
       ...(isUrgent !== undefined && { isUrgent }),
       ...(status === "CLOSED" && { closedAt: new Date() }),
+      ...(legitimationNote !== undefined && { legitimationNote }),
+      ...(consentAccepted !== undefined && {
+        consentAccepted,
+        consentDate: consentAccepted ? new Date() : null,
+      }),
     },
     include: { deceased: true, contact: true },
   });

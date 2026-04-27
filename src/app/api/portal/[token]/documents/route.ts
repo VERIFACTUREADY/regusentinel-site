@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { uploadFile, getPresignedUrl } from "@/lib/s3";
 import { logAudit } from "@/lib/audit";
 import { matchDocumentToTag } from "@/lib/doc-task-matching";
+import { triggerWorkflow } from "@/lib/workflow-engine";
 
 export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
   const c = await prisma.case.findFirst({
@@ -97,6 +98,12 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       action: "portal.document_uploaded",
       details: `Documento "${file.name}" subido desde portal familia${linkedTaskId ? " (vinculado a tarea)" : ""}`,
     });
+
+    triggerWorkflow({
+      type: "DOCUMENT_UPLOADED",
+      orgId: c.orgId,
+      caseId: c.id,
+    }).catch(console.error);
 
     return NextResponse.json(doc, { status: 201 });
   } catch (error) {

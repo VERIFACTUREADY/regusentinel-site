@@ -6,6 +6,7 @@ import { hasPermission } from "@/lib/rbac";
 import { uploadFile, getPresignedUrl } from "@/lib/s3";
 import { logAudit } from "@/lib/audit";
 import { matchDocumentToTag, DOC_MATCH_RULES } from "@/lib/doc-task-matching";
+import { triggerWorkflow } from "@/lib/workflow-engine";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -131,6 +132,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         });
       }
     }
+
+    triggerWorkflow({
+      type: "DOCUMENT_UPLOADED",
+      orgId: session.user.orgId,
+      caseId: params.id,
+      userId: session.user.id,
+    }).catch(console.error);
 
     return NextResponse.json({ ...doc, taskUpdated, suggestions }, { status: 201 });
   } catch (error) {
