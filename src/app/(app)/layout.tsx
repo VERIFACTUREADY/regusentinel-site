@@ -10,7 +10,12 @@ import Link from "next/link";
 const SUSPENSION_EXEMPT_PATHS = ["/billing"];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const session = await getServerSession(authOptions);
+  let session;
+  try {
+    session = await getServerSession(authOptions);
+  } catch {
+    redirect("/login");
+  }
   if (!session) redirect("/login");
 
   let isDemoOrg = false;
@@ -18,34 +23,38 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   let suspended = false;
 
   if (session.user.orgId) {
-    const org = await prisma.organization.findUnique({
-      where: { id: session.user.orgId },
-      select: {
-        slug: true,
-        subscription: { select: { status: true, plan: true, currentPeriodEnd: true } },
-      },
-    });
+    try {
+      const org = await prisma.organization.findUnique({
+        where: { id: session.user.orgId },
+        select: {
+          slug: true,
+          subscription: { select: { status: true, plan: true, currentPeriodEnd: true } },
+        },
+      });
 
-    if (process.env.DEMO_ENABLED === "true") {
-      isDemoOrg = org?.slug === DEMO_ORG_SLUG;
-    }
+      if (process.env.DEMO_ENABLED === "true") {
+        isDemoOrg = org?.slug === DEMO_ORG_SLUG;
+      }
 
-    const subStatus = org?.subscription?.status;
+      const subStatus = org?.subscription?.status;
 
-    if (subStatus === "trialing" && org?.subscription?.currentPeriodEnd) {
-      const now = new Date();
-      const daysLeft = Math.ceil(
-        (org.subscription.currentPeriodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      if (daysLeft >= 0) {
-        trialInfo = { plan: org.subscription.plan, daysLeft };
-      } else {
+      if (subStatus === "trialing" && org?.subscription?.currentPeriodEnd) {
+        const now = new Date();
+        const daysLeft = Math.ceil(
+          (org.subscription.currentPeriodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        if (daysLeft >= 0) {
+          trialInfo = { plan: org.subscription.plan, daysLeft };
+        } else {
+          suspended = true;
+        }
+      }
+
+      if (subStatus === "canceled" || subStatus === "past_due") {
         suspended = true;
       }
-    }
-
-    if (subStatus === "canceled" || subStatus === "past_due") {
-      suspended = true;
+    } catch {
+      // DB unreachable — let the page render without subscription check
     }
   }
 

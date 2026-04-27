@@ -120,13 +120,18 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.userId = user.id;
 
-        const membership = await prisma.membership.findFirst({
-          where: { userId: user.id },
-          orderBy: { createdAt: "asc" },
-        });
+        try {
+          const membership = await prisma.membership.findFirst({
+            where: { userId: user.id },
+            orderBy: { createdAt: "asc" },
+          });
 
-        token.orgId = membership?.orgId ?? null;
-        token.role = membership?.role ?? null;
+          token.orgId = membership?.orgId ?? null;
+          token.role = membership?.role ?? null;
+        } catch {
+          token.orgId = null;
+          token.role = null;
+        }
       }
 
       return token;
