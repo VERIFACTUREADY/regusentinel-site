@@ -363,6 +363,16 @@ export default function CaseDetailPage() {
               </svg>
               {analysisLoading ? "Analizando..." : "Analizar con IA"}
             </button>
+            <a
+              href={`/cases/${caseId}/isd`}
+              className="px-3 py-1.5 bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700 inline-flex items-center gap-1.5"
+              title="Calculadora ISD - Modelo 650"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              ISD
+            </a>
             <button
               onClick={handleDuplicate}
               className="px-3 py-1 border rounded-md text-sm text-gray-600 hover:bg-gray-50"
