@@ -47,6 +47,9 @@ export default function CaseDetailPage() {
   const [taskNotesLoading, setTaskNotesLoading] = useState(false);
   const [taskNoteInput, setTaskNoteInput] = useState("");
   const [taskNoteSaving, setTaskNoteSaving] = useState(false);
+  const [analysis, setAnalysis] = useState<any>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
 
   const uniqueTasks = useMemo(() => {
     if (!caseData) return [];
@@ -82,7 +85,34 @@ export default function CaseDetailPage() {
     }
   }, [caseId, router]);
 
-  useEffect(() => { fetchCase(); fetchTemplates(); fetchMembers(); fetchCaseTemplates(); fetchPortalMessages(); }, [caseId]);
+  useEffect(() => { fetchCase(); fetchTemplates(); fetchMembers(); fetchCaseTemplates(); fetchPortalMessages(); fetchAnalysis(); }, [caseId]);
+
+  async function fetchAnalysis() {
+    try {
+      const res = await fetch(`/api/cases/${caseId}/analyze`);
+      if (res.ok) {
+        const data = await res.json();
+        setAnalysis(data.analysis);
+      }
+    } catch {}
+  }
+
+  async function runAnalysis() {
+    setAnalysisLoading(true);
+    setAnalysisOpen(true);
+    try {
+      const res = await fetch(`/api/cases/${caseId}/analyze`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setAnalysis(data.analysis);
+      } else {
+        const err = await res.json().catch(() => null);
+        alert(err?.error || "Error al analizar expediente");
+      }
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }
 
   async function fetchCase() {
     setLoading(true);
@@ -323,6 +353,17 @@ export default function CaseDetailPage() {
           <div className="flex items-center gap-3">
             {caseData.isUrgent && <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">Urgente</span>}
             <button
+              onClick={runAnalysis}
+              disabled={analysisLoading}
+              className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5"
+              title="Analizar expediente con IA"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              {analysisLoading ? "Analizando..." : "Analizar con IA"}
+            </button>
+            <button
               onClick={handleDuplicate}
               className="px-3 py-1 border rounded-md text-sm text-gray-600 hover:bg-gray-50"
               title="Duplicar expediente"
@@ -528,6 +569,84 @@ export default function CaseDetailPage() {
               )}
             </div>
           </div>
+
+          {/* AI Analysis card */}
+          {analysis && (
+            <div className="md:col-span-2 bg-gradient-to-br from-purple-50 to-blue-50 p-6 rounded-lg border border-purple-200">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl text-white ${
+                    analysis.status === "excellent" ? "bg-green-500" :
+                    analysis.status === "good" ? "bg-blue-500" :
+                    analysis.status === "warning" ? "bg-orange-500" : "bg-red-500"
+                  }`}>
+                    {analysis.healthScore}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold flex items-center gap-2">
+                      Analisis IA del expediente
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        analysis.status === "excellent" ? "bg-green-100 text-green-700" :
+                        analysis.status === "good" ? "bg-blue-100 text-blue-700" :
+                        analysis.status === "warning" ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"
+                      }`}>
+                        {analysis.status === "excellent" ? "Excelente" :
+                         analysis.status === "good" ? "Correcto" :
+                         analysis.status === "warning" ? "Atencion" : "Critico"}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Generado {new Date(analysis.generatedAt).toLocaleString("es-ES")}
+                      {analysis.model && analysis.model !== "stub" && analysis.model !== "heuristic" && (
+                        <span className="ml-2 text-purple-600">· {analysis.model}</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAnalysisOpen(true)}
+                  className="text-sm text-purple-600 hover:text-purple-800 font-medium"
+                >
+                  Ver detalle →
+                </button>
+              </div>
+              <p className="text-sm text-gray-700 leading-relaxed">{analysis.summary}</p>
+              {(analysis.criticalIssues?.length > 0 || analysis.suggestedActions?.length > 0) && (
+                <div className="mt-4 grid md:grid-cols-2 gap-3">
+                  {analysis.criticalIssues?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Issues criticos</p>
+                      <ul className="space-y-1 text-sm">
+                        {analysis.criticalIssues.slice(0, 2).map((issue: any, i: number) => (
+                          <li key={i} className="flex items-start gap-1.5">
+                            <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                              issue.severity === "high" ? "bg-red-500" : issue.severity === "medium" ? "bg-orange-500" : "bg-yellow-500"
+                            }`} />
+                            <span className="text-gray-700">{issue.title}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {analysis.suggestedActions?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Siguientes acciones</p>
+                      <ul className="space-y-1 text-sm">
+                        {analysis.suggestedActions.slice(0, 2).map((action: any, i: number) => (
+                          <li key={i} className="flex items-start gap-1.5">
+                            <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                              action.priority === "high" ? "bg-purple-600" : action.priority === "medium" ? "bg-blue-500" : "bg-gray-400"
+                            }`} />
+                            <span className="text-gray-700">{action.title}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Pipeline visualization */}
           <div className="md:col-span-2 bg-white p-6 rounded-lg border">
@@ -1197,6 +1316,165 @@ export default function CaseDetailPage() {
               className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-50">
               Vista para imprimir
             </a>
+          </div>
+        </div>
+      )}
+
+      {/* Analysis Modal */}
+      {analysisOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-12 bg-black/40 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-8">
+            <div className="flex items-center justify-between p-6 border-b sticky top-0 bg-white rounded-t-xl">
+              <div className="flex items-center gap-3">
+                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <h2 className="text-lg font-semibold">Analisis IA del expediente</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={runAnalysis}
+                  disabled={analysisLoading}
+                  className="text-sm text-purple-600 hover:text-purple-800 font-medium disabled:opacity-50"
+                >
+                  {analysisLoading ? "Regenerando..." : "Regenerar"}
+                </button>
+                <button onClick={() => setAnalysisOpen(false)} className="text-gray-400 hover:text-gray-600">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6 space-y-6">
+              {analysisLoading && !analysis ? (
+                <div className="text-center py-12">
+                  <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-purple-200 border-t-purple-600 mb-4" />
+                  <p className="text-gray-500">Analizando expediente con IA...</p>
+                  <p className="text-xs text-gray-400 mt-1">Esto puede tardar 5-15 segundos</p>
+                </div>
+              ) : analysis ? (
+                <>
+                  {/* Score & Summary */}
+                  <div className="flex items-start gap-4 p-4 rounded-lg bg-gradient-to-br from-purple-50 to-blue-50">
+                    <div className={`w-20 h-20 rounded-full flex items-center justify-center font-bold text-2xl text-white shrink-0 ${
+                      analysis.status === "excellent" ? "bg-green-500" :
+                      analysis.status === "good" ? "bg-blue-500" :
+                      analysis.status === "warning" ? "bg-orange-500" : "bg-red-500"
+                    }`}>
+                      {analysis.healthScore}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-500 mb-1">Score de salud</p>
+                      <p className="text-gray-800 leading-relaxed">{analysis.summary}</p>
+                      {analysis.estimatedDaysToClose !== null && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          Estimacion al cierre: <span className="font-semibold text-gray-700">{analysis.estimatedDaysToClose} dias</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Critical issues */}
+                  {analysis.criticalIssues?.length > 0 && (
+                    <div>
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                        Issues criticos
+                      </h3>
+                      <div className="space-y-2">
+                        {analysis.criticalIssues.map((issue: any, i: number) => (
+                          <div key={i} className={`p-3 rounded-lg border-l-4 ${
+                            issue.severity === "high" ? "bg-red-50 border-red-500" :
+                            issue.severity === "medium" ? "bg-orange-50 border-orange-500" : "bg-yellow-50 border-yellow-500"
+                          }`}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-medium text-sm">{issue.title}</p>
+                              <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                issue.severity === "high" ? "bg-red-200 text-red-800" :
+                                issue.severity === "medium" ? "bg-orange-200 text-orange-800" : "bg-yellow-200 text-yellow-800"
+                              }`}>
+                                {issue.severity === "high" ? "alta" : issue.severity === "medium" ? "media" : "baja"}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-700">{issue.description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Suggested actions */}
+                  {analysis.suggestedActions?.length > 0 && (
+                    <div>
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                        </svg>
+                        Acciones sugeridas
+                      </h3>
+                      <div className="space-y-2">
+                        {analysis.suggestedActions.map((action: any, i: number) => (
+                          <div key={i} className="p-3 rounded-lg bg-blue-50 border border-blue-100">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0">{i + 1}</span>
+                              <p className="font-medium text-sm">{action.title}</p>
+                              <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                action.priority === "high" ? "bg-purple-200 text-purple-800" :
+                                action.priority === "medium" ? "bg-blue-200 text-blue-800" : "bg-gray-200 text-gray-700"
+                              }`}>
+                                {action.priority === "high" ? "alta" : action.priority === "medium" ? "media" : "baja"}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-700 ml-8">{action.description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Risks */}
+                  {analysis.risks?.length > 0 && (
+                    <div>
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Riesgos identificados
+                      </h3>
+                      <div className="space-y-2">
+                        {analysis.risks.map((risk: any, i: number) => (
+                          <div key={i} className="p-3 rounded-lg bg-gray-50 border border-gray-200">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded uppercase tracking-wider">{risk.category}</span>
+                            </div>
+                            <p className="text-sm text-gray-700 mb-1"><span className="font-medium">Riesgo:</span> {risk.description}</p>
+                            <p className="text-sm text-green-700"><span className="font-medium">Mitigacion:</span> {risk.mitigation}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="text-xs text-gray-400 pt-3 border-t">
+                    Generado el {new Date(analysis.generatedAt).toLocaleString("es-ES")}
+                    {analysis.model && <> · Modelo: {analysis.model}</>}
+                    <br />
+                    Este analisis es una sugerencia automatica. Las decisiones legales y fiscales finales son responsabilidad del profesional.
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-gray-500 mb-4">Aun no se ha generado ningun analisis para este expediente.</p>
+                  <button
+                    onClick={runAnalysis}
+                    className="px-6 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 font-medium"
+                  >
+                    Generar primer analisis
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
