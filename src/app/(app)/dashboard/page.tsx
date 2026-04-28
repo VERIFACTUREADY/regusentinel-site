@@ -11,10 +11,24 @@ import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import { CASE_STATUS_COLORS } from "@/lib/constants";
 import Link from "next/link";
 
+async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    console.error("[dashboard] query failed:", err);
+    return fallback;
+  }
+}
+
 export default async function DashboardPage() {
-  const session = await getServerSession(authOptions);
+  let session;
+  try {
+    session = await getServerSession(authOptions);
+  } catch {
+    session = null;
+  }
   const orgId = session?.user?.orgId;
-  if (!orgId) return <p>No org</p>;
+  if (!session || !orgId) return <p>No org</p>;
 
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -28,25 +42,25 @@ export default async function DashboardPage() {
   const weekEnd = new Date(now.getTime() + 7 * 86400000);
 
   const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, pendingApprovals, recentCases, recentLogs, upcomingDeadlines, onboarding, org, myTasks, calendarTasks] = await Promise.all([
-    prisma.case.count({
+    safe(() => prisma.case.count({
       where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
-    }),
-    prisma.task.count({
+    }), 0),
+    safe(() => prisma.task.count({
       where: { case: { orgId, deletedAt: null }, status: { in: ["PENDING", "IN_PROGRESS"] } },
-    }),
-    prisma.task.count({
+    }), 0),
+    safe(() => prisma.task.count({
       where: { case: { orgId, deletedAt: null }, status: "BLOCKED" },
-    }),
-    prisma.task.count({
+    }), 0),
+    safe(() => prisma.task.count({
       where: { case: { orgId, deletedAt: null }, status: "READY" },
-    }),
-    prisma.case.count({
+    }), 0),
+    safe(() => prisma.case.count({
       where: { orgId, deletedAt: null, status: "CLOSED", closedAt: { gte: startOfMonth } },
-    }),
-    prisma.approval.count({
+    }), 0),
+    safe(() => prisma.approval.count({
       where: { case: { orgId }, status: "PENDING" },
-    }),
-    prisma.case.findMany({
+    }), 0),
+    safe(() => prisma.case.findMany({
       where: { orgId, deletedAt: null },
       include: {
         deceased: { select: { fullName: true } },
@@ -54,14 +68,14 @@ export default async function DashboardPage() {
       },
       orderBy: { createdAt: "desc" },
       take: 5,
-    }),
-    prisma.auditLog.findMany({
+    }), [] as any[]),
+    safe(() => prisma.auditLog.findMany({
       where: { orgId },
       include: { user: { select: { name: true, email: true } } },
       orderBy: { createdAt: "desc" },
       take: 10,
-    }),
-    prisma.task.findMany({
+    }), [] as any[]),
+    safe(() => prisma.task.findMany({
       where: {
         case: { orgId, deletedAt: null },
         deadline: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), gte: now },
@@ -70,13 +84,13 @@ export default async function DashboardPage() {
       include: { case: { select: { ref: true } } },
       orderBy: { deadline: "asc" },
       take: 8,
-    }),
-    getOnboardingState(orgId),
-    prisma.organization.findUnique({
+    }), [] as any[]),
+    safe(() => getOnboardingState(orgId), { show: false, steps: [], completed: 0, total: 0 } as any),
+    safe(() => prisma.organization.findUnique({
       where: { id: orgId },
       select: { slug: true },
-    }),
-    prisma.task.findMany({
+    }), null),
+    safe(() => prisma.task.findMany({
       where: {
         assigneeId: userId,
         case: { orgId, deletedAt: null },
@@ -85,9 +99,8 @@ export default async function DashboardPage() {
       include: { case: { select: { id: true, ref: true, isUrgent: true } } },
       orderBy: [{ deadline: { sort: "asc", nulls: "last" } }, { sortOrder: "asc" }],
       take: 8,
-    }),
-    // Calendar widget: tasks with deadlines in current month
-    prisma.task.findMany({
+    }), [] as any[]),
+    safe(() => prisma.task.findMany({
       where: {
         case: { orgId, deletedAt: null },
         OR: [
@@ -97,7 +110,7 @@ export default async function DashboardPage() {
         status: { notIn: ["DONE", "SKIPPED"] },
       },
       select: { deadline: true, dueDate: true },
-    }),
+    }), [] as any[]),
   ]);
 
   // In the public demo org surface 3 "try this" shortcuts so prospects
@@ -115,18 +128,18 @@ export default async function DashboardPage() {
   } | null = null;
   if (isDemo) {
     const [urgent, portalCase, bankCase] = await Promise.all([
-      prisma.case.findFirst({
+      safe(() => prisma.case.findFirst({
         where: { orgId, ref: "EXP-DEMO-0004" },
         select: { id: true, ref: true },
-      }),
-      prisma.case.findFirst({
+      }), null),
+      safe(() => prisma.case.findFirst({
         where: { orgId, ref: "EXP-DEMO-0003" },
         select: { portalToken: true, ref: true },
-      }),
-      prisma.case.findFirst({
+      }), null),
+      safe(() => prisma.case.findFirst({
         where: { orgId, ref: "EXP-DEMO-0002" },
         select: { id: true, ref: true },
-      }),
+      }), null),
     ]);
     demoHighlights = {
       urgentCaseId: urgent?.id ?? null,
