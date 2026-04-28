@@ -35,6 +35,10 @@ const STATUS_COLORS: Record<string, string> = {
   ARCHIVED: "bg-gray-300",
 };
 
+async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try { return await fn(); } catch { return fallback; }
+}
+
 export default async function ReportsPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.orgId || !session.user.role) redirect("/login");
@@ -65,53 +69,62 @@ export default async function ReportsPage() {
     members,
     recentCases6m,
     overdueTaskCount,
+    provinceData,
   ] = await Promise.all([
-    prisma.case.count({ where: { orgId, deletedAt: null } }),
-    prisma.case.count({ where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } } }),
-    prisma.case.count({ where: { orgId, deletedAt: null, status: "CLOSED", closedAt: { gte: startOfMonth } } }),
-    prisma.case.count({ where: { orgId, deletedAt: null, status: "CLOSED", closedAt: { gte: startOfLastMonth, lt: startOfMonth } } }),
-    prisma.case.count({ where: { orgId, deletedAt: null, createdAt: { gte: startOfMonth } } }),
-    prisma.case.count({ where: { orgId, deletedAt: null, createdAt: { gte: startOfLastMonth, lt: startOfMonth } } }),
-    prisma.case.count({ where: { orgId, deletedAt: null, isUrgent: true, status: { notIn: ["CLOSED", "ARCHIVED"] } } }),
-    prisma.case.groupBy({
+    safe(() => prisma.case.count({ where: { orgId, deletedAt: null } }), 0),
+    safe(() => prisma.case.count({ where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } } }), 0),
+    safe(() => prisma.case.count({ where: { orgId, deletedAt: null, status: "CLOSED", closedAt: { gte: startOfMonth } } }), 0),
+    safe(() => prisma.case.count({ where: { orgId, deletedAt: null, status: "CLOSED", closedAt: { gte: startOfLastMonth, lt: startOfMonth } } }), 0),
+    safe(() => prisma.case.count({ where: { orgId, deletedAt: null, createdAt: { gte: startOfMonth } } }), 0),
+    safe(() => prisma.case.count({ where: { orgId, deletedAt: null, createdAt: { gte: startOfLastMonth, lt: startOfMonth } } }), 0),
+    safe(() => prisma.case.count({ where: { orgId, deletedAt: null, isUrgent: true, status: { notIn: ["CLOSED", "ARCHIVED"] } } }), 0),
+    safe(() => prisma.case.groupBy({
       by: ["status"],
       where: { orgId, deletedAt: null },
       _count: true,
-    }),
-    prisma.case.findMany({
+    }), [] as any[]),
+    safe(() => prisma.case.findMany({
       where: { orgId, deletedAt: null, status: "CLOSED", closedAt: { gte: startOfYear } },
       select: { createdAt: true, closedAt: true },
       take: 500,
-    }),
-    prisma.task.groupBy({
+    }), [] as any[]),
+    safe(() => prisma.task.groupBy({
       by: ["status"],
       where: { case: { orgId, deletedAt: null } },
       _count: true,
-    }),
-    prisma.document.count({ where: { case: { orgId, deletedAt: null } } }),
-    prisma.notificationLog.count({ where: { orgId } }),
-    prisma.notificationLog.count({ where: { orgId, createdAt: { gte: startOfMonth } } }),
-    prisma.task.groupBy({
+    }), [] as any[]),
+    safe(() => prisma.document.count({ where: { case: { orgId, deletedAt: null } } }), 0),
+    safe(() => prisma.notificationLog.count({ where: { orgId } }), 0),
+    safe(() => prisma.notificationLog.count({ where: { orgId, createdAt: { gte: startOfMonth } } }), 0),
+    safe(() => prisma.task.groupBy({
       by: ["assigneeId", "status"],
       where: { case: { orgId, deletedAt: null }, assigneeId: { not: null } },
       _count: true,
-    }),
-    prisma.membership.findMany({
+    }), [] as any[]),
+    safe(() => prisma.membership.findMany({
       where: { orgId },
       select: { userId: true, user: { select: { name: true, email: true } } },
-    }),
-    prisma.case.findMany({
+    }), [] as any[]),
+    safe(() => prisma.case.findMany({
       where: { orgId, deletedAt: null, createdAt: { gte: sixMonthsAgo } },
       select: { createdAt: true, closedAt: true, status: true, categories: true },
       take: 2000,
-    }),
-    prisma.task.count({
+    }), [] as any[]),
+    safe(() => prisma.task.count({
       where: {
         case: { orgId, deletedAt: null },
         deadline: { lt: now },
         status: { notIn: ["DONE", "SKIPPED"] },
       },
-    }),
+    }), 0),
+    safe(async () => {
+      const rows = await (prisma.case as any).groupBy({
+        by: ["province"],
+        where: { orgId, deletedAt: null, province: { not: null } },
+        _count: true,
+      });
+      return rows as any[];
+    }, [] as any[]),
   ]);
   const memberMap = Object.fromEntries(
     members.map((m) => [m.userId, m.user.name || m.user.email])
@@ -143,11 +156,11 @@ export default async function ReportsPage() {
       )
     : null;
 
-  const statusMap = Object.fromEntries(casesByStatus.map((s) => [s.status, s._count]));
-  const totalForBar = Object.values(statusMap).reduce((a, b) => a + b, 0) || 1;
+  const statusMap: Record<string, number> = Object.fromEntries((casesByStatus as any[]).map((s: any) => [s.status, s._count as number]));
+  const totalForBar = Object.values(statusMap).reduce((a: number, b: number) => a + b, 0) || 1;
 
-  const taskMap = Object.fromEntries(taskStats.map((t) => [t.status, t._count]));
-  const totalTasks = Object.values(taskMap).reduce((a, b) => a + b, 0);
+  const taskMap: Record<string, number> = Object.fromEntries((taskStats as any[]).map((t: any) => [t.status, t._count as number]));
+  const totalTasks = Object.values(taskMap).reduce((a: number, b: number) => a + b, 0);
 
   const MONTH_NAMES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
   const monthBuckets: { start: number; end: number; label: string; created: number; closed: number }[] = [];
@@ -425,17 +438,31 @@ export default async function ReportsPage() {
           </Link>
         </div>
 
-        {/* Quick links */}
+        {/* Province breakdown */}
         <div className="bg-white rounded-lg border p-6">
-          <h2 className="font-semibold mb-4">Accesos rapidos</h2>
-          <div className="space-y-2">
-            <Link href="/tasks/timeline" className="block text-sm text-primary hover:underline">Cronograma de plazos →</Link>
-            <Link href="/cases/kanban" className="block text-sm text-primary hover:underline">Tablero Kanban →</Link>
-            <Link href="/audit" className="block text-sm text-primary hover:underline">Audit Trail →</Link>
-            <Link href="/templates" className="block text-sm text-primary hover:underline">Plantillas →</Link>
-            <Link href="/cases" className="block text-sm text-primary hover:underline">Todos los expedientes →</Link>
-            <Link href="/users" className="block text-sm text-primary hover:underline">Gestion de equipo →</Link>
-          </div>
+          <h2 className="font-semibold mb-4">Por provincia</h2>
+          {(provinceData as any[]).length === 0 ? (
+            <p className="text-sm text-gray-400">Sin datos de provincia</p>
+          ) : (() => {
+            const sorted = [...(provinceData as any[])].sort((a, b) => b._count.province - a._count.province).slice(0, 10);
+            const maxProv = sorted[0]?._count.province || 1;
+            return (
+              <div className="space-y-2">
+                {sorted.map((row: any) => {
+                  const pct = Math.round((row._count.province / maxProv) * 100);
+                  return (
+                    <div key={row.province} className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-600 w-28 truncate shrink-0">{row.province}</span>
+                      <div className="flex-1 bg-gray-100 rounded-full h-2">
+                        <div className="bg-primary h-2 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="font-medium w-6 text-right shrink-0">{row._count.province}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Monthly trend */}

@@ -41,7 +41,10 @@ export default async function DashboardPage() {
   const calTo = new Date(calYear, calMonth + 1, 0, 23, 59, 59);
   const weekEnd = new Date(now.getTime() + 7 * 86400000);
 
-  const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, pendingApprovals, recentCases, recentLogs, upcomingDeadlines, onboarding, org, myTasks, calendarTasks] = await Promise.all([
+  const isdAlertThreshold = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, pendingApprovals, recentCases, recentLogs, upcomingDeadlines, onboarding, org, myTasks, calendarTasks, criticalBlockedTasks, teamWorkload, members] = await Promise.all([
     safe(() => prisma.case.count({
       where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
     }), 0),
@@ -110,6 +113,30 @@ export default async function DashboardPage() {
         status: { notIn: ["DONE", "SKIPPED"] },
       },
       select: { deadline: true, dueDate: true },
+    }), [] as any[]),
+    // Blocked tasks stuck for > 7 days — need immediate attention
+    safe(() => prisma.task.findMany({
+      where: {
+        case: { orgId, deletedAt: null },
+        status: "BLOCKED",
+        updatedAt: { lte: sevenDaysAgo },
+      },
+      include: {
+        case: { select: { id: true, ref: true, isUrgent: true, deceased: { select: { fullName: true } } } },
+      },
+      orderBy: { updatedAt: "asc" },
+      take: 5,
+    }), [] as any[]),
+    // Team workload: tasks grouped by assignee and status
+    safe(() => prisma.task.groupBy({
+      by: ["assigneeId", "status"],
+      where: { case: { orgId, deletedAt: null }, assigneeId: { not: null } },
+      _count: true,
+    }), [] as any[]),
+    // Org members for name lookup
+    safe(() => prisma.membership.findMany({
+      where: { orgId },
+      select: { userId: true, user: { select: { name: true, email: true } } },
     }), [] as any[]),
   ]);
 
@@ -182,6 +209,23 @@ export default async function DashboardPage() {
     return Math.ceil((new Date(date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   }
 
+  const memberMap = Object.fromEntries(
+    (members as any[]).map((m: any) => [m.userId, m.user.name || m.user.email])
+  );
+  const workloadByUser: Record<string, { name: string; active: number; blocked: number; done: number; total: number }> = {};
+  for (const row of (teamWorkload as any[])) {
+    if (!row.assigneeId) continue;
+    if (!workloadByUser[row.assigneeId]) {
+      workloadByUser[row.assigneeId] = { name: memberMap[row.assigneeId] || row.assigneeId, active: 0, blocked: 0, done: 0, total: 0 };
+    }
+    const entry = workloadByUser[row.assigneeId];
+    entry.total += row._count;
+    if (row.status === "DONE" || row.status === "SKIPPED") entry.done += row._count;
+    else if (row.status === "BLOCKED") entry.blocked += row._count;
+    else entry.active += row._count;
+  }
+  const workloadEntries = Object.values(workloadByUser).sort((a, b) => b.active - a.active).slice(0, 6);
+
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
@@ -216,31 +260,125 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Deadline alerts */}
-      {upcomingDeadlines.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
-          <h2 className="font-semibold text-red-800 mb-3 flex items-center gap-2">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            Plazos proximos (30 dias)
+      {/* Critical attention panel */}
+      {(upcomingDeadlines.length > 0 || (criticalBlockedTasks as any[]).length > 0) && (
+        <div className="mb-8">
+          <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            Requiere atencion inmediata
           </h2>
-          <div className="space-y-2">
-            {upcomingDeadlines.map((task) => {
-              const days = daysUntil(task.deadline!);
-              const urgent = days <= 7;
-              return (
-                <div key={task.id} className={`flex items-center justify-between text-sm ${urgent ? "text-red-800 font-medium" : "text-red-700"}`}>
-                  <div>
-                    <Link href={`/cases/${task.caseId}`} className="hover:underline">
-                      <span className="font-mono text-xs mr-2">{task.case.ref}</span>
-                      {task.title}
-                    </Link>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded text-xs ${urgent ? "bg-red-200" : "bg-red-100"}`}>
-                    {days <= 0 ? "VENCIDO" : `${days} dias`}
-                  </span>
+          <div className="grid md:grid-cols-2 gap-4">
+            {upcomingDeadlines.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-red-800 mb-3 flex items-center gap-1.5">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  Plazos proximos (30 dias)
+                </h3>
+                <div className="space-y-2">
+                  {upcomingDeadlines.map((task: any) => {
+                    const days = daysUntil(task.deadline!);
+                    const urgent = days <= 7;
+                    return (
+                      <div key={task.id} className="flex items-center justify-between text-sm">
+                        <Link href={`/cases/${task.caseId}`} className={`hover:underline ${urgent ? "text-red-800 font-medium" : "text-red-700"}`}>
+                          <span className="font-mono text-xs mr-2">{task.case.ref}</span>
+                          {task.title}
+                        </Link>
+                        <span className={`px-2 py-0.5 rounded text-xs shrink-0 ml-2 ${urgent ? "bg-red-200 text-red-800 font-medium" : "bg-red-100 text-red-700"}`}>
+                          {days <= 0 ? "VENCIDO" : `${days}d`}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            )}
+            {(criticalBlockedTasks as any[]).length > 0 && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-orange-800 mb-3 flex items-center gap-1.5">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                  Tareas bloqueadas +7 dias
+                </h3>
+                <div className="space-y-2">
+                  {(criticalBlockedTasks as any[]).map((task: any) => {
+                    const daysSince = Math.floor((now.getTime() - new Date(task.updatedAt).getTime()) / (1000 * 60 * 60 * 24));
+                    return (
+                      <div key={task.id} className="flex items-start justify-between text-sm gap-2">
+                        <div className="flex-1 min-w-0">
+                          <Link href={`/cases/${task.case.id}`} className="text-orange-800 font-medium hover:underline">
+                            <span className="font-mono text-xs mr-1">{task.case.ref}</span>
+                          </Link>
+                          <p className="text-orange-700 text-xs truncate">{task.title}</p>
+                          {task.blockReason && <p className="text-xs text-orange-500 truncate">{task.blockReason}</p>}
+                        </div>
+                        <span className="text-xs px-2 py-0.5 bg-orange-200 text-orange-800 rounded font-medium shrink-0">{daysSince}d</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Team workload */}
+      {workloadEntries.length > 0 && (
+        <div className="bg-white rounded-lg border mb-8">
+          <div className="px-6 py-4 border-b flex justify-between items-center">
+            <h2 className="font-semibold">Carga de trabajo del equipo</h2>
+            <Link href="/reports" className="text-sm text-primary hover:underline">Ver informes</Link>
+          </div>
+          <div className="p-4">
+            <div className="space-y-3">
+              {workloadEntries.map((entry) => {
+                const completionPct = entry.total > 0 ? Math.round((entry.done / entry.total) * 100) : 0;
+                return (
+                  <div key={entry.name} className="flex items-center gap-4">
+                    <div className="w-32 shrink-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{entry.name}</p>
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex h-5 rounded-full overflow-hidden bg-gray-100 gap-px">
+                        {entry.blocked > 0 && (
+                          <div
+                            className="bg-red-400 h-full"
+                            style={{ width: `${(entry.blocked / entry.total) * 100}%` }}
+                            title={`${entry.blocked} bloqueadas`}
+                          />
+                        )}
+                        {entry.active > 0 && (
+                          <div
+                            className="bg-blue-400 h-full"
+                            style={{ width: `${(entry.active / entry.total) * 100}%` }}
+                            title={`${entry.active} activas`}
+                          />
+                        )}
+                        {entry.done > 0 && (
+                          <div
+                            className="bg-green-400 h-full"
+                            style={{ width: `${(entry.done / entry.total) * 100}%` }}
+                            title={`${entry.done} completadas`}
+                          />
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0 text-xs text-gray-500 w-36 justify-end">
+                      {entry.blocked > 0 && <span className="text-red-600 font-medium">{entry.blocked} bloq.</span>}
+                      <span className="text-blue-600">{entry.active} activas</span>
+                      <span className="text-gray-400">{completionPct}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-4 mt-4 pt-3 border-t text-xs text-gray-400">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-400 inline-block" /> Bloqueadas</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-400 inline-block" /> Activas</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-400 inline-block" /> Completadas</span>
+            </div>
           </div>
         </div>
       )}

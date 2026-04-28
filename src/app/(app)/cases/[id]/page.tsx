@@ -540,6 +540,81 @@ export default function CaseDetailPage() {
               ))}
             </div>
           </div>
+
+          {/* Consentimiento y legitimación */}
+          <div className="md:col-span-2 bg-white p-6 rounded-lg border">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              Consentimiento y legitimacion RGPD
+            </h3>
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Consent toggle */}
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-3">Estado del consentimiento informado</p>
+                <button
+                  onClick={toggleConsent}
+                  className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg border-2 transition-all text-left ${
+                    caseData.consentAccepted
+                      ? "border-green-400 bg-green-50 hover:bg-green-100"
+                      : "border-gray-200 bg-gray-50 hover:bg-gray-100"
+                  }`}
+                >
+                  <div className={`w-10 h-6 rounded-full flex items-center px-1 transition-colors shrink-0 ${
+                    caseData.consentAccepted ? "bg-green-500 justify-end" : "bg-gray-300 justify-start"
+                  }`}>
+                    <div className="w-4 h-4 bg-white rounded-full shadow" />
+                  </div>
+                  <div>
+                    <p className={`text-sm font-medium ${caseData.consentAccepted ? "text-green-800" : "text-gray-600"}`}>
+                      {caseData.consentAccepted ? "Consentimiento aceptado" : "Sin consentimiento registrado"}
+                    </p>
+                    {caseData.consentAccepted && caseData.consentDate && (
+                      <p className="text-xs text-green-600 mt-0.5">
+                        Registrado el {new Date(caseData.consentDate).toLocaleDateString("es-ES", { day: "2-digit", month: "long", year: "numeric" })}
+                      </p>
+                    )}
+                    {!caseData.consentAccepted && (
+                      <p className="text-xs text-gray-400 mt-0.5">Haz clic para marcar como aceptado</p>
+                    )}
+                  </div>
+                </button>
+                {caseData.consentAccepted && (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs text-green-700 bg-green-50 px-3 py-1.5 rounded-md border border-green-200">
+                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Cumple con el art. 13 del RGPD y la LOPDGDD
+                  </div>
+                )}
+              </div>
+
+              {/* Legitimation note */}
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Nota de legitimacion y base juridica</p>
+                <textarea
+                  value={legitimationInput}
+                  onChange={(e) => setLegitimationInput(e.target.value)}
+                  rows={4}
+                  placeholder="Documenta la base juridica del tratamiento: relacion contractual, interes legitimo, obligacion legal... Indica tambien la fuente de los datos si no fue directamente del interesado."
+                  className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                />
+                <div className="flex items-center justify-between mt-2">
+                  <button
+                    onClick={saveLegitimation}
+                    disabled={legitimationSaving || legitimationInput === (caseData.legitimationNote || "")}
+                    className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {legitimationSaving ? "Guardando..." : "Guardar nota"}
+                  </button>
+                  {legitimationInput !== (caseData.legitimationNote || "") && (
+                    <span className="text-xs text-gray-400">Sin guardar</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
