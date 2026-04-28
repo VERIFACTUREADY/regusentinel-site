@@ -50,6 +50,11 @@ export default function CaseDetailPage() {
   const [analysis, setAnalysis] = useState<any>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatHistory, setChatHistory] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
 
   const uniqueTasks = useMemo(() => {
     if (!caseData) return [];
@@ -95,6 +100,54 @@ export default function CaseDetailPage() {
         setAnalysis(data.analysis);
       }
     } catch {}
+  }
+
+  async function openChat() {
+    setChatOpen(true);
+    if (chatHistory.length === 0) {
+      setChatLoading(true);
+      try {
+        const res = await fetch(`/api/cases/${caseId}/chat`);
+        if (res.ok) {
+          const data = await res.json();
+          setChatHistory(data.history || []);
+        }
+      } finally {
+        setChatLoading(false);
+      }
+    }
+  }
+
+  async function sendChat() {
+    const msg = chatInput.trim();
+    if (!msg || chatSending) return;
+    setChatSending(true);
+    setChatInput("");
+    setChatHistory((h) => [...h, { role: "user", content: msg }]);
+    try {
+      const res = await fetch(`/api/cases/${caseId}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setChatHistory(data.history || []);
+      } else {
+        const err = await res.json().catch(() => null);
+        setChatHistory((h) => [...h, { role: "assistant", content: `Error: ${err?.error || "no se pudo enviar"}` }]);
+      }
+    } catch (e: any) {
+      setChatHistory((h) => [...h, { role: "assistant", content: `Error: ${e.message}` }]);
+    } finally {
+      setChatSending(false);
+    }
+  }
+
+  async function clearChat() {
+    if (!confirm("¿Borrar todo el historial de chat de este expediente?")) return;
+    await fetch(`/api/cases/${caseId}/chat`, { method: "DELETE" });
+    setChatHistory([]);
   }
 
   async function runAnalysis() {
@@ -373,6 +426,16 @@ export default function CaseDetailPage() {
               </svg>
               ISD
             </a>
+            <button
+              onClick={openChat}
+              className="px-3 py-1.5 border border-purple-300 text-purple-700 bg-white rounded-md text-sm font-medium hover:bg-purple-50 inline-flex items-center gap-1.5"
+              title="Asistente IA del expediente"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              Chat IA
+            </button>
             <button
               onClick={handleDuplicate}
               className="px-3 py-1 border rounded-md text-sm text-gray-600 hover:bg-gray-50"
@@ -1326,6 +1389,112 @@ export default function CaseDetailPage() {
               className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-50">
               Vista para imprimir
             </a>
+          </div>
+        </div>
+      )}
+
+      {/* AI Chat drawer */}
+      {chatOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setChatOpen(false)} />
+          <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col h-full">
+            <div className="px-5 py-4 border-b flex items-center justify-between bg-gradient-to-r from-purple-600 to-blue-600">
+              <div className="flex items-center gap-2 text-white">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <h3 className="font-semibold">Asistente IA del expediente</h3>
+              </div>
+              <div className="flex items-center gap-1">
+                {chatHistory.length > 0 && (
+                  <button
+                    onClick={clearChat}
+                    className="text-white/70 hover:text-white text-xs px-2 py-1 rounded"
+                    title="Borrar historial"
+                  >
+                    Borrar
+                  </button>
+                )}
+                <button onClick={() => setChatOpen(false)} className="text-white/70 hover:text-white">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+              {chatLoading ? (
+                <p className="text-center text-gray-400 text-sm">Cargando historial...</p>
+              ) : chatHistory.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-sm text-gray-500 mb-4">
+                    Pregunta cualquier cosa sobre este expediente. La IA conoce los datos, tareas, documentos y plazos.
+                  </p>
+                  <div className="space-y-2 text-left">
+                    {[
+                      "¿Cuáles son los siguientes pasos prioritarios?",
+                      "¿Qué documentos faltan para enviar al banco?",
+                      "¿Cuándo vence el plazo del Modelo 650?",
+                      "Resume el estado actual en 3 frases.",
+                    ].map((sugg) => (
+                      <button
+                        key={sugg}
+                        onClick={() => { setChatInput(sugg); }}
+                        className="block w-full text-left px-3 py-2 text-sm bg-white border border-gray-200 rounded-md hover:border-purple-300 hover:bg-purple-50 text-gray-700"
+                      >
+                        {sugg}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                chatHistory.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${
+                      msg.role === "user"
+                        ? "bg-purple-600 text-white"
+                        : "bg-white border border-gray-200 text-gray-800"
+                    }`}>
+                      <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+              {chatSending && (
+                <div className="flex justify-start">
+                  <div className="px-3 py-2 rounded-lg bg-white border border-gray-200">
+                    <div className="flex gap-1">
+                      <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 border-t bg-white">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+                  placeholder="Pregunta lo que necesites..."
+                  disabled={chatSending}
+                  className="flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 disabled:bg-gray-100"
+                />
+                <button
+                  onClick={sendChat}
+                  disabled={chatSending || !chatInput.trim()}
+                  className="px-3 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 disabled:opacity-50"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mt-1.5">Enter para enviar · La IA puede cometer errores, verifica datos críticos.</p>
+            </div>
           </div>
         </div>
       )}
