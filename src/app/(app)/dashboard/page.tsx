@@ -10,6 +10,7 @@ import { DeadlineCalendar } from "@/components/dashboard/deadline-calendar";
 import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import { CASE_STATUS_COLORS } from "@/lib/constants";
 import { getAiInsights, type AiInsightsData } from "@/lib/ai-insights";
+import { BulkAnalyzeButton } from "@/components/dashboard/bulk-analyze-button";
 import Link from "next/link";
 
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
@@ -395,9 +396,8 @@ export default async function DashboardPage() {
       )}
 
       {/* AI Insights widget */}
-      {(aiInsights.thirtyDays.casesAnalyzed > 0 || aiInsights.thirtyDays.chatMessages > 0 || aiInsights.thirtyDays.isdCalculations > 0 || aiInsights.riskiestCases.length > 0) && (
-        <div className="bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 rounded-lg border border-purple-200 mb-8">
-          <div className="px-6 py-4 border-b border-purple-100 flex items-center justify-between">
+      <div className="bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 rounded-lg border border-purple-200 mb-8">
+          <div className="px-6 py-4 border-b border-purple-100 flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-2">
               <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -405,18 +405,21 @@ export default async function DashboardPage() {
               <h2 className="font-semibold">Insights IA del despacho</h2>
               <span className="text-xs px-2 py-0.5 bg-white border border-purple-200 rounded-full text-purple-700">ultimos 30 dias</span>
             </div>
-            {aiInsights.averageScore !== null && (
-              <div className="text-right">
-                <span className="text-xs text-gray-500">Score medio </span>
-                <span className={`font-bold ${
-                  aiInsights.averageScore >= 70 ? "text-green-600" :
-                  aiInsights.averageScore >= 40 ? "text-orange-600" : "text-red-600"
-                }`}>
-                  {aiInsights.averageScore}/100
-                </span>
-                <span className="text-xs text-gray-400 ml-1">({aiInsights.totalCasesAnalyzed} casos)</span>
-              </div>
-            )}
+            <div className="flex items-center gap-4">
+              {aiInsights.averageScore !== null && (
+                <div className="text-right">
+                  <span className="text-xs text-gray-500">Score medio </span>
+                  <span className={`font-bold ${
+                    aiInsights.averageScore >= 70 ? "text-green-600" :
+                    aiInsights.averageScore >= 40 ? "text-orange-600" : "text-red-600"
+                  }`}>
+                    {aiInsights.averageScore}/100
+                  </span>
+                  <span className="text-xs text-gray-400 ml-1">({aiInsights.totalCasesAnalyzed} casos)</span>
+                </div>
+              )}
+              <BulkAnalyzeButton openCaseCount={activeCases} />
+            </div>
           </div>
           <div className="p-6 grid md:grid-cols-4 gap-4 mb-2">
             <div className="bg-white rounded-lg p-4 border border-purple-100">
@@ -465,8 +468,7 @@ export default async function DashboardPage() {
               </div>
             </div>
           )}
-        </div>
-      )}
+      </div>
 
       {/* Recent cases */}
       <div className="bg-white rounded-lg border mb-8">
