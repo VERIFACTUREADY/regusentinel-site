@@ -23,15 +23,28 @@ export async function GET(req: NextRequest) {
   const category = url.searchParams.get("category");
   const search = url.searchParams.get("search");
   const urgent = url.searchParams.get("urgent");
+  const province = url.searchParams.get("province");
+  const isdExpiring = url.searchParams.get("isdExpiring"); // "30" | "60" = days threshold
   const page = parseInt(url.searchParams.get("page") || "1");
   const limit = Math.min(parseInt(url.searchParams.get("limit") || "25"), 100);
 
+  const now = new Date();
   const conditions: Record<string, unknown>[] = [
     { orgId: session.user.orgId, deletedAt: null },
   ];
   if (status) conditions.push({ status });
   if (category) conditions.push({ categories: { has: category } });
   if (urgent === "true") conditions.push({ isUrgent: true });
+  if (province) conditions.push({ province });
+  if (isdExpiring) {
+    const days = parseInt(isdExpiring) || 30;
+    const minDeathDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+    const maxDeathDate = new Date(now.getTime() - (180 - days) * 24 * 60 * 60 * 1000);
+    conditions.push({
+      status: { notIn: ["CLOSED", "ARCHIVED"] },
+      deceased: { deathDate: { gte: minDeathDate, lte: maxDeathDate } },
+    });
+  }
   if (search) {
     conditions.push({
       OR: [

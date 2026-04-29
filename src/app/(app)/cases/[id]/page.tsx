@@ -61,6 +61,10 @@ export default function CaseDetailPage() {
   const [docRequestCopied, setDocRequestCopied] = useState(false);
   const [smartTasksLoading, setSmartTasksLoading] = useState(false);
   const [smartTasksResult, setSmartTasksResult] = useState<{ totalAdded: number; summary: string } | null>(null);
+  const [progressReportOpen, setProgressReportOpen] = useState(false);
+  const [progressReportLoading, setProgressReportLoading] = useState(false);
+  const [progressReportResult, setProgressReportResult] = useState<{ subject: string; body: string; completedItems: string[]; pendingItems: string[]; nextSteps: string[]; contactName: string | null; contactEmail: string | null } | null>(null);
+  const [progressReportCopied, setProgressReportCopied] = useState(false);
 
   const uniqueTasks = useMemo(() => {
     if (!caseData) return [];
@@ -214,6 +218,47 @@ export default function CaseDetailPage() {
     } finally {
       setSmartTasksLoading(false);
     }
+  }
+
+  async function openProgressReport() {
+    setProgressReportOpen(true);
+    if (!progressReportResult) {
+      setProgressReportLoading(true);
+      try {
+        const res = await fetch(`/api/cases/${caseId}/progress-report`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.result) setProgressReportResult(data.result);
+        }
+      } finally {
+        setProgressReportLoading(false);
+      }
+    }
+  }
+
+  async function generateProgressReportFn() {
+    setProgressReportLoading(true);
+    try {
+      const res = await fetch(`/api/cases/${caseId}/progress-report`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setProgressReportResult(data.result);
+      } else {
+        const err = await res.json().catch(() => null);
+        alert(err?.error || "Error generando informe");
+      }
+    } finally {
+      setProgressReportLoading(false);
+    }
+  }
+
+  function copyProgressReport() {
+    if (!progressReportResult) return;
+    const text = `Asunto: ${progressReportResult.subject}\n\n${progressReportResult.body}`;
+    navigator.clipboard.writeText(text).then(() => {
+      setProgressReportCopied(true);
+      setTimeout(() => setProgressReportCopied(false), 2000);
+    });
   }
 
   async function runAnalysis() {
@@ -511,6 +556,16 @@ export default function CaseDetailPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
               Solicitar docs
+            </button>
+            <button
+              onClick={openProgressReport}
+              className="px-3 py-1.5 border border-teal-300 text-teal-700 bg-white rounded-md text-sm font-medium hover:bg-teal-50 inline-flex items-center gap-1.5"
+              title="Generar informe de progreso para la familia"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Informe familia
             </button>
             <button
               onClick={handleDuplicate}
@@ -1774,6 +1829,158 @@ export default function CaseDetailPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Progress Report Modal */}
+      {progressReportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between p-6 border-b shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold">Informe de progreso para la familia</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Carta de actualización lista para enviar</p>
+              </div>
+              <button onClick={() => setProgressReportOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {progressReportLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="flex items-center gap-3 text-gray-500">
+                    <svg className="w-5 h-5 animate-spin text-teal-500" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Generando informe...
+                  </div>
+                </div>
+              ) : progressReportResult ? (
+                <div className="space-y-5">
+                  {progressReportResult.contactEmail && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600 bg-teal-50 border border-teal-200 rounded-lg px-4 py-2">
+                      <svg className="w-4 h-4 text-teal-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      <span>Destinatario: <strong>{progressReportResult.contactName || "familia"}</strong>{progressReportResult.contactEmail ? ` — ${progressReportResult.contactEmail}` : ""}</span>
+                    </div>
+                  )}
+
+                  {/* Summary badges */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-green-700">{progressReportResult.completedItems.length}</div>
+                      <div className="text-xs text-green-600 mt-0.5">Trámites completados</div>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-blue-700">{progressReportResult.pendingItems.length}</div>
+                      <div className="text-xs text-blue-600 mt-0.5">En curso / pendientes</div>
+                    </div>
+                    <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-teal-700">{progressReportResult.nextSteps.length}</div>
+                      <div className="text-xs text-teal-600 mt-0.5">Próximos pasos</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Asunto</label>
+                    <div className="w-full px-4 py-3 bg-gray-50 border rounded-lg text-sm font-medium">
+                      {progressReportResult.subject}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Carta</label>
+                    <textarea
+                      value={progressReportResult.body}
+                      onChange={(e) => setProgressReportResult({ ...progressReportResult, body: e.target.value })}
+                      rows={14}
+                      className="w-full px-4 py-3 bg-gray-50 border rounded-lg text-sm leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-teal-300"
+                    />
+                  </div>
+
+                  {progressReportResult.nextSteps.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Próximos pasos incluidos</label>
+                      <ul className="space-y-1">
+                        {progressReportResult.nextSteps.map((step, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm">
+                            <span className="w-5 h-5 rounded-full bg-teal-100 text-teal-700 text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">{i + 1}</span>
+                            <span className="text-gray-700">{step}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 gap-4">
+                  <div className="w-14 h-14 rounded-full bg-teal-100 flex items-center justify-center">
+                    <svg className="w-7 h-7 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <p className="text-gray-600 text-center max-w-sm">
+                    Genera una carta de actualización profesional para la familia con el estado actual de todos los trámites.
+                  </p>
+                  <button
+                    onClick={generateProgressReportFn}
+                    className="px-6 py-2.5 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700"
+                  >
+                    Generar informe
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {progressReportResult && !progressReportLoading && (
+              <div className="flex items-center justify-between gap-3 p-6 border-t shrink-0">
+                <button
+                  onClick={generateProgressReportFn}
+                  disabled={progressReportLoading}
+                  className="px-4 py-2 text-sm border border-teal-300 text-teal-700 rounded-md hover:bg-teal-50 disabled:opacity-50"
+                >
+                  Regenerar
+                </button>
+                <div className="flex gap-3">
+                  <button onClick={() => setProgressReportOpen(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">
+                    Cerrar
+                  </button>
+                  {progressReportResult.contactEmail && (
+                    <a
+                      href={`mailto:${progressReportResult.contactEmail}?subject=${encodeURIComponent(progressReportResult.subject)}&body=${encodeURIComponent(progressReportResult.body)}`}
+                      className="px-4 py-2 text-sm bg-teal-600 text-white rounded-md hover:bg-teal-700 inline-flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      Enviar por email
+                    </a>
+                  )}
+                  <button
+                    onClick={copyProgressReport}
+                    className={`px-4 py-2 text-sm rounded-md inline-flex items-center gap-2 transition-colors ${
+                      progressReportCopied ? "bg-green-500 text-white" : "bg-gray-800 text-white hover:bg-gray-700"
+                    }`}
+                  >
+                    {progressReportCopied ? (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        Copiado
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                        Copiar carta
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
