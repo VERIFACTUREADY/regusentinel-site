@@ -275,12 +275,23 @@ export default async function DashboardPage() {
       {/* Critical attention panel */}
       {(upcomingDeadlines.length > 0 || (criticalBlockedTasks as any[]).length > 0) && (
         <div className="mb-8">
-          <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-            </svg>
-            Requiere atencion inmediata
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+              <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              Requiere atencion inmediata
+            </h2>
+            <a
+              href="/api/digest/deadline?format=html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-purple-600 hover:underline flex items-center gap-1"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Digest ISD
+            </a>
+          </div>
           <div className="grid md:grid-cols-2 gap-4">
             {upcomingDeadlines.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">

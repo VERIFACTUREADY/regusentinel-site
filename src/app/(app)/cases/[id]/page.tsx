@@ -59,6 +59,8 @@ export default function CaseDetailPage() {
   const [docRequestLoading, setDocRequestLoading] = useState(false);
   const [docRequestResult, setDocRequestResult] = useState<{ emailSubject: string; emailBody: string; documentList: string[]; contactName: string | null; contactEmail: string | null } | null>(null);
   const [docRequestCopied, setDocRequestCopied] = useState(false);
+  const [smartTasksLoading, setSmartTasksLoading] = useState(false);
+  const [smartTasksResult, setSmartTasksResult] = useState<{ totalAdded: number; summary: string } | null>(null);
 
   const uniqueTasks = useMemo(() => {
     if (!caseData) return [];
@@ -193,6 +195,25 @@ export default function CaseDetailPage() {
       setDocRequestCopied(true);
       setTimeout(() => setDocRequestCopied(false), 2000);
     });
+  }
+
+  async function runSmartTasks() {
+    if (smartTasksLoading) return;
+    setSmartTasksLoading(true);
+    setSmartTasksResult(null);
+    try {
+      const res = await fetch(`/api/cases/${caseId}/smart-tasks`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setSmartTasksResult({ totalAdded: data.totalAdded, summary: data.summary });
+        fetchCase();
+      } else {
+        const err = await res.json().catch(() => null);
+        alert(err?.error || "Error generando tareas");
+      }
+    } finally {
+      setSmartTasksLoading(false);
+    }
   }
 
   async function runAnalysis() {
@@ -868,20 +889,45 @@ export default function CaseDetailPage() {
       {tab === "tasks" && (
         <div>
           {caseData.tasks.length > 0 && (
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-full text-sm font-medium">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
                 Checklist generado por IA
               </span>
-              {caseTemplates.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                {smartTasksResult && (
+                  <span className="text-xs text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded">
+                    +{smartTasksResult.totalAdded} tareas añadidas
+                  </span>
+                )}
                 <button
-                  onClick={() => setApplyTplOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+                  onClick={runSmartTasks}
+                  disabled={smartTasksLoading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                  title="Generar tareas adicionales según categorías del expediente"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
-                  Aplicar plantilla
+                  {smartTasksLoading ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                      Generando...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                      Tareas IA
+                    </>
+                  )}
                 </button>
-              )}
+                {caseTemplates.length > 0 && (
+                  <button
+                    onClick={() => setApplyTplOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                    Aplicar plantilla
+                  </button>
+                )}
+              </div>
             </div>
           )}
           {(() => {
@@ -1031,13 +1077,32 @@ export default function CaseDetailPage() {
               <p className="text-gray-400 mb-4">No hay tareas asignadas a este expediente.</p>
               <div className="flex items-center justify-center gap-3 flex-wrap">
                 <button
+                  onClick={runSmartTasks}
+                  disabled={smartTasksLoading}
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm font-medium rounded-md hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  {smartTasksLoading ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                      Generando tareas...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      Generar tareas con IA
+                    </>
+                  )}
+                </button>
+                <button
                   onClick={generateChecklist}
-                  className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md hover:bg-purple-700 inline-flex items-center gap-2"
+                  className="px-4 py-2 bg-purple-100 text-purple-700 text-sm font-medium rounded-md hover:bg-purple-200 inline-flex items-center gap-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                   </svg>
-                  Generar checklist con IA
+                  Checklist autopilot
                 </button>
                 {caseTemplates.length > 0 && (
                   <button
