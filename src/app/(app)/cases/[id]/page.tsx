@@ -65,6 +65,7 @@ export default function CaseDetailPage() {
   const [progressReportLoading, setProgressReportLoading] = useState(false);
   const [progressReportResult, setProgressReportResult] = useState<{ subject: string; body: string; completedItems: string[]; pendingItems: string[]; nextSteps: string[]; contactName: string | null; contactEmail: string | null } | null>(null);
   const [progressReportCopied, setProgressReportCopied] = useState(false);
+  const [aiMenuOpen, setAiMenuOpen] = useState(false);
 
   const uniqueTasks = useMemo(() => {
     if (!caseData) return [];
@@ -511,62 +512,100 @@ export default function CaseDetailPage() {
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">{caseData.ref}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold">{caseData.ref}</h1>
+              {analysis?.healthScore !== undefined && (
+                <button
+                  onClick={() => setAnalysisOpen(true)}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0 shadow-sm hover:scale-105 transition-transform ${
+                    analysis.healthScore >= 70 ? "bg-green-500" :
+                    analysis.healthScore >= 40 ? "bg-orange-500" : "bg-red-500"
+                  }`}
+                  title={`Score IA: ${analysis.healthScore}/100 — ver análisis`}
+                >
+                  {analysis.healthScore}
+                </button>
+              )}
+            </div>
             <p className="text-gray-500">{caseData.deceased?.fullName}</p>
           </div>
           <div className="flex items-center gap-3">
             {caseData.isUrgent && <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">Urgente</span>}
-            <button
-              onClick={runAnalysis}
-              disabled={analysisLoading}
-              className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5"
-              title="Analizar expediente con IA"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              {analysisLoading ? "Analizando..." : "Analizar con IA"}
-            </button>
-            <a
-              href={`/cases/${caseId}/isd`}
-              className="px-3 py-1.5 bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700 inline-flex items-center gap-1.5"
-              title="Calculadora ISD - Modelo 650"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-              </svg>
-              ISD
-            </a>
-            <button
-              onClick={openChat}
-              className="px-3 py-1.5 border border-purple-300 text-purple-700 bg-white rounded-md text-sm font-medium hover:bg-purple-50 inline-flex items-center gap-1.5"
-              title="Asistente IA del expediente"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-              Chat IA
-            </button>
-            <button
-              onClick={openDocRequest}
-              className="px-3 py-1.5 border border-amber-300 text-amber-700 bg-white rounded-md text-sm font-medium hover:bg-amber-50 inline-flex items-center gap-1.5"
-              title="Generar solicitud de documentación para el cliente"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              Solicitar docs
-            </button>
-            <button
-              onClick={openProgressReport}
-              className="px-3 py-1.5 border border-teal-300 text-teal-700 bg-white rounded-md text-sm font-medium hover:bg-teal-50 inline-flex items-center gap-1.5"
-              title="Generar informe de progreso para la familia"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Informe familia
-            </button>
+            {/* AI actions dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setAiMenuOpen((v) => !v)}
+                className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-md text-sm font-medium hover:opacity-90 inline-flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                IA
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {aiMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setAiMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-xl border border-gray-100 z-20 py-1 overflow-hidden">
+                    <button
+                      onClick={() => { setAiMenuOpen(false); runAnalysis(); }}
+                      disabled={analysisLoading}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-purple-50 flex items-center gap-3 disabled:opacity-50"
+                    >
+                      <svg className="w-4 h-4 text-purple-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                      <div>
+                        <div className="font-medium">{analysisLoading ? "Analizando..." : "Analizar expediente"}</div>
+                        <div className="text-xs text-gray-400">Score 0-100 con riesgos</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => { setAiMenuOpen(false); openChat(); }}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-purple-50 flex items-center gap-3"
+                    >
+                      <svg className="w-4 h-4 text-purple-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                      <div>
+                        <div className="font-medium">Chat con el expediente</div>
+                        <div className="text-xs text-gray-400">Asistente con contexto completo</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => { setAiMenuOpen(false); openDocRequest(); }}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-3"
+                    >
+                      <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                      <div>
+                        <div className="font-medium">Solicitar documentación</div>
+                        <div className="text-xs text-gray-400">Email listo para cliente</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => { setAiMenuOpen(false); openProgressReport(); }}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-teal-50 flex items-center gap-3"
+                    >
+                      <svg className="w-4 h-4 text-teal-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      <div>
+                        <div className="font-medium">Informe para familia</div>
+                        <div className="text-xs text-gray-400">Carta de actualización</div>
+                      </div>
+                    </button>
+                    <div className="border-t border-gray-100 my-1" />
+                    <a
+                      href={`/cases/${caseId}/isd`}
+                      onClick={() => setAiMenuOpen(false)}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-emerald-50 flex items-center gap-3"
+                    >
+                      <svg className="w-4 h-4 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                      <div>
+                        <div className="font-medium">Calculadora ISD</div>
+                        <div className="text-xs text-gray-400">Modelo 650 / Sucesiones</div>
+                      </div>
+                    </a>
+                  </div>
+                </>
+              )}
+            </div>
             <button
               onClick={handleDuplicate}
               className="px-3 py-1 border rounded-md text-sm text-gray-600 hover:bg-gray-50"
