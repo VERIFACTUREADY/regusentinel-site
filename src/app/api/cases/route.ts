@@ -67,7 +67,29 @@ export async function GET(req: NextRequest) {
     prisma.case.count({ where: where as any }),
   ]);
 
-  return NextResponse.json({ cases, total, page, limit });
+  // Attach latest health score from analysis logs
+  const caseIds = cases.map((c) => c.id);
+  const healthLogs = caseIds.length
+    ? await prisma.promptLog.findMany({
+        where: { caseId: { in: caseIds }, action: "analyze_case" },
+        select: { caseId: true, response: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const healthMap: Record<string, number | null> = {};
+  for (const log of healthLogs) {
+    if (log.caseId && !(log.caseId in healthMap)) {
+      try {
+        const r = JSON.parse(log.response || "{}");
+        healthMap[log.caseId] = typeof r.healthScore === "number" ? r.healthScore : null;
+      } catch {
+        healthMap[log.caseId] = null;
+      }
+    }
+  }
+  const casesWithHealth = cases.map((c) => ({ ...c, healthScore: healthMap[c.id] ?? null }));
+
+  return NextResponse.json({ cases: casesWithHealth, total, page, limit });
 }
 
 export async function POST(req: NextRequest) {

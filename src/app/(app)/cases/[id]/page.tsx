@@ -67,6 +67,10 @@ export default function CaseDetailPage() {
   const [progressReportCopied, setProgressReportCopied] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
   const [portalAiLoading, setPortalAiLoading] = useState(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [handoffLoading, setHandoffLoading] = useState(false);
+  const [handoffResult, setHandoffResult] = useState<{ title: string; generatedAt: string; caseRef: string; sections: { heading: string; content: string }[]; openItems: { priority: string; text: string }[]; alerts: string[]; model: string } | null>(null);
+  const [handoffCopied, setHandoffCopied] = useState(false);
 
   const uniqueTasks = useMemo(() => {
     if (!caseData) return [];
@@ -286,6 +290,59 @@ export default function CaseDetailPage() {
     } finally {
       setPortalAiLoading(false);
     }
+  }
+
+  async function openHandoffBriefing() {
+    setHandoffOpen(true);
+    if (!handoffResult) {
+      setHandoffLoading(true);
+      try {
+        const res = await fetch(`/api/cases/${caseId}/handoff-briefing`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.briefing) setHandoffResult(data.briefing);
+        }
+      } finally {
+        setHandoffLoading(false);
+      }
+    }
+  }
+
+  async function generateHandoffBriefingFn() {
+    setHandoffLoading(true);
+    try {
+      const res = await fetch(`/api/cases/${caseId}/handoff-briefing`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setHandoffResult(data.briefing);
+      } else {
+        const err = await res.json().catch(() => null);
+        alert(err?.error || "Error generando briefing");
+      }
+    } finally {
+      setHandoffLoading(false);
+    }
+  }
+
+  function copyHandoff() {
+    if (!handoffResult) return;
+    const lines: string[] = [handoffResult.title, ""];
+    if (handoffResult.alerts?.length) {
+      lines.push("⚠️ ALERTAS: " + handoffResult.alerts.join(" | "), "");
+    }
+    for (const s of handoffResult.sections) {
+      lines.push(`## ${s.heading}`, s.content, "");
+    }
+    if (handoffResult.openItems?.length) {
+      lines.push("## Pendientes");
+      for (const item of handoffResult.openItems) {
+        lines.push(`[${item.priority.toUpperCase()}] ${item.text}`);
+      }
+    }
+    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+      setHandoffCopied(true);
+      setTimeout(() => setHandoffCopied(false), 2000);
+    });
   }
 
   async function runAnalysis() {
@@ -614,6 +671,16 @@ export default function CaseDetailPage() {
                       <div>
                         <div className="font-medium">Informe para familia</div>
                         <div className="text-xs text-gray-400">Carta de actualización</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => { setAiMenuOpen(false); openHandoffBriefing(); }}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-indigo-50 flex items-center gap-3"
+                    >
+                      <svg className="w-4 h-4 text-indigo-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                      <div>
+                        <div className="font-medium">Briefing de traspaso</div>
+                        <div className="text-xs text-gray-400">Resumen para ceder el expediente</div>
                       </div>
                     </button>
                     <div className="border-t border-gray-100 my-1" />
@@ -2194,6 +2261,109 @@ export default function CaseDetailPage() {
                     )}
                   </button>
                 </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Handoff Briefing Modal */}
+      {handoffOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-indigo-50 rounded-t-xl">
+              <div>
+                <h2 className="text-lg font-semibold text-indigo-900">Briefing de traspaso</h2>
+                {handoffResult && (
+                  <p className="text-xs text-indigo-600 mt-0.5">
+                    Generado {new Date(handoffResult.generatedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    {handoffResult.model !== "heuristic" && ` · ${handoffResult.model}`}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={generateHandoffBriefingFn}
+                  disabled={handoffLoading}
+                  className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {handoffLoading ? "Generando..." : handoffResult ? "Regenerar" : "Generar"}
+                </button>
+                <button onClick={() => setHandoffOpen(false)} className="text-gray-400 hover:text-gray-600">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-6 space-y-5">
+              {handoffLoading && !handoffResult && (
+                <p className="text-center text-gray-400 py-8">Generando briefing...</p>
+              )}
+              {!handoffLoading && !handoffResult && (
+                <div className="text-center py-8">
+                  <p className="text-gray-500 mb-4">No hay briefing generado todavía.</p>
+                  <button onClick={generateHandoffBriefingFn} className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700">
+                    Generar briefing
+                  </button>
+                </div>
+              )}
+              {handoffResult && (
+                <>
+                  {handoffResult.alerts?.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 space-y-1">
+                      {handoffResult.alerts.map((a, i) => (
+                        <p key={i} className="text-sm text-red-700 font-medium flex items-center gap-2">
+                          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                          {a}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {handoffResult.sections.map((s, i) => (
+                    <div key={i} className="border rounded-lg overflow-hidden">
+                      <div className="bg-indigo-50 px-4 py-2">
+                        <h3 className="text-sm font-semibold text-indigo-800">{s.heading}</h3>
+                      </div>
+                      <div className="px-4 py-3">
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{s.content}</p>
+                      </div>
+                    </div>
+                  ))}
+
+                  {handoffResult.openItems?.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-700 mb-2">Pendientes</h3>
+                      <div className="space-y-2">
+                        {handoffResult.openItems.map((item, i) => (
+                          <div key={i} className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border ${
+                            item.priority === "high" ? "border-red-200 bg-red-50" :
+                            item.priority === "medium" ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-gray-50"
+                          }`}>
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded mt-0.5 shrink-0 ${
+                              item.priority === "high" ? "bg-red-200 text-red-800" :
+                              item.priority === "medium" ? "bg-amber-200 text-amber-800" : "bg-gray-200 text-gray-700"
+                            }`}>
+                              {item.priority === "high" ? "ALTA" : item.priority === "medium" ? "MEDIA" : "BAJA"}
+                            </span>
+                            <p className="text-sm text-gray-700">{item.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {handoffResult && (
+              <div className="flex justify-end gap-2 px-6 py-4 border-t bg-gray-50 rounded-b-xl">
+                <button
+                  onClick={copyHandoff}
+                  className="px-4 py-2 text-sm border rounded-md hover:bg-gray-100 flex items-center gap-1.5"
+                >
+                  {handoffCopied ? "✓ Copiado" : "Copiar texto"}
+                </button>
               </div>
             )}
           </div>

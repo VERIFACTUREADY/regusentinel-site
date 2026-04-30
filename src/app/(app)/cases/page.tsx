@@ -34,6 +34,7 @@ interface CaseItem {
   province?: string | null;
   deceased?: { fullName: string; deathDate?: string | null } | null;
   contact?: { fullName: string } | null;
+  healthScore?: number | null;
 }
 
 const PAGE_SIZE = 25;
@@ -308,15 +309,16 @@ export default function CasesPage() {
               <th className="px-4 py-3 font-medium">Fallecido</th>
               <th className="px-4 py-3 font-medium">Solicitante</th>
               <th className="px-4 py-3 font-medium">Estado</th>
+              <th className="px-4 py-3 font-medium">Salud</th>
               <th className="px-4 py-3 font-medium">ISD</th>
               <th className="px-4 py-3 font-medium">Fecha</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-400">Cargando...</td></tr>
+              <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-400">Cargando...</td></tr>
             ) : cases.length === 0 ? (
-              <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-400">No hay expedientes</td></tr>
+              <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-400">No hay expedientes</td></tr>
             ) : cases.map((c) => {
               const isdDays = c.deceased?.deathDate
                 ? 180 - Math.floor((Date.now() - new Date(c.deceased.deathDate).getTime()) / (1000 * 60 * 60 * 24))
@@ -346,6 +348,21 @@ export default function CasesPage() {
                   <span className={`text-xs px-2 py-1 rounded-full ${CASE_STATUS_COLORS[c.status] || ""}`}>
                     {STATUS_OPTIONS.find((s) => s.value === c.status)?.label || c.status}
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  {c.healthScore != null ? (
+                    <Link href={`/cases/${c.id}`}
+                      className={`inline-flex items-center justify-center w-9 h-9 rounded-full text-xs font-bold text-white ${
+                        c.healthScore >= 75 ? "bg-green-500" :
+                        c.healthScore >= 50 ? "bg-amber-500" : "bg-red-500"
+                      }`}
+                      title={`Salud: ${c.healthScore}/100`}
+                    >
+                      {c.healthScore}
+                    </Link>
+                  ) : (
+                    <span className="text-gray-300 text-sm">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-sm">
                   {isdDays !== null && c.status !== "CLOSED" && c.status !== "ARCHIVED" ? (
