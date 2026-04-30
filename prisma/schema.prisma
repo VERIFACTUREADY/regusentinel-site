@@ -83,19 +83,19 @@ model Organization {
   usageRecords  UsageRecord[]
   auditLogs     AuditLog[]
   demoRequests  DemoRequest[]
-  notifications  NotificationLog[]
-  workflowRules  WorkflowRule[]
-  caseTemplates  CaseTemplate[]
+  notifications NotificationLog[]
+  workflowRules WorkflowRule[]
+  caseTemplates CaseTemplate[]
 
   retentionDays Int @default(90)
 
   // White-label del portal familia. Unlocked en plan DESPACHO/FIRMA
   // (INICIA sigue mostrando "Powered by BARITUR PRO").
-  brandDisplayName   String?
-  brandLogoUrl       String?
-  brandPrimaryColor  String? // hex, e.g. "#1e40af"
-  brandSupportEmail  String?
-  brandFooterText    String?
+  brandDisplayName  String?
+  brandLogoUrl      String?
+  brandPrimaryColor String? // hex, e.g. "#1e40af"
+  brandSupportEmail String?
+  brandFooterText   String?
 
   // Onboarding guiado. Se oculta al marcarse dismiss o al completar los 5 pasos.
   onboardingDismissedAt DateTime?
@@ -114,7 +114,7 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   memberships   Membership[]
-  assignedTasks Task[]        @relation("AssignedTo")
+  assignedTasks Task[]       @relation("AssignedTo")
   approvals     Approval[]
   auditLogs     AuditLog[]
   promptLogs    PromptLog[]
@@ -138,47 +138,47 @@ model Membership {
 // ─── CASE ───────────────────────────────────────────────
 
 model Case {
-  id        String     @id @default(cuid())
-  orgId     String
-  ref       String
-  status    CaseStatus @default(INTAKE)
+  id     String     @id @default(cuid())
+  orgId  String
+  ref    String
+  status CaseStatus @default(INTAKE)
 
-  isUrgent       Boolean @default(false)
+  isUrgent             Boolean @default(false)
   hasDeceasedInsurance Boolean @default(false)
 
-  categories     TaskCategory[]
-  province       String?
-  notes          String?
+  categories TaskCategory[]
+  province   String?
+  notes      String?
 
-  portalToken    String  @unique @default(cuid())
-  portalEnabled  Boolean @default(true)
+  portalToken   String  @unique @default(cuid())
+  portalEnabled Boolean @default(true)
 
-  consentAccepted   Boolean  @default(false)
-  consentDate       DateTime?
-  legitimationNote  String?
+  consentAccepted  Boolean   @default(false)
+  consentDate      DateTime?
+  legitimationNote String?
 
-  deletedAt      DateTime?
-  closedAt       DateTime?
+  deletedAt DateTime?
+  closedAt  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  org       Organization @relation(fields: [orgId], references: [id])
-  deceased  Deceased?
-  contact   CaseContact?
-  tasks     Task[]
-  documents Document[]
-  approvals Approval[]
-  promptLogs PromptLog[]
-  auditLogs  AuditLog[]
-  notifications NotificationLog[]
-  workflowLogs  WorkflowLog[]
+  org            Organization      @relation(fields: [orgId], references: [id])
+  deceased       Deceased?
+  contact        CaseContact?
+  tasks          Task[]
+  documents      Document[]
+  approvals      Approval[]
+  promptLogs     PromptLog[]
+  auditLogs      AuditLog[]
+  notifications  NotificationLog[]
+  workflowLogs   WorkflowLog[]
   portalMessages PortalMessage[]
 }
 
 model Deceased {
-  id        String   @id @default(cuid())
-  caseId    String   @unique
+  id        String    @id @default(cuid())
+  caseId    String    @unique
   fullName  String
   deathDate DateTime?
   dni       String?
@@ -215,17 +215,17 @@ model PortalMessage {
 // ─── TASK ───────────────────────────────────────────────
 
 model Task {
-  id          String       @id @default(cuid())
-  caseId      String
-  category    TaskCategory
-  title       String
-  description String?
-  status      TaskStatus   @default(PENDING)
-  sortOrder   Int          @default(0)
-  docTag      String?      // tag for document matching
-  blockedUntil DateTime?   // date-based blocking (e.g., 15 business days)
-  deadline     DateTime?   // hard deadline (e.g., 6 months ISD)
-  blockReason  String?     // human-readable reason for block
+  id           String       @id @default(cuid())
+  caseId       String
+  category     TaskCategory
+  title        String
+  description  String?
+  status       TaskStatus   @default(PENDING)
+  sortOrder    Int          @default(0)
+  docTag       String? // tag for document matching
+  blockedUntil DateTime? // date-based blocking (e.g., 15 business days)
+  deadline     DateTime? // hard deadline (e.g., 6 months ISD)
+  blockReason  String? // human-readable reason for block
 
   dueDate     DateTime?
   assigneeId  String?
@@ -234,13 +234,13 @@ model Task {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  case      Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  assignee  User? @relation("AssignedTo", fields: [assigneeId], references: [id])
-  dependsOn Task? @relation("TaskDependency", fields: [dependsOnId], references: [id])
-  dependents Task[] @relation("TaskDependency")
-  approval  Approval?
-  documents Document[] @relation("TaskDocuments")
-  notes     TaskNote[]
+  case       Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignee   User?      @relation("AssignedTo", fields: [assigneeId], references: [id])
+  dependsOn  Task?      @relation("TaskDependency", fields: [dependsOnId], references: [id])
+  dependents Task[]     @relation("TaskDependency")
+  approval   Approval?
+  documents  Document[] @relation("TaskDocuments")
+  notes      TaskNote[]
 }
 
 // ─── TASK NOTE ──────────────────────────────────────────
@@ -260,14 +260,14 @@ model TaskNote {
 // ─── DOCUMENT ───────────────────────────────────────────
 
 model Document {
-  id        String  @id @default(cuid())
-  caseId    String
-  taskId    String? // linked task (auto or manual)
-  fileName  String
-  fileKey   String
-  mimeType  String?
-  fileSize  Int?
-  uploadedBy String?
+  id             String  @id @default(cuid())
+  caseId         String
+  taskId         String? // linked task (auto or manual)
+  fileName       String
+  fileKey        String
+  mimeType       String?
+  fileSize       Int?
+  uploadedBy     String?
   isPortalUpload Boolean @default(false)
 
   createdAt DateTime @default(now())
@@ -279,27 +279,27 @@ model Document {
 // ─── TEMPLATE ───────────────────────────────────────────
 
 model Template {
-  id       String @id @default(cuid())
+  id       String        @id @default(cuid())
   orgId    String
   name     String
   category TaskCategory?
-  type     String @default("email") // email | carta | solicitud
+  type     String        @default("email") // email | carta | solicitud
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  org      Organization    @relation(fields: [orgId], references: [id])
+  org      Organization      @relation(fields: [orgId], references: [id])
   versions TemplateVersion[]
 }
 
 model TemplateVersion {
-  id         String  @id @default(cuid())
+  id         String   @id @default(cuid())
   templateId String
-  version    Int     @default(1)
+  version    Int      @default(1)
   subject    String?
   body       String
   variables  String[] // e.g. ["deceased.fullName", "contact.fullName"]
-  isApproved Boolean @default(false)
+  isApproved Boolean  @default(false)
 
   createdAt DateTime @default(now())
 
@@ -309,7 +309,7 @@ model TemplateVersion {
 // ─── AUTOPILOT / IA ─────────────────────────────────────
 
 model PromptLog {
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
   caseId   String?
   userId   String
   action   String // "generate_checklist" | "generate_draft" | etc
@@ -325,15 +325,15 @@ model PromptLog {
 }
 
 model Approval {
-  id       String         @id @default(cuid())
-  caseId   String
-  taskId   String?        @unique
-  action   String         // "send_email" | "mark_sent" | etc
-  status   ApprovalStatus @default(PENDING)
-  details  String?
+  id         String         @id @default(cuid())
+  caseId     String
+  taskId     String?        @unique
+  action     String // "send_email" | "mark_sent" | etc
+  status     ApprovalStatus @default(PENDING)
+  details    String?
   reviewerId String?
 
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
   reviewedAt DateTime?
 
   case     Case  @relation(fields: [caseId], references: [id])
@@ -344,13 +344,13 @@ model Approval {
 // ─── AUDIT ──────────────────────────────────────────────
 
 model AuditLog {
-  id       String @id @default(cuid())
-  orgId    String
-  userId   String?
-  caseId   String?
-  action   String
-  details  String?
-  ip       String?
+  id      String  @id @default(cuid())
+  orgId   String
+  userId  String?
+  caseId  String?
+  action  String
+  details String?
+  ip      String?
 
   createdAt DateTime @default(now())
 
@@ -362,18 +362,18 @@ model AuditLog {
 // ─── BILLING ────────────────────────────────────────────
 
 model Subscription {
-  id                String          @id @default(cuid())
-  orgId             String          @unique
-  stripeCustomerId  String?
-  stripeSubId       String?
-  plan              PlanTier        @default(INICIA)
-  interval          BillingInterval @default(MONTHLY)
-  status            String          @default("active") // active | past_due | canceled
-  currentPeriodEnd  DateTime?
+  id               String          @id @default(cuid())
+  orgId            String          @unique
+  stripeCustomerId String?
+  stripeSubId      String?
+  plan             PlanTier        @default(INICIA)
+  interval         BillingInterval @default(MONTHLY)
+  status           String          @default("active") // active | past_due | canceled
+  currentPeriodEnd DateTime?
 
   // Setup fee (one-time, required for DESPACHO/FIRMA onboarding)
-  setupFeePaid      Boolean   @default(false)
-  setupFeePaidAt    DateTime?
+  setupFeePaid   Boolean   @default(false)
+  setupFeePaidAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -382,10 +382,10 @@ model Subscription {
 }
 
 model UsageRecord {
-  id     String @id @default(cuid())
-  orgId  String
-  month  String // "2026-04"
-  casesCreated Int @default(0)
+  id           String @id @default(cuid())
+  orgId        String
+  month        String // "2026-04"
+  casesCreated Int    @default(0)
 
   org Organization @relation(fields: [orgId], references: [id])
 
@@ -409,14 +409,14 @@ enum NotificationChannel {
 }
 
 model NotificationLog {
-  id         String              @id @default(cuid())
-  orgId      String
-  caseId     String
-  kind       NotificationKind
-  channel    NotificationChannel
-  recipient  String              // email
-  status     String              @default("sent") // sent | failed
-  error      String?
+  id        String              @id @default(cuid())
+  orgId     String
+  caseId    String
+  kind      NotificationKind
+  channel   NotificationChannel
+  recipient String // email
+  status    String              @default("sent") // sent | failed
+  error     String?
 
   createdAt DateTime @default(now())
 
@@ -484,19 +484,19 @@ enum WorkflowLogStatus {
 }
 
 model WorkflowRule {
-  id          String          @id @default(cuid())
-  orgId       String
-  name        String
-  description String?
-  isActive    Boolean         @default(true)
-  trigger     WorkflowTrigger
-  conditions  Json
-  action      WorkflowAction
+  id           String          @id @default(cuid())
+  orgId        String
+  name         String
+  description  String?
+  isActive     Boolean         @default(true)
+  trigger      WorkflowTrigger
+  conditions   Json
+  action       WorkflowAction
   actionConfig Json
-  execCount   Int             @default(0)
-  lastRunAt   DateTime?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  execCount    Int             @default(0)
+  lastRunAt    DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   org  Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   logs WorkflowLog[]
@@ -523,18 +523,18 @@ model WorkflowLog {
 // ─── DEMO REQUEST ───────────────────────────────────────
 
 model DemoRequest {
-  id        String  @id @default(cuid())
-  orgId     String?
-  name      String
-  email     String
-  company   String?
-  phone     String?
-  message   String?
+  id      String  @id @default(cuid())
+  orgId   String?
+  name    String
+  email   String
+  company String?
+  phone   String?
+  message String?
 
   // Attribution: where the prospect came from. E.g. "landing_hero",
   // "demo_banner" (clicked from inside the live demo), "demo_dashboard",
   // "pricing". Null for legacy rows.
-  source    String?
+  source String?
 
   // Mini-CRM pipeline. NEW → CONTACTED → MEETING → PILOT → CUSTOMER | LOST
   leadStatus    String  @default("NEW")
