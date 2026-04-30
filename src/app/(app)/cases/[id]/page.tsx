@@ -66,6 +66,7 @@ export default function CaseDetailPage() {
   const [progressReportResult, setProgressReportResult] = useState<{ subject: string; body: string; completedItems: string[]; pendingItems: string[]; nextSteps: string[]; contactName: string | null; contactEmail: string | null } | null>(null);
   const [progressReportCopied, setProgressReportCopied] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
+  const [portalAiLoading, setPortalAiLoading] = useState(false);
 
   const uniqueTasks = useMemo(() => {
     if (!caseData) return [];
@@ -260,6 +261,31 @@ export default function CaseDetailPage() {
       setProgressReportCopied(true);
       setTimeout(() => setProgressReportCopied(false), 2000);
     });
+  }
+
+  async function generatePortalReply() {
+    const lastFamilyMsg = [...portalMessages].reverse().find((m: any) => m.fromFamily);
+    if (!lastFamilyMsg && portalMessages.length === 0) {
+      setPortalReply("Estimada familia,\n\nNos ponemos en contacto con usted para informarle del estado actual de los trámites. Estamos trabajando en la gestión de todos los asuntos pendientes y le mantendremos informado de cualquier novedad.\n\nQuedamos a su disposición para cualquier consulta.\n\nAtentamente,\nEl equipo de gestión");
+      return;
+    }
+    setPortalAiLoading(true);
+    try {
+      const res = await fetch(`/api/cases/${caseId}/portal-ai-reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lastMessage: lastFamilyMsg?.content || "" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPortalReply(data.reply || "");
+      } else {
+        const err = await res.json().catch(() => null);
+        alert(err?.error || "Error generando respuesta");
+      }
+    } finally {
+      setPortalAiLoading(false);
+    }
   }
 
   async function runAnalysis() {
@@ -1485,16 +1511,31 @@ export default function CaseDetailPage() {
             </div>
 
             <div className="p-4 border-t space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-400">Cmd+Enter para enviar</span>
+                <button
+                  onClick={generatePortalReply}
+                  disabled={portalAiLoading}
+                  className="text-xs px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-md hover:bg-purple-100 disabled:opacity-50 inline-flex items-center gap-1.5"
+                  title="Generar respuesta con IA basada en el contexto del expediente"
+                >
+                  {portalAiLoading ? (
+                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                  ) : (
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                  )}
+                  {portalAiLoading ? "Generando..." : "Redactar con IA"}
+                </button>
+              </div>
               <textarea
                 value={portalReply}
                 onChange={(e) => setPortalReply(e.target.value)}
-                rows={3}
+                rows={4}
                 placeholder="Escribe un mensaje a la familia..."
                 className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendPortalReply(); }}
               />
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-400">Cmd+Enter para enviar</span>
+              <div className="flex justify-end">
                 <button
                   onClick={sendPortalReply}
                   disabled={portalReplySending || !portalReply.trim()}
