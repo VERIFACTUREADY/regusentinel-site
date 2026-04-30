@@ -46,7 +46,7 @@ export default async function DashboardPage() {
   const isdAlertThreshold = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, pendingApprovals, recentCases, recentLogs, upcomingDeadlines, onboarding, org, myTasks, calendarTasks, criticalBlockedTasks, teamWorkload, members] = await Promise.all([
+  const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, pendingApprovals, recentCases, recentLogs, upcomingDeadlines, onboarding, org, myTasks, calendarTasks, criticalBlockedTasks, teamWorkload, members, overdueTasksAll, isdCriticalCases, unreadPortalCount] = await Promise.all([
     safe(() => prisma.case.count({
       where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
     }), 0),
@@ -140,6 +140,49 @@ export default async function DashboardPage() {
       where: { orgId },
       select: { userId: true, user: { select: { name: true, email: true } } },
     }), [] as any[]),
+    // Overdue tasks (deadline in the past, not done/skipped)
+    safe(() => prisma.task.findMany({
+      where: {
+        case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
+        deadline: { lt: now },
+        status: { notIn: ["DONE", "SKIPPED"] },
+      },
+      select: {
+        id: true, title: true, deadline: true,
+        case: { select: { id: true, ref: true } },
+        assignee: { select: { name: true, email: true } },
+      },
+      orderBy: { deadline: "asc" },
+      take: 8,
+    }), [] as any[]),
+    // ISD critical: cases expiring in ≤30 days
+    safe(() => prisma.case.findMany({
+      where: {
+        orgId,
+        deletedAt: null,
+        status: { notIn: ["CLOSED", "ARCHIVED"] },
+        deceased: {
+          deathDate: {
+            gte: new Date(now.getTime() - 180 * 86400000),
+            lte: new Date(now.getTime() - 150 * 86400000),
+          },
+        },
+      },
+      select: {
+        id: true, ref: true,
+        deceased: { select: { fullName: true, deathDate: true } },
+      },
+      orderBy: { deceased: { deathDate: "asc" } },
+      take: 5,
+    }), [] as any[]),
+    // Unread portal messages from families
+    safe(() => prisma.portalMessage.count({
+      where: {
+        case: { orgId, deletedAt: null },
+        fromFamily: true,
+        readAt: null,
+      },
+    }), 0),
   ]);
 
   const aiInsights: AiInsightsData = await safe(
@@ -250,6 +293,78 @@ export default async function DashboardPage() {
           completed={onboarding.completed}
           total={onboarding.total}
         />
+      )}
+
+      {/* Top urgencies banner */}
+      {((overdueTasksAll as any[]).length > 0 || (isdCriticalCases as any[]).length > 0 || (unreadPortalCount as number) > 0) && (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="w-5 h-5 text-red-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <h2 className="font-semibold text-red-900">Requiere acción inmediata</h2>
+          </div>
+          <div className="grid md:grid-cols-3 gap-3">
+            {(overdueTasksAll as any[]).length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-2">
+                  {(overdueTasksAll as any[]).length} tarea{(overdueTasksAll as any[]).length !== 1 ? "s" : ""} vencida{(overdueTasksAll as any[]).length !== 1 ? "s" : ""}
+                </p>
+                <div className="space-y-1.5">
+                  {(overdueTasksAll as any[]).slice(0, 5).map((t: any) => {
+                    const daysAgo = Math.floor((now.getTime() - new Date(t.deadline).getTime()) / 86400000);
+                    return (
+                      <div key={t.id} className="flex items-center justify-between gap-2">
+                        <Link href={`/cases/${t.case.id}`} className="text-xs text-red-800 hover:underline truncate flex-1">
+                          <span className="font-mono mr-1">{t.case.ref}</span>{t.title}
+                        </Link>
+                        <span className="text-xs bg-red-200 text-red-800 px-1.5 py-0.5 rounded font-medium shrink-0">+{daysAgo}d</span>
+                      </div>
+                    );
+                  })}
+                  {(overdueTasksAll as any[]).length > 5 && (
+                    <Link href="/tasks" className="text-xs text-red-600 hover:underline">+{(overdueTasksAll as any[]).length - 5} más →</Link>
+                  )}
+                </div>
+              </div>
+            )}
+            {(isdCriticalCases as any[]).length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-2">
+                  {(isdCriticalCases as any[]).length} ISD crítico{(isdCriticalCases as any[]).length !== 1 ? "s" : ""} (&lt;30 días)
+                </p>
+                <div className="space-y-1.5">
+                  {(isdCriticalCases as any[]).map((c: any) => {
+                    const days = c.deceased?.deathDate
+                      ? 180 - Math.floor((now.getTime() - new Date(c.deceased.deathDate).getTime()) / 86400000)
+                      : null;
+                    return (
+                      <div key={c.id} className="flex items-center justify-between gap-2">
+                        <Link href={`/cases/${c.id}`} className="text-xs text-red-800 hover:underline truncate flex-1">
+                          <span className="font-mono mr-1">{c.ref}</span>{c.deceased?.fullName || "—"}
+                        </Link>
+                        {days !== null && (
+                          <span className="text-xs bg-red-200 text-red-800 px-1.5 py-0.5 rounded font-bold shrink-0">{days}d</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {(unreadPortalCount as number) > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">
+                  {unreadPortalCount as number} mensaje{(unreadPortalCount as number) !== 1 ? "s" : ""} de familia sin leer
+                </p>
+                <p className="text-xs text-blue-700 mt-1">
+                  Las familias están esperando respuesta.{" "}
+                  <Link href="/cases?urgent=true" className="underline">Ver expedientes →</Link>
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* KPIs */}

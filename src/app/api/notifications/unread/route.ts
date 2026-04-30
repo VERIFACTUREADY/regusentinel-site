@@ -19,7 +19,7 @@ export async function GET() {
   const [storedAlerts, overdueTasksRaw, blockedTasksRaw, isdCasesRaw, unreadPortalRaw] = await Promise.all([
     // Stored notification logs (email alerts sent by cron)
     prisma.notificationLog.findMany({
-      where: { orgId, status: "SENT", createdAt: { gte: sevenDaysAgo } },
+      where: { orgId, status: "sent", createdAt: { gte: sevenDaysAgo } },
       select: {
         id: true,
         kind: true,
