@@ -23,9 +23,12 @@ export default function UsersPage() {
 
   async function fetchMembers() {
     setLoading(true);
-    const res = await fetch("/api/users");
-    if (res.ok) setMembers(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch("/api/users");
+      if (res.ok) setMembers(await res.json());
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleInvite(e: React.FormEvent) {

@@ -394,14 +394,17 @@ export default function CaseDetailPage() {
 
   async function fetchCase() {
     setLoading(true);
-    const res = await fetch(`/api/cases/${caseId}`);
-    if (res.ok) {
-      const data = await res.json();
-      setCaseData(data);
-      setNotesInput(data.notes || "");
-      setLegitimationInput(data.legitimationNote || "");
+    try {
+      const res = await fetch(`/api/cases/${caseId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCaseData(data);
+        setNotesInput(data.notes || "");
+        setLegitimationInput(data.legitimationNote || "");
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
   async function fetchTemplates() {
     const res = await fetch("/api/templates");
