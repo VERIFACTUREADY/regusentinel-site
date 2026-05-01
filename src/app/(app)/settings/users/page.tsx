@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 
 const roles = ["OWNER", "MANAGER", "OPERATOR", "VIEWER", "MANAGED_OPS"];
 const roleColors: Record<string, string> = {
@@ -60,8 +61,32 @@ export default function UsersPage() {
     fetchMembers();
   }
 
+  const settingsNav = [
+    { href: "/settings/general", label: "General" },
+    { href: "/settings/branding", label: "Marca" },
+    { href: "/settings/users", label: "Usuarios" },
+    { href: "/settings/notifications", label: "Notificaciones" },
+  ];
+
   return (
     <div>
+      {/* Tab navigation */}
+      <div className="flex gap-1 mb-6 border-b">
+        {settingsNav.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+              item.href === "/settings/users"
+                ? "bg-white border border-b-white text-indigo-600 -mb-px"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            {item.label}
+          </Link>
+        ))}
+      </div>
+
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Usuarios</h1>
         <button onClick={() => setShowInvite(true)}

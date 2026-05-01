@@ -122,10 +122,11 @@ model User {
 }
 
 model Membership {
-  id     String @id @default(cuid())
-  role   Role
-  userId String
-  orgId  String
+  id          String @id @default(cuid())
+  role        Role
+  userId      String
+  orgId       String
+  notifPrefs  Json?  // { dailyBriefing, weeklyDigest, taskOverdue, portalMessage, isdAlerts }
 
   user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)

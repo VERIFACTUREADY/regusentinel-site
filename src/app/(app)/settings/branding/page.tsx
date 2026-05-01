@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 interface BrandingState {
   brandDisplayName: string;
@@ -73,8 +74,32 @@ export default function BrandingPage() {
   const displayName = form.brandDisplayName || orgName;
   const primary = form.brandPrimaryColor || "#6366f1";
 
+  const settingsNav = [
+    { href: "/settings/general", label: "General" },
+    { href: "/settings/branding", label: "Marca" },
+    { href: "/settings/users", label: "Usuarios" },
+    { href: "/settings/notifications", label: "Notificaciones" },
+  ];
+
   return (
     <div className="max-w-4xl">
+      {/* Tab navigation */}
+      <div className="flex gap-1 mb-6 border-b">
+        {settingsNav.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+              item.href === "/settings/branding"
+                ? "bg-white border border-b-white text-indigo-600 -mb-px"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            {item.label}
+          </Link>
+        ))}
+      </div>
+
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Marca del portal familia</h1>

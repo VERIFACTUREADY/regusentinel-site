@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { buildHtmlDigest, classifyCases } from "@/lib/digest-builder";
+import { parsePrefs } from "@/app/api/settings/notifications/route";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -62,13 +63,16 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // Get OWNER/MANAGER emails for this org
+      // Get OWNER/MANAGER emails for this org, filtered by notification prefs
       const admins = await prisma.membership.findMany({
         where: { orgId: org.id, role: { in: ["OWNER", "MANAGER"] } },
-        select: { user: { select: { email: true, name: true } } },
+        select: { notifPrefs: true, user: { select: { email: true, name: true } } },
       });
 
-      const emails = admins.map((m) => m.user.email).filter(Boolean) as string[];
+      const emails = admins
+        .filter((m) => parsePrefs(m.notifPrefs).weeklyDigest)
+        .map((m) => m.user.email)
+        .filter(Boolean) as string[];
       if (emails.length === 0) {
         results.push({ orgId: org.id, orgName: org.name, sent: 0, skipped: true });
         continue;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { parsePrefs } from "@/app/api/settings/notifications/route";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -25,21 +26,28 @@ export async function GET(req: NextRequest) {
   tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
   tomorrowEnd.setHours(23, 59, 59, 999);
 
-  // Get all active memberships with user emails
+  // Get all active memberships with user emails and notification prefs
   const memberships = await prisma.membership.findMany({
     where: { role: { in: ["OWNER", "MANAGER"] } },
     select: {
       orgId: true,
       userId: true,
+      notifPrefs: true,
       user: { select: { id: true, name: true, email: true } },
     },
   });
 
-  const results: { userId: string; email: string; sent: boolean; items: number; error?: string }[] = [];
+  const results: { userId: string; email: string; sent: boolean; items: number; skipped?: string; error?: string }[] = [];
 
   for (const m of memberships) {
     const user = m.user;
     if (!user.email) continue;
+
+    const prefs = parsePrefs(m.notifPrefs);
+    if (!prefs.dailyBriefing) {
+      results.push({ userId: user.id, email: user.email, sent: false, items: 0, skipped: "preference" });
+      continue;
+    }
 
     try {
       const [overdueTasksRaw, dueTodayRaw, dueTomorrowRaw, isdCriticalRaw, pendingApprovalsRaw, unreadPortalRaw, myAssignedRaw] = await Promise.all([
