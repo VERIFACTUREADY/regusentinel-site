@@ -70,6 +70,8 @@ export default async function ReportsPage() {
     recentCases6m,
     overdueTaskCount,
     provinceData,
+    isdClosedCases,
+    isdAtRiskCount,
   ] = await Promise.all([
     safe(() => prisma.case.count({ where: { orgId, deletedAt: null } }), 0),
     safe(() => prisma.case.count({ where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } } }), 0),
@@ -125,6 +127,29 @@ export default async function ReportsPage() {
       });
       return rows as any[];
     }, [] as any[]),
+    // Cases closed with ISD context: need deathDate + closedAt to measure compliance
+    safe(() => prisma.case.findMany({
+      where: {
+        orgId, deletedAt: null, status: "CLOSED",
+        closedAt: { gte: startOfYear },
+        deceased: { deathDate: { not: null } },
+      },
+      select: { closedAt: true, deceased: { select: { deathDate: true } } },
+      take: 500,
+    }), [] as any[]),
+    // Cases at ISD risk right now (open, ISD < 30 days)
+    safe(() => prisma.case.count({
+      where: {
+        orgId, deletedAt: null,
+        status: { notIn: ["CLOSED", "ARCHIVED"] },
+        deceased: {
+          deathDate: {
+            gte: new Date(now.getTime() - 180 * 86400000),
+            lte: new Date(now.getTime() - 150 * 86400000),
+          },
+        },
+      },
+    }), 0),
   ]);
   const memberMap = Object.fromEntries(
     members.map((m) => [m.userId, m.user.name || m.user.email])
@@ -189,6 +214,20 @@ export default async function ReportsPage() {
   const maxMonthly = Math.max(...monthlyData.flatMap((m) => [m.created, m.closed]), 1);
   const categoryEntries = Object.entries(categoryCount).sort((a, b) => b[1] - a[1]);
   const maxCategoryCount = categoryEntries.length > 0 ? categoryEntries[0][1] : 1;
+
+  // ISD compliance: count how many closed cases were closed within 180 days of death
+  let isdOnTime = 0;
+  let isdLate = 0;
+  for (const c of (isdClosedCases as any[])) {
+    if (!c.closedAt || !c.deceased?.deathDate) continue;
+    const daysToClose = Math.floor(
+      (new Date(c.closedAt).getTime() - new Date(c.deceased.deathDate).getTime()) / 86400000
+    );
+    if (daysToClose <= 180) isdOnTime++;
+    else isdLate++;
+  }
+  const isdTotal = isdOnTime + isdLate;
+  const isdComplianceRate = isdTotal > 0 ? Math.round((isdOnTime / isdTotal) * 100) : null;
 
   function delta(current: number, previous: number) {
     if (previous === 0) return current > 0 ? "+100%" : "—";
@@ -284,6 +323,57 @@ export default async function ReportsPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* ISD Compliance section */}
+      <div className="bg-white rounded-lg border p-6 mb-8">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="font-semibold">Cumplimiento del plazo ISD</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Expedientes cerrados este año con fecha de fallecimiento registrada</p>
+          </div>
+          {(isdAtRiskCount as number) > 0 && (
+            <Link href="/cases?isdExpiring=30" className="text-xs px-3 py-1.5 bg-red-100 text-red-700 rounded-full font-medium hover:bg-red-200">
+              {isdAtRiskCount as number} en riesgo ahora
+            </Link>
+          )}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="text-center p-4 bg-green-50 rounded-xl border border-green-100">
+            <p className="text-3xl font-bold text-green-700">{isdComplianceRate !== null ? `${isdComplianceRate}%` : "—"}</p>
+            <p className="text-xs text-gray-500 mt-1">Tasa de cumplimiento</p>
+          </div>
+          <div className="text-center p-4 bg-blue-50 rounded-xl border border-blue-100">
+            <p className="text-3xl font-bold text-blue-700">{isdTotal}</p>
+            <p className="text-xs text-gray-500 mt-1">Cerrados con ISD</p>
+          </div>
+          <div className="text-center p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+            <p className="text-3xl font-bold text-emerald-700">{isdOnTime}</p>
+            <p className="text-xs text-gray-500 mt-1">En plazo (≤180 días)</p>
+          </div>
+          <div className="text-center p-4 bg-red-50 rounded-xl border border-red-100">
+            <p className="text-3xl font-bold text-red-700">{isdLate}</p>
+            <p className="text-xs text-gray-500 mt-1">Fuera de plazo</p>
+          </div>
+        </div>
+        {isdTotal > 0 && (
+          <div className="mt-4">
+            <div className="flex h-3 rounded-full overflow-hidden bg-gray-100 gap-px">
+              <div className="bg-green-500 transition-all" style={{ width: `${(isdOnTime / isdTotal) * 100}%` }} title={`${isdOnTime} en plazo`} />
+              <div className="bg-red-400 transition-all" style={{ width: `${(isdLate / isdTotal) * 100}%` }} title={`${isdLate} fuera de plazo`} />
+            </div>
+            <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> En plazo</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" /> Fuera de plazo</span>
+              {(isdAtRiskCount as number) > 0 && (
+                <span className="flex items-center gap-1 text-red-500"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> {isdAtRiskCount as number} abiertos en riesgo</span>
+              )}
+            </div>
+          </div>
+        )}
+        {isdTotal === 0 && (
+          <p className="text-sm text-gray-400 mt-4 text-center">Sin datos suficientes para calcular cumplimiento.</p>
+        )}
       </div>
 
       {/* Monthly activity chart */}

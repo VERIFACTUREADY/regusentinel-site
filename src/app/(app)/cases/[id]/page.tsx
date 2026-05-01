@@ -71,6 +71,11 @@ export default function CaseDetailPage() {
   const [handoffLoading, setHandoffLoading] = useState(false);
   const [handoffResult, setHandoffResult] = useState<{ title: string; generatedAt: string; caseRef: string; sections: { heading: string; content: string }[]; openItems: { priority: string; text: string }[]; alerts: string[]; model: string } | null>(null);
   const [handoffCopied, setHandoffCopied] = useState(false);
+  const [closureCheckOpen, setClosureCheckOpen] = useState(false);
+  const [closureCheckLoading, setClosureCheckLoading] = useState(false);
+  const [closureCheckResult, setClosureCheckResult] = useState<{ safe: boolean; warnings: { level: "error" | "warning"; message: string }[]; stats: any } | null>(null);
+  const [pendingCloseStatus, setPendingCloseStatus] = useState<string | null>(null);
+  const [statusSuggestionDismissed, setStatusSuggestionDismissed] = useState<string | null>(null);
 
   const uniqueTasks = useMemo(() => {
     if (!caseData) return [];
@@ -94,6 +99,31 @@ export default function CaseDetailPage() {
     const progressPct = total > 0 ? Math.round((done / total) * 100) : 0;
     return { total, done, blocked, inProgress, overdue, progressPct };
   }, [uniqueTasks]);
+
+  // Smart status suggestion
+  const suggestedStatus = useMemo((): { status: string; label: string; reason: string } | null => {
+    if (!caseData) return null;
+    const s = caseData.status;
+    const { total, done, inProgress, blocked, overdue } = taskStats;
+    if (s === "CLOSED" || s === "ARCHIVED") return null;
+    // All tasks done — suggest closing
+    if (total > 0 && done === total && s !== "CLOSED") {
+      return { status: "CLOSED", label: "Cerrar expediente", reason: "Todas las tareas están completadas." };
+    }
+    // High completion + no blocks — suggest READY_TO_SEND or SENT
+    if (total > 0 && done / total >= 0.9 && blocked === 0 && overdue === 0 && s === "IN_PROGRESS") {
+      return { status: "READY_TO_SEND", label: "Marcar como listo para enviar", reason: `${done}/${total} tareas completadas, sin bloqueos.` };
+    }
+    // Has in-progress tasks + status is INTAKE/VALIDATION → suggest IN_PROGRESS
+    if (inProgress > 0 && (s === "INTAKE" || s === "VALIDATION")) {
+      return { status: "IN_PROGRESS", label: "Pasar a En curso", reason: `${inProgress} tarea${inProgress !== 1 ? "s" : ""} ya en progreso.` };
+    }
+    // No pending tasks, in follow-up
+    if (s === "FOLLOW_UP" && done === total && total > 0) {
+      return { status: "CLOSED", label: "Cerrar expediente", reason: "En seguimiento con todas las tareas completadas." };
+    }
+    return null;
+  }, [caseData, taskStats]);
 
   const handleDuplicate = useCallback(async () => {
     const res = await fetch(`/api/cases/${caseId}/duplicate`, { method: "POST" });
@@ -436,10 +466,36 @@ export default function CaseDetailPage() {
   }
 
   async function updateStatus(status: string) {
+    if (status === "CLOSED" || status === "ARCHIVED") {
+      // Show closure safeguard modal before proceeding
+      setPendingCloseStatus(status);
+      setClosureCheckOpen(true);
+      setClosureCheckResult(null);
+      setClosureCheckLoading(true);
+      try {
+        const res = await fetch(`/api/cases/${caseId}/closure-check`);
+        if (res.ok) setClosureCheckResult(await res.json());
+      } finally {
+        setClosureCheckLoading(false);
+      }
+      return;
+    }
     await fetch(`/api/cases/${caseId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
+    fetchCase();
+  }
+
+  async function confirmClose() {
+    if (!pendingCloseStatus) return;
+    await fetch(`/api/cases/${caseId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: pendingCloseStatus }),
+    });
+    setClosureCheckOpen(false);
+    setPendingCloseStatus(null);
+    setClosureCheckResult(null);
     fetchCase();
   }
 
@@ -730,6 +786,36 @@ export default function CaseDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Smart status suggestion banner */}
+      {suggestedStatus && statusSuggestionDismissed !== suggestedStatus.status && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+          <svg className="w-5 h-5 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-emerald-900">Sugerencia: {suggestedStatus.label}</p>
+            <p className="text-xs text-emerald-700">{suggestedStatus.reason}</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => updateStatus(suggestedStatus.status)}
+              className="px-3 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-700"
+            >
+              Aplicar
+            </button>
+            <button
+              onClick={() => setStatusSuggestionDismissed(suggestedStatus.status)}
+              className="p-1 text-emerald-400 hover:text-emerald-600"
+              title="Descartar sugerencia"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b mb-6 gap-1">
@@ -2263,6 +2349,107 @@ export default function CaseDetailPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Closure Safeguard Modal */}
+      {closureCheckOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+            <div className="flex items-center gap-3 px-6 py-4 border-b">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">
+                  Cerrar expediente {pendingCloseStatus === "ARCHIVED" ? "(archivar)" : ""}
+                </h2>
+                <p className="text-xs text-gray-500">Revisión previa al cierre</p>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
+              {closureCheckLoading && (
+                <p className="text-center text-gray-400 py-4">Verificando estado del expediente...</p>
+              )}
+              {!closureCheckLoading && closureCheckResult && (
+                <>
+                  {/* Stats grid */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { label: "Tareas completadas", value: `${closureCheckResult.stats.doneTasks}/${closureCheckResult.stats.totalTasks}`, ok: closureCheckResult.stats.pendingTasks === 0 },
+                      { label: "Vencidas", value: String(closureCheckResult.stats.overdueTasks), ok: closureCheckResult.stats.overdueTasks === 0 },
+                      { label: "ISD restante", value: closureCheckResult.stats.isdDaysRemaining !== null ? `${closureCheckResult.stats.isdDaysRemaining}d` : "—", ok: closureCheckResult.stats.isdDaysRemaining === null || closureCheckResult.stats.isdDaysRemaining <= 0 },
+                    ].map((s) => (
+                      <div key={s.label} className={`rounded-lg p-3 text-center border ${s.ok ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+                        <p className={`text-lg font-bold ${s.ok ? "text-green-700" : "text-amber-700"}`}>{s.value}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {closureCheckResult.warnings.length === 0 ? (
+                    <div className="flex items-center gap-2 py-3 px-4 bg-green-50 rounded-lg border border-green-200">
+                      <svg className="w-5 h-5 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-sm text-green-800 font-medium">Todo en orden. El expediente está listo para cerrar.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {closureCheckResult.warnings.map((w, i) => (
+                        <div key={i} className={`flex items-start gap-2.5 px-3 py-2.5 rounded-lg border ${
+                          w.level === "error"
+                            ? "bg-red-50 border-red-200"
+                            : "bg-amber-50 border-amber-200"
+                        }`}>
+                          <svg className={`w-4 h-4 shrink-0 mt-0.5 ${w.level === "error" ? "text-red-600" : "text-amber-600"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <p className={`text-sm ${w.level === "error" ? "text-red-800" : "text-amber-800"}`}>{w.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t">
+              <button
+                onClick={() => { setClosureCheckOpen(false); setPendingCloseStatus(null); }}
+                className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              {!closureCheckLoading && closureCheckResult && (
+                <>
+                  {closureCheckResult.warnings.some((w) => w.level === "error") ? (
+                    <button
+                      disabled
+                      className="px-4 py-2 text-sm bg-gray-200 text-gray-500 rounded-md cursor-not-allowed"
+                      title="Resuelva los errores antes de cerrar"
+                    >
+                      No se puede cerrar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={confirmClose}
+                      className={`px-4 py-2 text-sm text-white rounded-md ${
+                        closureCheckResult.warnings.length > 0
+                          ? "bg-amber-600 hover:bg-amber-700"
+                          : "bg-green-600 hover:bg-green-700"
+                      }`}
+                    >
+                      {closureCheckResult.warnings.length > 0 ? "Cerrar igualmente" : "Confirmar cierre"}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
