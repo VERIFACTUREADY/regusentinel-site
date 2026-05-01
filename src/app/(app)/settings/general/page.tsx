@@ -32,7 +32,8 @@ export default function GeneralSettingsPage() {
         setName(data.name || "");
         setRetentionDays(data.retentionDays ?? 90);
         setLoading(false);
-      });
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   async function handleSave() {

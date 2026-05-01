@@ -44,7 +44,8 @@ export default function BrandingPage() {
           brandFooterText: data.org?.brandFooterText ?? "",
         });
         setLoading(false);
-      });
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   function update<K extends keyof BrandingState>(k: K, v: string) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
-import { parsePrefs } from "@/app/api/settings/notifications/route";
+import { parsePrefs } from "@/lib/notif-prefs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;

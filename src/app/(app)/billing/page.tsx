@@ -81,16 +81,25 @@ export default function BillingPage() {
   const [subscription, setSubscription] = useState<any>(null);
   const [usage, setUsage] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [billingInterval, setBillingInterval] = useState<Interval>("MONTHLY");
   const [busyPlan, setBusyPlan] = useState<PlanKey | null>(null);
 
   useEffect(() => {
-    fetch("/api/billing").then((r) => r.json()).then((data) => {
-      setSubscription(data.subscription);
-      setUsage(data.usage);
-      if (data.subscription?.interval) setBillingInterval(data.subscription.interval);
-      setLoading(false);
-    });
+    fetch("/api/billing")
+      .then(async (r) => {
+        if (r.status === 403) {
+          setAccessDenied(true);
+          setLoading(false);
+          return;
+        }
+        const data = await r.json();
+        setSubscription(data.subscription);
+        setUsage(data.usage);
+        if (data.subscription?.interval) setBillingInterval(data.subscription.interval);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   async function startCheckout(plan: PlanKey) {
@@ -121,6 +130,28 @@ export default function BillingPage() {
   }
 
   if (loading) return <div className="text-center py-12 text-gray-400">Cargando...</div>;
+
+  if (accessDenied) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold mb-6">Facturacion</h1>
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 text-amber-800">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div>
+              <p className="font-semibold">Acceso restringido</p>
+              <p className="text-sm mt-1">
+                Solo el propietario de la organizacion puede gestionar la facturacion y el plan.
+                Contacta con el administrador de tu cuenta si necesitas realizar cambios.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const currentPlan = (subscription?.plan as PlanKey) || "INICIA";
   const currentInterval = (subscription?.interval as Interval) || "MONTHLY";

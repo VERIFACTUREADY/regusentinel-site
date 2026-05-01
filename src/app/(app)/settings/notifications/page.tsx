@@ -3,13 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 
-interface NotifPrefs {
-  dailyBriefing: boolean;
-  weeklyDigest: boolean;
-  taskOverdue: boolean;
-  portalMessage: boolean;
-  isdAlerts: boolean;
-}
+import type { NotifPrefs } from "@/lib/notif-prefs";
 
 const PREFS_CONFIG: {
   key: keyof NotifPrefs;
