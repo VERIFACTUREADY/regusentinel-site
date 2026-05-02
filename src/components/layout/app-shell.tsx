@@ -174,6 +174,15 @@ export function AppShell({
                 Buscar...
                 <kbd className="text-xs border rounded px-1 py-0.5 ml-1">⌘K</kbd>
               </button>
+              <Link
+                href="/cases/new"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-sm font-medium rounded-md hover:bg-primary/90 transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Nuevo
+              </Link>
               <NotificationBell />
               <span className="text-sm text-gray-600 hidden sm:inline">{session.user.name || session.user.email}</span>
               <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-500">{session.user.role}</span>
