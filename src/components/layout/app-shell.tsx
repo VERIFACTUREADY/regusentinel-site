@@ -204,7 +204,7 @@ export function AppShell({
                 Nuevo
               </Link>
               <NotificationBell />
-              <span className="text-sm text-gray-600 hidden sm:inline">{session.user.name || session.user.email}</span>
+              <Link href="/profile" className="text-sm text-gray-600 hidden sm:inline hover:text-primary transition">{session.user.name || session.user.email}</Link>
               <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-500">{session.user.role}</span>
               <button onClick={() => signOut({ callbackUrl: "/login" })}
                 className="text-sm text-gray-500 hover:text-red-600">
