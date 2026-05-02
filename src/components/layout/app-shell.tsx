@@ -33,15 +33,22 @@ export interface TrialInfo {
   daysLeft: number;
 }
 
+export interface BadgeCounts {
+  messages: number;
+  approvals: number;
+}
+
 export function AppShell({
   session,
   isDemoOrg = false,
   trialInfo,
+  badgeCounts,
   children,
 }: {
   session: Session;
   isDemoOrg?: boolean;
   trialInfo?: TrialInfo | null;
+  badgeCounts?: BadgeCounts | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -64,18 +71,31 @@ export function AppShell({
         </button>
       </div>
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {navItems.map((item) => (
-          <Link key={item.href} href={item.href}
-            onClick={() => setSidebarOpen(false)}
-            className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition ${
-              pathname?.startsWith(item.href) ? "bg-primary/10 text-primary" : "text-gray-700 hover:bg-gray-100"
-            }`}>
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-            </svg>
-            {item.label}
-          </Link>
-        ))}
+        {navItems.map((item) => {
+          const badge =
+            item.href === "/messages" && badgeCounts?.messages
+              ? badgeCounts.messages
+              : item.href === "/approvals" && badgeCounts?.approvals
+              ? badgeCounts.approvals
+              : null;
+          return (
+            <Link key={item.href} href={item.href}
+              onClick={() => setSidebarOpen(false)}
+              className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition ${
+                pathname?.startsWith(item.href) ? "bg-primary/10 text-primary" : "text-gray-700 hover:bg-gray-100"
+              }`}>
+              <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+              </svg>
+              <span className="flex-1">{item.label}</span>
+              {badge !== null && (
+                <span className="ml-auto text-xs bg-red-500 text-white font-bold rounded-full min-w-[1.25rem] h-5 flex items-center justify-center px-1">
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
+            </Link>
+          );
+        })}
         {isOwner && (
           <>
             <div className="pt-3 pb-1 px-3">

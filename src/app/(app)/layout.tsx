@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { authOptions } from "@/lib/auth";
-import { AppShell, type TrialInfo } from "@/components/layout/app-shell";
+import { AppShell, type TrialInfo, type BadgeCounts } from "@/components/layout/app-shell";
 import { prisma } from "@/lib/prisma";
 import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import Link from "next/link";
@@ -20,6 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   let isDemoOrg = false;
   let trialInfo: TrialInfo | null = null;
+  let badgeCounts: BadgeCounts | null = null;
   let suspended = false;
 
   if (session.user.orgId) {
@@ -53,6 +54,25 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       if (subStatus === "canceled" || subStatus === "past_due") {
         suspended = true;
       }
+
+      // Badge counts for sidebar
+      if (session.user.orgId) {
+        const [unreadMsgs, pendingApprovals] = await Promise.all([
+          prisma.portalMessage.count({
+            where: {
+              fromFamily: true,
+              readAt: null,
+              case: { orgId: session.user.orgId, deletedAt: null },
+            },
+          }).catch(() => 0),
+          prisma.approval.count({
+            where: { case: { orgId: session.user.orgId }, status: "PENDING" },
+          }).catch(() => 0),
+        ]);
+        if (unreadMsgs > 0 || pendingApprovals > 0) {
+          badgeCounts = { messages: unreadMsgs, approvals: pendingApprovals };
+        }
+      }
     } catch {
       // DB unreachable — let the page render without subscription check
     }
@@ -68,7 +88,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <AppShell session={session} isDemoOrg={isDemoOrg} trialInfo={trialInfo}>
+    <AppShell session={session} isDemoOrg={isDemoOrg} trialInfo={trialInfo} badgeCounts={badgeCounts}>
       {children}
     </AppShell>
   );
