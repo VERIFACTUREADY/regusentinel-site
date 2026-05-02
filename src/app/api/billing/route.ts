@@ -20,11 +20,25 @@ export async function GET(_req: NextRequest) {
   });
 
   const month = new Date().toISOString().slice(0, 7);
-  const usage = await prisma.usageRecord.findUnique({
-    where: { orgId_month: { orgId: session.user.orgId, month } },
-  });
 
-  return NextResponse.json({ subscription, usage, pricing: PLAN_PRICING });
+  // Last 6 months of usage history + member count
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+  const startMonth = sixMonthsAgo.toISOString().slice(0, 7);
+
+  const [usage, usageHistory, memberCount] = await Promise.all([
+    prisma.usageRecord.findUnique({
+      where: { orgId_month: { orgId: session.user.orgId, month } },
+    }),
+    prisma.usageRecord.findMany({
+      where: { orgId: session.user.orgId, month: { gte: startMonth } },
+      select: { month: true, casesCreated: true },
+      orderBy: { month: "asc" },
+    }),
+    prisma.membership.count({ where: { orgId: session.user.orgId } }),
+  ]);
+
+  return NextResponse.json({ subscription, usage, usageHistory, memberCount, pricing: PLAN_PRICING });
 }
 
 export async function POST(req: NextRequest) {

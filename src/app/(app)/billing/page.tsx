@@ -77,9 +77,109 @@ const fmtEUR = (n: number) => new Intl.NumberFormat("es-ES", {
   style: "currency", currency: "EUR", maximumFractionDigits: 0,
 }).format(n);
 
+const MONTH_NAMES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+function UsageSection({
+  usage,
+  usageHistory,
+  memberCount,
+  memberLimit,
+  caseLimit,
+}: {
+  usage: { casesCreated: number } | null;
+  usageHistory: { month: string; casesCreated: number }[];
+  memberCount: number;
+  memberLimit: number;
+  caseLimit: number;
+}) {
+  const casesUsed = usage?.casesCreated ?? 0;
+  const casesPct = caseLimit > 0 ? Math.min(Math.round((casesUsed / caseLimit) * 100), 100) : 0;
+  const membersPct = memberLimit > 0 ? Math.min(Math.round((memberCount / memberLimit) * 100), 100) : 0;
+  const casesNear = casesPct >= 80;
+  const casesOver = casesPct >= 100;
+  const membersNear = membersPct >= 80;
+
+  // Build a 6-slot history, filling gaps with 0
+  const now = new Date();
+  const slots = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+    const key = d.toISOString().slice(0, 7);
+    const record = usageHistory.find((r) => r.month === key);
+    return { label: MONTH_NAMES[d.getMonth()], count: record?.casesCreated ?? 0, isCurrent: i === 5 };
+  });
+  const maxCount = Math.max(...slots.map((s) => s.count), caseLimit > 0 ? 1 : 1);
+
+  return (
+    <div className="mt-4 border-t pt-5 space-y-4">
+      <h3 className="font-medium text-sm text-gray-800">Uso del plan</h3>
+
+      {/* Cases */}
+      <div>
+        <div className="flex items-baseline justify-between mb-1.5">
+          <span className="text-xs text-gray-500">Expedientes este mes</span>
+          <span className={`text-sm font-semibold tabular-nums ${casesOver ? "text-red-600" : casesNear ? "text-orange-600" : "text-gray-900"}`}>
+            {casesUsed} / {caseLimit}
+          </span>
+        </div>
+        <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+          <div
+            className={`h-2.5 rounded-full transition-all ${casesOver ? "bg-red-500" : casesNear ? "bg-orange-500" : "bg-indigo-500"}`}
+            style={{ width: `${casesPct}%` }}
+          />
+        </div>
+        {casesOver && (
+          <p className="text-xs text-red-600 mt-1 font-medium">Límite alcanzado — los expedientes adicionales tienen coste extra.</p>
+        )}
+        {casesNear && !casesOver && (
+          <p className="text-xs text-orange-600 mt-1">{caseLimit - casesUsed} expedientes restantes este mes.</p>
+        )}
+      </div>
+
+      {/* Members */}
+      <div>
+        <div className="flex items-baseline justify-between mb-1.5">
+          <span className="text-xs text-gray-500">Usuarios</span>
+          <span className={`text-sm font-semibold tabular-nums ${membersNear ? "text-orange-600" : "text-gray-900"}`}>
+            {memberCount} / {memberLimit}
+          </span>
+        </div>
+        <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+          <div
+            className={`h-2 rounded-full transition-all ${membersNear ? "bg-orange-400" : "bg-gray-400"}`}
+            style={{ width: `${membersPct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* 6-month chart */}
+      {usageHistory.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-500 mb-2">Expedientes creados — últimos 6 meses</p>
+          <div className="flex items-end gap-1.5" style={{ height: 56 }}>
+            {slots.map((s, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+                <div className="w-full flex items-end" style={{ height: 40 }}>
+                  <div
+                    className={`w-full rounded-t transition-all ${s.isCurrent ? "bg-indigo-500" : "bg-gray-200"}`}
+                    style={{ height: `${Math.max((s.count / maxCount) * 100, s.count > 0 ? 8 : 0)}%` }}
+                    title={`${s.label}: ${s.count} expedientes`}
+                  />
+                </div>
+                <span className="text-xs text-gray-400">{s.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BillingPage() {
   const [subscription, setSubscription] = useState<any>(null);
   const [usage, setUsage] = useState<any>(null);
+  const [usageHistory, setUsageHistory] = useState<{ month: string; casesCreated: number }[]>([]);
+  const [memberCount, setMemberCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
   const [billingInterval, setBillingInterval] = useState<Interval>("MONTHLY");
@@ -96,6 +196,8 @@ export default function BillingPage() {
         const data = await r.json();
         setSubscription(data.subscription);
         setUsage(data.usage);
+        setUsageHistory(data.usageHistory ?? []);
+        setMemberCount(data.memberCount ?? 0);
         if (data.subscription?.interval) setBillingInterval(data.subscription.interval);
         setLoading(false);
       })
@@ -249,14 +351,13 @@ export default function BillingPage() {
           )}
         </div>
 
-        {usage && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-md">
-            <p className="text-sm">
-              <strong>Uso este mes:</strong> {usage.casesCreated} expedientes creados
-              {" "}/ {currentDetail.includedCases} incluidos
-            </p>
-          </div>
-        )}
+        <UsageSection
+          usage={usage}
+          usageHistory={usageHistory}
+          memberCount={memberCount}
+          memberLimit={currentDetail.maxUsers}
+          caseLimit={currentDetail.includedCases}
+        />
       </div>
 
       {/* Plans */}
