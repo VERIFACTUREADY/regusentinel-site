@@ -76,6 +76,18 @@ export default function CaseDetailPage() {
   const [closureCheckResult, setClosureCheckResult] = useState<{ safe: boolean; warnings: { level: "error" | "warning"; message: string }[]; stats: any } | null>(null);
   const [pendingCloseStatus, setPendingCloseStatus] = useState<string | null>(null);
   const [statusSuggestionDismissed, setStatusSuggestionDismissed] = useState<string | null>(null);
+  const [toastError, setToastError] = useState<string | null>(null);
+  const [toastSuccess, setToastSuccess] = useState<string | null>(null);
+
+  function showError(msg: string) {
+    setToastError(msg);
+    setTimeout(() => setToastError(null), 5000);
+  }
+
+  function showSuccess(msg: string) {
+    setToastSuccess(msg);
+    setTimeout(() => setToastSuccess(null), 4000);
+  }
 
   const uniqueTasks = useMemo(() => {
     if (!caseData) return [];
@@ -132,7 +144,7 @@ export default function CaseDetailPage() {
       router.push(`/cases/${data.id}`);
     } else {
       const err = await res.json().catch(() => null);
-      alert(err?.error || "Error al duplicar");
+      showError(err?.error || "Error al duplicar");
     }
   }, [caseId, router]);
 
@@ -221,7 +233,7 @@ export default function CaseDetailPage() {
         setDocRequestResult(data.result);
       } else {
         const err = await res.json().catch(() => null);
-        alert(err?.error || "Error generando solicitud");
+        showError(err?.error || "Error generando solicitud");
       }
     } finally {
       setDocRequestLoading(false);
@@ -249,7 +261,7 @@ export default function CaseDetailPage() {
         fetchCase();
       } else {
         const err = await res.json().catch(() => null);
-        alert(err?.error || "Error generando tareas");
+        showError(err?.error || "Error generando tareas");
       }
     } finally {
       setSmartTasksLoading(false);
@@ -281,7 +293,7 @@ export default function CaseDetailPage() {
         setProgressReportResult(data.result);
       } else {
         const err = await res.json().catch(() => null);
-        alert(err?.error || "Error generando informe");
+        showError(err?.error || "Error generando informe");
       }
     } finally {
       setProgressReportLoading(false);
@@ -315,7 +327,7 @@ export default function CaseDetailPage() {
         setPortalReply(data.reply || "");
       } else {
         const err = await res.json().catch(() => null);
-        alert(err?.error || "Error generando respuesta");
+        showError(err?.error || "Error generando respuesta");
       }
     } finally {
       setPortalAiLoading(false);
@@ -347,7 +359,7 @@ export default function CaseDetailPage() {
         setHandoffResult(data.briefing);
       } else {
         const err = await res.json().catch(() => null);
-        alert(err?.error || "Error generando briefing");
+        showError(err?.error || "Error generando briefing");
       }
     } finally {
       setHandoffLoading(false);
@@ -385,7 +397,7 @@ export default function CaseDetailPage() {
         setAnalysis(data.analysis);
       } else {
         const err = await res.json().catch(() => null);
-        alert(err?.error || "Error al analizar expediente");
+        showError(err?.error || "Error al analizar expediente");
       }
     } finally {
       setAnalysisLoading(false);
@@ -443,7 +455,7 @@ export default function CaseDetailPage() {
       fetchPortalMessages();
     } else {
       const err = await res.json().catch(() => null);
-      alert(err?.error || "Error al enviar mensaje");
+      showError(err?.error || "Error al enviar mensaje");
     }
   }
 
@@ -461,10 +473,10 @@ export default function CaseDetailPage() {
       setApplyTplOpen(false);
       setSelectedCaseTpl("");
       fetchCase();
-      alert(`Plantilla aplicada: ${data.added} tarea(s) añadida(s)`);
+      showSuccess(`Plantilla aplicada: ${data.added} tarea(s) añadida(s)`);
     } else {
       const err = await res.json().catch(() => null);
-      alert(err?.error || "Error al aplicar plantilla");
+      showError(err?.error || "Error al aplicar plantilla");
     }
   }
 
@@ -596,7 +608,7 @@ export default function CaseDetailPage() {
       body: JSON.stringify({ caseId }),
     });
     if (res.ok) fetchCase();
-    else alert("Error generando checklist");
+    else showError("Error generando checklist");
   }
 
   async function generateDraft(templateId: string) {
@@ -606,7 +618,7 @@ export default function CaseDetailPage() {
     });
     if (res.ok) {
       const data = await res.json();
-      alert(`Borrador generado (requiere aprobacion):\n\n${data.draft.substring(0, 500)}...`);
+      showSuccess("Borrador generado y enviado a aprobación");
       fetchCase();
     }
   }
@@ -821,6 +833,30 @@ export default function CaseDetailPage() {
       )}
 
       {/* Tabs */}
+      {/* Toast notifications */}
+      {(toastError || toastSuccess) && (
+        <div className="fixed bottom-6 right-6 z-[60] flex flex-col gap-2 pointer-events-none">
+          {toastError && (
+            <div className="flex items-center gap-3 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium pointer-events-auto max-w-sm">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span className="flex-1">{toastError}</span>
+              <button onClick={() => setToastError(null)} className="shrink-0 hover:opacity-70">✕</button>
+            </div>
+          )}
+          {toastSuccess && (
+            <div className="flex items-center gap-3 bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium pointer-events-auto max-w-sm">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span className="flex-1">{toastSuccess}</span>
+              <button onClick={() => setToastSuccess(null)} className="shrink-0 hover:opacity-70">✕</button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex border-b mb-6 gap-1">
         {tabs.map((t) => (
           <button key={t} onClick={() => setTab(t)}
