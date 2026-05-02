@@ -78,12 +78,57 @@ function Toggle({
   );
 }
 
+interface BriefingPreview {
+  subject: string;
+  html: string;
+  totalItems: number;
+  wouldSend: boolean;
+}
+
+function PreviewModal({ preview, onClose }: { preview: BriefingPreview; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-wide text-gray-400 font-medium">Asunto</p>
+            <p className="text-sm font-semibold text-gray-900 truncate">{preview.subject}</p>
+            {!preview.wouldSend && (
+              <p className="mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 inline-block">
+                Hoy no se enviaría: sin urgencias ni tareas próximas.
+              </p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 p-1.5 rounded-md hover:bg-gray-100 text-gray-500"
+            aria-label="Cerrar"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <iframe
+          srcDoc={preview.html}
+          sandbox=""
+          title="Vista previa del email"
+          className="flex-1 w-full bg-gray-50 rounded-b-xl"
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function NotificationsSettingsPage() {
   const [prefs, setPrefs] = useState<NotifPrefs | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<BriefingPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings/notifications")
@@ -102,6 +147,20 @@ export default function NotificationsSettingsPage() {
     if (!prefs) return;
     setPrefs({ ...prefs, [key]: !prefs[key] });
     setSaved(false);
+  }
+
+  async function loadPreview() {
+    setPreviewLoading(true);
+    try {
+      const res = await fetch("/api/notifications/preview?type=daily-briefing");
+      if (!res.ok) throw new Error("preview failed");
+      const data = (await res.json()) as BriefingPreview;
+      setPreview(data);
+    } catch {
+      setError("No se pudo generar la vista previa.");
+    } finally {
+      setPreviewLoading(false);
+    }
   }
 
   async function handleSave() {
@@ -179,6 +238,16 @@ export default function NotificationsSettingsPage() {
                   <p className="text-sm font-semibold text-gray-900">{cfg.label}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{cfg.description}</p>
                 </div>
+                {cfg.key === "dailyBriefing" && (
+                  <button
+                    type="button"
+                    onClick={loadPreview}
+                    disabled={previewLoading}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline font-medium shrink-0 disabled:opacity-50"
+                  >
+                    {previewLoading ? "Cargando…" : "Vista previa"}
+                  </button>
+                )}
                 <Toggle
                   checked={prefs[cfg.key]}
                   onChange={() => toggle(cfg.key)}
@@ -187,6 +256,8 @@ export default function NotificationsSettingsPage() {
               </div>
             ))}
           </div>
+
+          {preview && <PreviewModal preview={preview} onClose={() => setPreview(null)} />}
 
           {error && (
             <p className="mt-3 text-sm text-red-600">{error}</p>
