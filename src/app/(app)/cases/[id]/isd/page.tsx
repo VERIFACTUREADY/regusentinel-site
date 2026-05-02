@@ -65,8 +65,9 @@ export default function CaseISDPage() {
         if (data) {
           setCaseData(data);
         }
-        setLoading(false);
-      });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [caseId]);
 
   // Fetch reference bonification for this province + group
@@ -78,7 +79,8 @@ export default function CaseISDPage() {
           if (data?.referencePct !== undefined) {
             setReferenceBonification(data.referencePct);
           }
-        });
+        })
+        .catch(() => {});
     }
   }, [caseData?.province, group]);
 
