@@ -17,6 +17,164 @@ const statusLabels: Record<string, string> = {
 
 const statusOrder = ["INTAKE", "VALIDATION", "IN_PROGRESS", "PENDING_DOCS", "READY_TO_SEND", "SENT", "FOLLOW_UP", "CLOSED"];
 
+function ConsentGate({
+  branding,
+  token,
+  onAccepted,
+}: {
+  branding: { displayName: string; primaryColor: string | null; logoUrl: string | null; showPoweredBy: boolean };
+  token: string;
+  onAccepted: (authorName: string) => void;
+}) {
+  const primary = branding.primaryColor || "#6366f1";
+  const [authorName, setAuthorName] = useState("");
+  const [checked, setChecked] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const saved = typeof localStorage !== "undefined" ? localStorage.getItem("portalAuthorName") : null;
+    if (saved) setAuthorName(saved);
+  }, []);
+
+  async function handleAccept() {
+    if (!checked) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/portal/${token}/consent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ authorName: authorName.trim() || null }),
+      });
+      if (!res.ok) throw new Error("consent failed");
+      if (authorName.trim()) localStorage.setItem("portalAuthorName", authorName.trim());
+      onAccepted(authorName.trim());
+    } catch {
+      setError("No se pudo registrar el consentimiento. Inténtelo de nuevo.");
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <header className="bg-white border-b py-4" style={{ borderBottomColor: primary }}>
+        <div className="max-w-3xl mx-auto px-4 flex items-center gap-3">
+          {branding.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={branding.logoUrl} alt={branding.displayName} className="h-9 w-auto max-w-[160px] object-contain" />
+          ) : (
+            <div className="h-9 w-9 rounded" style={{ backgroundColor: primary }} />
+          )}
+          <div>
+            <h1 className="text-xl font-bold" style={{ color: primary }}>{branding.displayName}</h1>
+            <p className="text-sm text-gray-500">Portal de seguimiento</p>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 flex items-center justify-center px-4 py-12">
+        <div className="bg-white rounded-xl border shadow-sm w-full max-w-lg p-8">
+          <div className="flex justify-center mb-6">
+            <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ backgroundColor: `${primary}1a` }}>
+              <svg className="w-7 h-7" fill="none" stroke={primary} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            </div>
+          </div>
+
+          <h2 className="text-xl font-bold text-gray-900 text-center mb-2">Acceso al portal familiar</h2>
+          <p className="text-sm text-gray-500 text-center mb-6">
+            Para acceder al seguimiento de su expediente, necesitamos su consentimiento para el tratamiento de los datos personales.
+          </p>
+
+          <div className="bg-gray-50 rounded-lg p-4 text-xs text-gray-600 space-y-2 mb-6 max-h-48 overflow-y-auto">
+            <p className="font-semibold text-gray-700">Información sobre el tratamiento de datos (RGPD)</p>
+            <p>
+              <strong>Responsable:</strong> {branding.displayName}
+            </p>
+            <p>
+              <strong>Finalidad:</strong> Gestión del expediente de herencia y comunicación con la familia/herederos.
+            </p>
+            <p>
+              <strong>Legitimación:</strong> Consentimiento del interesado (Art. 6.1.a RGPD) y ejecución de relación contractual (Art. 6.1.b RGPD).
+            </p>
+            <p>
+              <strong>Destinatarios:</strong> No se cederán datos a terceros salvo obligación legal.
+            </p>
+            <p>
+              <strong>Derechos:</strong> Puede ejercer sus derechos de acceso, rectificación, supresión, portabilidad y oposición dirigiéndose al responsable del tratamiento.
+            </p>
+            <p>
+              <strong>Conservación:</strong> Los datos se conservarán durante el tiempo necesario para la gestión del expediente y los plazos legales aplicables.
+            </p>
+          </div>
+
+          <div className="space-y-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Su nombre <span className="text-gray-400 font-normal">(opcional)</span>
+              </label>
+              <input
+                type="text"
+                value={authorName}
+                onChange={(e) => setAuthorName(e.target.value)}
+                placeholder="Nombre del familiar o representante"
+                className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2"
+                style={{ "--tw-ring-color": primary } as React.CSSProperties}
+              />
+            </div>
+
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <div className="relative mt-0.5 shrink-0">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => setChecked(e.target.checked)}
+                  className="sr-only"
+                />
+                <div
+                  className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                    checked ? "border-transparent" : "border-gray-300 bg-white group-hover:border-gray-400"
+                  }`}
+                  style={checked ? { backgroundColor: primary, borderColor: primary } : undefined}
+                >
+                  {checked && (
+                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+              <span className="text-sm text-gray-700 leading-snug">
+                He leído y acepto el tratamiento de mis datos personales tal como se describe en la información anterior, y confirmo que tengo legitimación para acceder a este expediente.
+              </span>
+            </label>
+          </div>
+
+          {error && (
+            <p className="text-sm text-red-600 mb-4">{error}</p>
+          )}
+
+          <button
+            onClick={handleAccept}
+            disabled={!checked || submitting}
+            className="w-full py-3 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-40"
+            style={{ backgroundColor: primary }}
+          >
+            {submitting ? "Registrando..." : "Aceptar y acceder al portal"}
+          </button>
+
+          {branding.showPoweredBy && (
+            <p className="text-center text-xs text-gray-400 mt-4">Powered by BARITUR PRO</p>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
 export default function PortalPage() {
   const params = useParams();
   const token = params.token as string;
@@ -30,18 +188,28 @@ export default function PortalPage() {
   const [msgContent, setMsgContent] = useState("");
   const [msgSending, setMsgSending] = useState(false);
   const [msgError, setMsgError] = useState("");
+  // consent gate: null = not yet loaded; false = needs consent; true = already consented
+  const [consented, setConsented] = useState<boolean | null>(null);
 
   useEffect(() => {
     const saved = typeof localStorage !== "undefined" ? localStorage.getItem("portalAuthorName") : null;
     if (saved) setMsgAuthor(saved);
   }, []);
 
-  useEffect(() => { fetchData(); fetchDocs(); fetchMessages(); }, [token]);
+  useEffect(() => { fetchData(); }, [token]);
 
   async function fetchData() {
     const res = await fetch(`/api/portal/${token}`);
-    if (res.ok) setData(await res.json());
-    else setError("Enlace no valido o expediente no encontrado.");
+    if (res.ok) {
+      const json = await res.json();
+      setData(json);
+      setConsented(json.consentAccepted === true);
+      // Load secondary data only after main data is confirmed
+      fetchDocs();
+      fetchMessages();
+    } else {
+      setError("Enlace no valido o expediente no encontrado.");
+    }
     setLoading(false);
   }
 
@@ -107,10 +275,25 @@ export default function PortalPage() {
     </div>
   );
 
-  const statusIdx = statusOrder.indexOf(data.status);
   const branding = data.branding || {};
   const primary = branding.primaryColor || "#6366f1";
   const displayName = branding.displayName || "Portal de seguimiento";
+
+  // Show consent gate if not yet consented
+  if (consented === false) {
+    return (
+      <ConsentGate
+        branding={{ displayName, primaryColor: primary, logoUrl: branding.logoUrl, showPoweredBy: branding.showPoweredBy }}
+        token={token}
+        onAccepted={(name) => {
+          setConsented(true);
+          if (name) setMsgAuthor(name);
+        }}
+      />
+    );
+  }
+
+  const statusIdx = statusOrder.indexOf(data.status);
 
   return (
     <div className="min-h-screen bg-gray-50">

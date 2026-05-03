@@ -66,5 +66,6 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     pendingDocs,
     caseDeadlines,
     branding,
+    consentAccepted: c.consentAccepted,
   });
 }
