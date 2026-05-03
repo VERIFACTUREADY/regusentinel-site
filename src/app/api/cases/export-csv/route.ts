@@ -38,12 +38,33 @@ export async function GET(req: NextRequest) {
   const orgId = session.user.orgId;
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
+  const category = url.searchParams.get("category");
+  const province = url.searchParams.get("province");
+  const urgent = url.searchParams.get("urgent");
+  const isdExpiring = url.searchParams.get("isdExpiring");
+  const search = url.searchParams.get("search");
 
-  const conditions: Record<string, unknown>[] = [
-    { orgId, deletedAt: null },
-  ];
+  const now = new Date();
+  const conditions: Record<string, unknown>[] = [{ orgId, deletedAt: null }];
   if (status) {
     conditions.push({ status: status.includes(",") ? { in: status.split(",") } : status });
+  }
+  if (category) conditions.push({ categories: { has: category } });
+  if (urgent === "true") conditions.push({ isUrgent: true });
+  if (province) conditions.push({ province });
+  if (isdExpiring) {
+    const days = parseInt(isdExpiring) || 30;
+    const cutoff = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+    conditions.push({ isdDeadline: { lte: cutoff, gte: now } });
+  }
+  if (search) {
+    conditions.push({
+      OR: [
+        { ref: { contains: search, mode: "insensitive" } },
+        { deceased: { fullName: { contains: search, mode: "insensitive" } } },
+        { contact: { fullName: { contains: search, mode: "insensitive" } } },
+      ],
+    });
   }
 
   const cases = await prisma.case.findMany({
@@ -72,6 +93,8 @@ export async function GET(req: NextRequest) {
     "Relacion",
     "Tareas",
     "Documentos",
+    "ISD deadline",
+    "Salud (%)",
     "Creado",
     "Cerrado",
   ];
@@ -91,6 +114,8 @@ export async function GET(req: NextRequest) {
     escapeCsv(c.contact?.relationship),
     String(c._count.tasks),
     String(c._count.documents),
+    (c as any).isdDeadline ? new Date((c as any).isdDeadline).toLocaleDateString("es-ES") : "",
+    (c as any).healthScore != null ? String((c as any).healthScore) : "",
     new Date(c.createdAt).toLocaleDateString("es-ES"),
     c.closedAt ? new Date(c.closedAt).toLocaleDateString("es-ES") : "",
   ]);

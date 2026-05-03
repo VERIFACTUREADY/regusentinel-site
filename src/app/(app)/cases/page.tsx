@@ -168,6 +168,11 @@ export default function CasesPage() {
   function exportCSV() {
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
+    if (categoryFilter) params.set("category", categoryFilter);
+    if (provinceFilter) params.set("province", provinceFilter);
+    if (urgentFilter) params.set("urgent", "true");
+    if (isdExpiringFilter) params.set("isdExpiring", isdExpiringFilter);
+    if (search) params.set("search", search);
     window.open(`/api/cases/export-csv?${params}`, "_blank");
   }
 
