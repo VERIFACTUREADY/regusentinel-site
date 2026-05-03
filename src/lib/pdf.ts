@@ -30,6 +30,10 @@ interface TaskData {
   status: TaskStatus;
   description?: string | null;
   dueDate?: Date | string | null;
+  blockReason?: string | null;
+  blockedUntil?: Date | string | null;
+  dependsOnTitle?: string | null;
+  dependsOnStatus?: string | null;
 }
 
 interface DocumentData {
@@ -255,6 +259,18 @@ export async function generateDossierPdf(
       drawText(STATUS_LABELS[task.status] || task.status, margin + 380, 8);
       drawText(formatDate(task.dueDate), margin + 440, 8);
       y -= lineHeight;
+
+      const depPending = task.dependsOnTitle && task.dependsOnStatus !== "DONE" && task.dependsOnStatus !== "SKIPPED";
+      const subNote = task.status === "BLOCKED" && task.blockReason
+        ? `Motivo: ${truncate(task.blockReason, 60)}${task.blockedUntil ? ` (hasta ${formatDate(task.blockedUntil)})` : ""}`
+        : depPending
+        ? `Espera: ${truncate(task.dependsOnTitle!, 60)}`
+        : null;
+      if (subNote) {
+        ensureSpace(lineHeight - 4);
+        drawText(subNote, margin + 100, 7, false, grayColor);
+        y -= lineHeight - 4;
+      }
     }
   }
 

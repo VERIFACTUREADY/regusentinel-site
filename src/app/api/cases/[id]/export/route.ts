@@ -17,11 +17,24 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   const c = await prisma.case.findFirst({
     where: { id: params.id, orgId: session.user.orgId },
-    include: { deceased: true, contact: true, tasks: true, documents: true },
+    include: {
+      deceased: true,
+      contact: true,
+      tasks: {
+        include: { dependsOn: { select: { title: true, status: true } } },
+        orderBy: { sortOrder: "asc" },
+      },
+      documents: true,
+    },
   });
   if (!c) return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
 
-  const pdfBuffer = await generateDossierPdf(c, c.tasks, c.documents);
+  const tasksForPdf = c.tasks.map((t) => ({
+    ...t,
+    dependsOnTitle: (t as any).dependsOn?.title ?? null,
+    dependsOnStatus: (t as any).dependsOn?.status ?? null,
+  }));
+  const pdfBuffer = await generateDossierPdf(c, tasksForPdf, c.documents);
 
   await logAudit({
     orgId: session.user.orgId,

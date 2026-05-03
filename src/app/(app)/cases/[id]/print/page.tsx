@@ -39,7 +39,10 @@ export default async function CasePrintPage({ params }: { params: { id: string }
       deceased: true,
       contact: true,
       tasks: {
-        include: { assignee: { select: { name: true, email: true } } },
+        include: {
+          assignee: { select: { name: true, email: true } },
+          dependsOn: { select: { title: true, status: true } },
+        },
         orderBy: { sortOrder: "asc" },
       },
       documents: { orderBy: { createdAt: "desc" } },
@@ -182,19 +185,35 @@ export default async function CasePrintPage({ params }: { params: { id: string }
                 </tr>
               </thead>
               <tbody>
-                {tasks.map((t) => (
-                  <tr key={t.id} className="border-b border-gray-100">
-                    <td className="py-1.5 text-center">
-                      {t.status === "DONE" || t.status === "SKIPPED" ? "✓" : "○"}
-                    </td>
-                    <td className="py-1.5">{t.title}</td>
-                    <td className="py-1.5 text-gray-600">{TASK_STATUS_ES[t.status] || t.status}</td>
-                    <td className="py-1.5 text-gray-600">{t.assignee?.name || t.assignee?.email || "—"}</td>
-                    <td className="py-1.5 text-gray-600">
-                      {t.deadline ? new Date(t.deadline).toLocaleDateString("es-ES") : "—"}
-                    </td>
-                  </tr>
-                ))}
+                {tasks.map((t) => {
+                  const depPending = t.dependsOn && t.dependsOn.status !== "DONE" && t.dependsOn.status !== "SKIPPED";
+                  const subText = t.status === "BLOCKED" && t.blockReason
+                    ? `Motivo bloqueo: ${t.blockReason}${t.blockedUntil ? ` (hasta ${new Date(t.blockedUntil).toLocaleDateString("es-ES")})` : ""}`
+                    : depPending
+                    ? `Espera: ${t.dependsOn!.title}`
+                    : null;
+                  return (
+                    <>
+                      <tr key={t.id} className={subText ? "" : "border-b border-gray-100"}>
+                        <td className="py-1.5 text-center">
+                          {t.status === "DONE" || t.status === "SKIPPED" ? "✓" : "○"}
+                        </td>
+                        <td className="py-1.5">{t.title}</td>
+                        <td className="py-1.5 text-gray-600">{TASK_STATUS_ES[t.status] || t.status}</td>
+                        <td className="py-1.5 text-gray-600">{t.assignee?.name || t.assignee?.email || "—"}</td>
+                        <td className="py-1.5 text-gray-600">
+                          {t.deadline ? new Date(t.deadline).toLocaleDateString("es-ES") : "—"}
+                        </td>
+                      </tr>
+                      {subText && (
+                        <tr key={`${t.id}-sub`} className="border-b border-gray-100">
+                          <td />
+                          <td colSpan={4} className="pb-1.5 text-xs text-gray-400 italic">{subText}</td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
               </tbody>
             </table>
           </div>
