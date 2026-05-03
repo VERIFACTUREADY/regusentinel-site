@@ -54,6 +54,7 @@ export default function CasesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchLoading, setBatchLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -136,6 +137,21 @@ export default function CasesPage() {
     } else {
       setSelected(new Set(cases.map((c) => c.id)));
     }
+  }
+
+  async function updateCaseStatus(caseId: string, newStatus: string) {
+    setUpdatingStatus(caseId);
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        setCases((prev) => prev.map((c) => c.id === caseId ? { ...c, status: newStatus } : c));
+      }
+    } catch {}
+    setUpdatingStatus(null);
   }
 
   async function batchChangeStatus(newStatus: string) {
@@ -350,9 +366,16 @@ export default function CasesPage() {
                 <td className="px-4 py-3 text-sm">{c.deceased?.fullName || "—"}</td>
                 <td className="px-4 py-3 text-sm">{c.contact?.fullName || "—"}</td>
                 <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-1 rounded-full ${CASE_STATUS_COLORS[c.status] || ""}`}>
-                    {STATUS_OPTIONS.find((s) => s.value === c.status)?.label || c.status}
-                  </span>
+                  <select
+                    value={c.status}
+                    onChange={(e) => updateCaseStatus(c.id, e.target.value)}
+                    disabled={updatingStatus === c.id}
+                    className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer appearance-none ${CASE_STATUS_COLORS[c.status] || ""} ${updatingStatus === c.id ? "opacity-50" : ""}`}
+                  >
+                    {BATCH_STATUS_OPTIONS.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
                 </td>
                 <td className="px-4 py-3">
                   {c.healthScore != null ? (
