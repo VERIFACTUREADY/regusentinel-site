@@ -82,6 +82,11 @@ export default function CaseDetailPage() {
   const [blockReason, setBlockReason] = useState("");
   const [blockedUntil, setBlockedUntil] = useState("");
   const [deadlineEditId, setDeadlineEditId] = useState<string | null>(null);
+  const [deceasedEditOpen, setDeceasedEditOpen] = useState(false);
+  const [contactEditOpen, setContactEditOpen] = useState(false);
+  const [deceasedForm, setDeceasedForm] = useState({ fullName: "", deathDate: "", dni: "" });
+  const [contactForm, setContactForm] = useState({ fullName: "", phone: "", email: "", relationship: "" });
+  const [infoSaving, setInfoSaving] = useState(false);
 
   function showError(msg: string) {
     setToastError(msg);
@@ -588,6 +593,28 @@ El equipo de gestión`;
     fetchCase();
   }
 
+  async function saveDeceasedInfo() {
+    setInfoSaving(true);
+    await fetch(`/api/cases/${caseId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deceased: deceasedForm }),
+    });
+    setDeceasedEditOpen(false);
+    setInfoSaving(false);
+    fetchCase();
+  }
+
+  async function saveContactInfo() {
+    setInfoSaving(true);
+    await fetch(`/api/cases/${caseId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contact: contactForm }),
+    });
+    setContactEditOpen(false);
+    setInfoSaving(false);
+    fetchCase();
+  }
+
   async function saveNotes() {
     setNotesSaving(true);
     await fetch(`/api/cases/${caseId}`, {
@@ -1050,17 +1077,140 @@ El equipo de gestión`;
           })()}
 
           <div className="bg-white p-6 rounded-lg border space-y-3">
-            <h3 className="font-semibold">Fallecido</h3>
-            <p><strong>Nombre:</strong> {caseData.deceased?.fullName}</p>
-            {caseData.deceased?.deathDate && <p><strong>Fecha:</strong> {new Date(caseData.deceased.deathDate).toLocaleDateString("es-ES")}</p>}
-            {caseData.deceased?.dni && <p><strong>DNI:</strong> {caseData.deceased.dni}</p>}
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Fallecido</h3>
+              {!deceasedEditOpen && (
+                <button
+                  onClick={() => {
+                    setDeceasedForm({
+                      fullName: caseData.deceased?.fullName || "",
+                      deathDate: caseData.deceased?.deathDate ? new Date(caseData.deceased.deathDate).toISOString().slice(0, 10) : "",
+                      dni: caseData.deceased?.dni || "",
+                    });
+                    setDeceasedEditOpen(true);
+                  }}
+                  className="text-xs text-gray-400 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50"
+                >
+                  Editar
+                </button>
+              )}
+            </div>
+            {deceasedEditOpen ? (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs text-gray-500">Nombre completo</label>
+                  <input
+                    className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={deceasedForm.fullName}
+                    onChange={(e) => setDeceasedForm((f) => ({ ...f, fullName: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Fecha de fallecimiento</label>
+                  <input
+                    type="date"
+                    className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={deceasedForm.deathDate}
+                    onChange={(e) => setDeceasedForm((f) => ({ ...f, deathDate: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">DNI/NIE</label>
+                  <input
+                    className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={deceasedForm.dni}
+                    onChange={(e) => setDeceasedForm((f) => ({ ...f, dni: e.target.value }))}
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button onClick={saveDeceasedInfo} disabled={infoSaving} className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                    {infoSaving ? "Guardando…" : "Guardar"}
+                  </button>
+                  <button onClick={() => setDeceasedEditOpen(false)} className="px-3 py-1 text-xs border rounded hover:bg-gray-50">
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p><strong>Nombre:</strong> {caseData.deceased?.fullName}</p>
+                {caseData.deceased?.deathDate && <p><strong>Fecha:</strong> {new Date(caseData.deceased.deathDate).toLocaleDateString("es-ES")}</p>}
+                {caseData.deceased?.dni && <p><strong>DNI:</strong> {caseData.deceased.dni}</p>}
+              </>
+            )}
           </div>
           <div className="bg-white p-6 rounded-lg border space-y-3">
-            <h3 className="font-semibold">Solicitante</h3>
-            <p><strong>Nombre:</strong> {caseData.contact?.fullName}</p>
-            {caseData.contact?.phone && <p><strong>Telefono:</strong> {caseData.contact.phone}</p>}
-            {caseData.contact?.email && <p><strong>Email:</strong> {caseData.contact.email}</p>}
-            {caseData.contact?.relationship && <p><strong>Relacion:</strong> {caseData.contact.relationship}</p>}
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Solicitante</h3>
+              {!contactEditOpen && (
+                <button
+                  onClick={() => {
+                    setContactForm({
+                      fullName: caseData.contact?.fullName || "",
+                      phone: caseData.contact?.phone || "",
+                      email: caseData.contact?.email || "",
+                      relationship: caseData.contact?.relationship || "",
+                    });
+                    setContactEditOpen(true);
+                  }}
+                  className="text-xs text-gray-400 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50"
+                >
+                  Editar
+                </button>
+              )}
+            </div>
+            {contactEditOpen ? (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs text-gray-500">Nombre completo</label>
+                  <input
+                    className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={contactForm.fullName}
+                    onChange={(e) => setContactForm((f) => ({ ...f, fullName: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Telefono</label>
+                  <input
+                    className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={contactForm.phone}
+                    onChange={(e) => setContactForm((f) => ({ ...f, phone: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Email</label>
+                  <input
+                    type="email"
+                    className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={contactForm.email}
+                    onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Relacion con el fallecido</label>
+                  <input
+                    className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={contactForm.relationship}
+                    onChange={(e) => setContactForm((f) => ({ ...f, relationship: e.target.value }))}
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button onClick={saveContactInfo} disabled={infoSaving} className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                    {infoSaving ? "Guardando…" : "Guardar"}
+                  </button>
+                  <button onClick={() => setContactEditOpen(false)} className="px-3 py-1 text-xs border rounded hover:bg-gray-50">
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p><strong>Nombre:</strong> {caseData.contact?.fullName}</p>
+                {caseData.contact?.phone && <p><strong>Telefono:</strong> {caseData.contact.phone}</p>}
+                {caseData.contact?.email && <p><strong>Email:</strong> {caseData.contact.email}</p>}
+                {caseData.contact?.relationship && <p><strong>Relacion:</strong> {caseData.contact.relationship}</p>}
+              </>
+            )}
           </div>
           <div className="bg-white p-6 rounded-lg border space-y-3">
             <h3 className="font-semibold">Detalles</h3>

@@ -103,7 +103,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!c) return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
 
   const body = await req.json();
-  const { status, notes, isUrgent, legitimationNote, consentAccepted } = body;
+  const { status, notes, isUrgent, legitimationNote, consentAccepted, deceased, contact } = body;
 
   const updated = await prisma.case.update({
     where: { id: params.id },
@@ -120,6 +120,43 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     },
     include: { deceased: true, contact: true },
   });
+
+  // Update deceased info if provided
+  if (deceased && typeof deceased === "object") {
+    const deceasedData: Record<string, unknown> = {};
+    if (deceased.fullName?.trim()) deceasedData.fullName = deceased.fullName.trim();
+    if (deceased.deathDate !== undefined) deceasedData.deathDate = deceased.deathDate ? new Date(deceased.deathDate) : null;
+    if (deceased.dni !== undefined) deceasedData.dni = deceased.dni?.trim() || null;
+    if (Object.keys(deceasedData).length > 0) {
+      await prisma.deceased.update({ where: { caseId: params.id }, data: deceasedData });
+      await logAudit({
+        orgId: session.user.orgId,
+        userId: session.user.id,
+        caseId: params.id,
+        action: "case.deceased_updated",
+        details: `Datos del fallecido actualizados`,
+      });
+    }
+  }
+
+  // Update contact info if provided
+  if (contact && typeof contact === "object") {
+    const contactData: Record<string, unknown> = {};
+    if (contact.fullName?.trim()) contactData.fullName = contact.fullName.trim();
+    if (contact.phone !== undefined) contactData.phone = contact.phone?.trim() || null;
+    if (contact.email !== undefined) contactData.email = contact.email?.trim() || null;
+    if (contact.relationship !== undefined) contactData.relationship = contact.relationship?.trim() || null;
+    if (Object.keys(contactData).length > 0) {
+      await prisma.caseContact.update({ where: { caseId: params.id }, data: contactData });
+      await logAudit({
+        orgId: session.user.orgId,
+        userId: session.user.id,
+        caseId: params.id,
+        action: "case.contact_updated",
+        details: `Datos del solicitante actualizados`,
+      });
+    }
+  }
 
   if (status && status !== c.status) {
     await logAudit({
