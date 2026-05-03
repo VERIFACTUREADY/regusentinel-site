@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -552,8 +553,14 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
 
   return (
     <>
-      {canManage && (
-        <div className="flex justify-end mb-6">
+      <div className="flex items-center justify-between mb-6">
+        <Link href="/workflow-logs" className="text-sm text-gray-500 hover:text-primary flex items-center gap-1">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+          Ver registro de ejecuciones
+        </Link>
+        {canManage && (
           <button
             onClick={openNew}
             className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition"
@@ -563,8 +570,8 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
             </svg>
             Nueva regla
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {rules.length === 0 ? (
         <div className="text-center py-16 text-gray-500">
