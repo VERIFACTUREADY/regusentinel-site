@@ -81,6 +81,7 @@ export default function CaseDetailPage() {
   const [blockModal, setBlockModal] = useState<{ taskId: string; title: string } | null>(null);
   const [blockReason, setBlockReason] = useState("");
   const [blockedUntil, setBlockedUntil] = useState("");
+  const [deadlineEditId, setDeadlineEditId] = useState<string | null>(null);
 
   function showError(msg: string) {
     setToastError(msg);
@@ -575,6 +576,14 @@ El equipo de gestión`;
     await fetch(`/api/cases/${caseId}/tasks`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ taskId, dependsOnId }),
+    });
+    fetchCase();
+  }
+
+  async function updateTaskDeadline(taskId: string, deadline: string | null) {
+    await fetch(`/api/cases/${caseId}/tasks`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId, deadline: deadline || null }),
     });
     fetchCase();
   }
@@ -1399,16 +1408,43 @@ El equipo de gestión`;
                               Disponible: {new Date(task.blockedUntil).toLocaleDateString("es-ES")}
                             </span>
                           )}
-                          {task.deadline && task.status !== "DONE" && task.status !== "SKIPPED" && (() => {
+                          {deadlineEditId === task.id ? (
+                            <input
+                              type="date"
+                              autoFocus
+                              defaultValue={task.deadline ? new Date(task.deadline).toISOString().slice(0, 10) : ""}
+                              className="text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                              onBlur={(e) => {
+                                setDeadlineEditId(null);
+                                updateTaskDeadline(task.id, e.target.value || null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                if (e.key === "Escape") { setDeadlineEditId(null); }
+                              }}
+                            />
+                          ) : task.deadline && task.status !== "DONE" && task.status !== "SKIPPED" ? (() => {
                             const days = Math.ceil((new Date(task.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
                             const expired = days <= 0;
                             const urgent = days > 0 && days <= 14;
                             return (
-                              <span className={`text-xs px-2 py-0.5 rounded ${expired ? "bg-red-100 text-red-700 font-medium" : urgent ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600"}`}>
+                              <button
+                                onClick={() => setDeadlineEditId(task.id)}
+                                title="Editar plazo"
+                                className={`text-xs px-2 py-0.5 rounded cursor-pointer hover:ring-1 hover:ring-blue-300 ${expired ? "bg-red-100 text-red-700 font-medium" : urgent ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600"}`}
+                              >
                                 {expired ? "VENCIDO" : `Plazo: ${days}d`} - {new Date(task.deadline).toLocaleDateString("es-ES")}
-                              </span>
+                              </button>
                             );
-                          })()}
+                          })() : task.status !== "DONE" && task.status !== "SKIPPED" ? (
+                            <button
+                              onClick={() => setDeadlineEditId(task.id)}
+                              title="Añadir plazo"
+                              className="text-xs px-1.5 py-0.5 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50"
+                            >
+                              <svg className="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                            </button>
+                          ) : null}
                           {task.dependsOn && task.dependsOn.status !== "DONE" && task.dependsOn.status !== "SKIPPED" && (
                             <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-purple-50 text-purple-700 rounded" title={`Bloqueada hasta que se complete: ${task.dependsOn.title}`}>
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
