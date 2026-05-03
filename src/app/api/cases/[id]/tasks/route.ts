@@ -192,3 +192,34 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   return NextResponse.json(updated);
 }
+
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.orgId || !session.user.role) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+  if (!hasPermission(session.user.role, "tasks.delete")) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
+  }
+
+  const url = new URL(req.url);
+  const taskId = url.searchParams.get("taskId");
+  if (!taskId) return NextResponse.json({ error: "taskId requerido" }, { status: 400 });
+
+  const task = await prisma.task.findFirst({
+    where: { id: taskId, caseId: params.id, case: { orgId: session.user.orgId } },
+  });
+  if (!task) return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
+
+  await prisma.task.delete({ where: { id: taskId } });
+
+  await logAudit({
+    orgId: session.user.orgId,
+    userId: session.user.id,
+    caseId: params.id,
+    action: "task.deleted",
+    details: `Tarea eliminada: "${task.title}"`,
+  });
+
+  return NextResponse.json({ ok: true });
+}
