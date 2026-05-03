@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { generateBankPack } from "@/lib/bank-pack";
-import { CASE_STATUS_COLORS, TASK_STATUS_COLORS } from "@/lib/constants";
+import { CASE_STATUS_COLORS, TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/constants";
 const statuses = ["INTAKE", "VALIDATION", "IN_PROGRESS", "PENDING_DOCS", "READY_TO_SEND", "SENT", "FOLLOW_UP", "CLOSED", "ARCHIVED"];
 const taskStatuses = ["PENDING", "IN_PROGRESS", "BLOCKED", "READY", "APPROVED", "DONE", "SKIPPED"];
 
@@ -84,8 +84,10 @@ export default function CaseDetailPage() {
   const [deadlineEditId, setDeadlineEditId] = useState<string | null>(null);
   const [deceasedEditOpen, setDeceasedEditOpen] = useState(false);
   const [contactEditOpen, setContactEditOpen] = useState(false);
+  const [detailsEditOpen, setDetailsEditOpen] = useState(false);
   const [deceasedForm, setDeceasedForm] = useState({ fullName: "", deathDate: "", dni: "" });
   const [contactForm, setContactForm] = useState({ fullName: "", phone: "", email: "", relationship: "" });
+  const [detailsForm, setDetailsForm] = useState({ province: "", categories: [] as string[], hasDeceasedInsurance: false });
   const [infoSaving, setInfoSaving] = useState(false);
 
   function showError(msg: string) {
@@ -611,6 +613,17 @@ El equipo de gestión`;
       body: JSON.stringify({ contact: contactForm }),
     });
     setContactEditOpen(false);
+    setInfoSaving(false);
+    fetchCase();
+  }
+
+  async function saveDetailsInfo() {
+    setInfoSaving(true);
+    await fetch(`/api/cases/${caseId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ province: detailsForm.province, categories: detailsForm.categories, hasDeceasedInsurance: detailsForm.hasDeceasedInsurance }),
+    });
+    setDetailsEditOpen(false);
     setInfoSaving(false);
     fetchCase();
   }
@@ -1213,11 +1226,81 @@ El equipo de gestión`;
             )}
           </div>
           <div className="bg-white p-6 rounded-lg border space-y-3">
-            <h3 className="font-semibold">Detalles</h3>
-            <p><strong>Provincia:</strong> {caseData.province || "No especificada"}</p>
-            <p><strong>Categorias:</strong> {caseData.categories.join(", ")}</p>
-            <p><strong>Seguro decesos:</strong> {caseData.hasDeceasedInsurance ? "Si" : "No"}</p>
-            <p><strong>Creado:</strong> {new Date(caseData.createdAt).toLocaleDateString("es-ES")}</p>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Detalles</h3>
+              {!detailsEditOpen && (
+                <button
+                  onClick={() => {
+                    setDetailsForm({
+                      province: caseData.province || "",
+                      categories: [...caseData.categories],
+                      hasDeceasedInsurance: caseData.hasDeceasedInsurance,
+                    });
+                    setDetailsEditOpen(true);
+                  }}
+                  className="text-xs text-gray-400 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50"
+                >
+                  Editar
+                </button>
+              )}
+            </div>
+            {detailsEditOpen ? (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs text-gray-500">Provincia</label>
+                  <input
+                    className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={detailsForm.province}
+                    onChange={(e) => setDetailsForm((f) => ({ ...f, province: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Categorias</label>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(CATEGORY_LABELS).map(([val, label]) => (
+                      <label key={val} className="flex items-center gap-1 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={detailsForm.categories.includes(val)}
+                          onChange={(e) => setDetailsForm((f) => ({
+                            ...f,
+                            categories: e.target.checked
+                              ? [...f.categories, val]
+                              : f.categories.filter((c) => c !== val),
+                          }))}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={detailsForm.hasDeceasedInsurance}
+                      onChange={(e) => setDetailsForm((f) => ({ ...f, hasDeceasedInsurance: e.target.checked }))}
+                    />
+                    Seguro de decesos
+                  </label>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button onClick={saveDetailsInfo} disabled={infoSaving} className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                    {infoSaving ? "Guardando…" : "Guardar"}
+                  </button>
+                  <button onClick={() => setDetailsEditOpen(false)} className="px-3 py-1 text-xs border rounded hover:bg-gray-50">
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p><strong>Provincia:</strong> {caseData.province || "No especificada"}</p>
+                <p><strong>Categorias:</strong> {caseData.categories.length > 0 ? caseData.categories.map((c) => CATEGORY_LABELS[c] || c).join(", ") : "—"}</p>
+                <p><strong>Seguro decesos:</strong> {caseData.hasDeceasedInsurance ? "Si" : "No"}</p>
+                <p><strong>Creado:</strong> {new Date(caseData.createdAt).toLocaleDateString("es-ES")}</p>
+              </>
+            )}
           </div>
           <div className="bg-white p-6 rounded-lg border space-y-3">
             <div className="flex items-center justify-between">
