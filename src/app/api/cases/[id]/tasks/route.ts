@@ -104,6 +104,43 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       taskStatus: status,
       taskCategory: task.category,
     }).catch(console.error);
+
+    // When a task is completed, notify assignees of tasks that were waiting on it
+    if (status === "DONE" || status === "SKIPPED") {
+      const dependents = await prisma.task.findMany({
+        where: { dependsOnId: taskId, status: { in: ["PENDING", "BLOCKED"] } },
+        select: { id: true, title: true, assigneeId: true, assignee: { select: { email: true, name: true } } },
+      });
+      const caseData = dependents.length > 0
+        ? await prisma.case.findUnique({ where: { id: params.id }, select: { ref: true } })
+        : null;
+      for (const dep of dependents) {
+        if (dep.assigneeId && dep.assigneeId !== session.user.id && dep.assignee?.email) {
+          sendEmail({
+            to: dep.assignee.email,
+            subject: `Prerrequisito completado: ${dep.title} — ${caseData?.ref || ""}`,
+            html: `
+              <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+                <h2 style="color:#1a1a2e;">Tu tarea ya puede avanzar</h2>
+                <p style="font-size:15px;color:#333;">
+                  Hola ${dep.assignee.name || ""},<br/>
+                  La tarea <strong>${task.title}</strong> ha sido completada. Tu tarea <strong>${dep.title}</strong> en el expediente <strong>${caseData?.ref || params.id}</strong> ya puede continuar.
+                </p>
+                <p style="text-align:center;margin:24px 0;">
+                  <a href="${process.env.NEXTAUTH_URL || "https://app.baritur.pro"}/cases/${params.id}"
+                     style="background-color:#7c3aed;color:white;padding:12px 32px;
+                            border-radius:6px;text-decoration:none;font-weight:600;">
+                    Ver expediente
+                  </a>
+                </p>
+                <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
+                <p style="color:#999;font-size:12px;">BARITUR PRO — Gestion post-mortem profesional</p>
+              </div>
+            `,
+          }).catch(console.error);
+        }
+      }
+    }
   }
 
   if (assigneeId !== undefined && assigneeId !== task.assigneeId) {
