@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { TEMPLATE_TYPE_LABELS, CATEGORY_LABELS } from "@/lib/constants";
@@ -35,6 +35,7 @@ export function TemplateEditor({
   const [selectedVersion, setSelectedVersion] = useState(latest?.version ?? 1);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [subject, setSubject] = useState(latest?.subject ?? "");
   const [body, setBody] = useState(latest?.body ?? "");
 
@@ -53,6 +54,17 @@ export function TemplateEditor({
     }
     setSaving(false);
   }
+
+  const handleApproval = useCallback(async (versionId: string, approve: boolean) => {
+    setApproving(true);
+    const res = await fetch(`/api/templates/${templateId}/versions/${versionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isApproved: approve }),
+    });
+    if (res.ok) router.refresh();
+    setApproving(false);
+  }, [templateId, router]);
 
   return (
     <div>
@@ -141,7 +153,28 @@ export function TemplateEditor({
                     <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">Borrador</span>
                   )}
                 </div>
-                <span className="text-xs text-gray-400">{current?.createdAt}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400">{current?.createdAt}</span>
+                  {canEdit && current && (
+                    current.isApproved ? (
+                      <button
+                        onClick={() => handleApproval(current.id, false)}
+                        disabled={approving}
+                        className="text-xs px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 text-gray-600"
+                      >
+                        {approving ? "..." : "Revocar aprobacion"}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleApproval(current.id, true)}
+                        disabled={approving}
+                        className="text-xs px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {approving ? "..." : "Aprobar version"}
+                      </button>
+                    )
+                  )}
+                </div>
               </div>
 
               {current?.subject && (
