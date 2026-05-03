@@ -56,6 +56,7 @@ export default async function TodayPage() {
     pendingApprovals,
     unreadMessages,
     blockedCases,
+    readyToStartTasks,
   ] = await Promise.all([
     // My overdue tasks
     safe(() => prisma.task.findMany({
@@ -195,6 +196,24 @@ export default async function TodayPage() {
       orderBy: { updatedAt: "desc" },
       take: 10,
     }), [] as any[]),
+
+    // My tasks whose dependency was just resolved (dependsOn is now DONE/SKIPPED)
+    safe(() => prisma.task.findMany({
+      where: {
+        assigneeId: userId,
+        case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
+        status: { in: ["PENDING", "BLOCKED"] },
+        dependsOnId: { not: null },
+        dependsOn: { status: { in: ["DONE", "SKIPPED"] } },
+      },
+      select: {
+        id: true, title: true, status: true,
+        case: { select: { id: true, ref: true } },
+        dependsOn: { select: { title: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+    }), [] as any[]),
   ]);
 
   // Compute ISD days remaining for each at-risk case
@@ -219,7 +238,8 @@ export default async function TodayPage() {
     isdCases.length > 0 ||
     (pendingApprovals as any[]).length > 0 ||
     (unreadMessages as any[]).length > 0 ||
-    (blockedCases as any[]).length > 0;
+    (blockedCases as any[]).length > 0 ||
+    (readyToStartTasks as any[]).length > 0;
 
   return (
     <div className="max-w-4xl">
@@ -435,6 +455,29 @@ export default async function TodayPage() {
                       </li>
                     ))}
                   </ul>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* Tasks whose dependency was just resolved */}
+        {(readyToStartTasks as any[]).length > 0 && (
+          <Section
+            title="Listas para continuar"
+            count={(readyToStartTasks as any[]).length}
+            color="green"
+            icon="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+          >
+            <ul className="divide-y divide-gray-100">
+              {(readyToStartTasks as any[]).map((t: any) => (
+                <li key={t.id} className="py-3">
+                  <Link href={`/cases/${t.case.id}`} className="text-sm font-medium hover:text-primary">
+                    {t.title}
+                  </Link>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {t.case.ref} · prerrequisito completado: {t.dependsOn?.title}
+                  </p>
                 </li>
               ))}
             </ul>
