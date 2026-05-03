@@ -90,6 +90,15 @@ export function DocumentsClient({
     if (page > 1) fetchDocs(page, search, filterSource);
   }, [page, search, filterSource, fetchDocs]);
 
+  async function handleDelete(docId: string, fileName: string) {
+    if (!confirm(`¿Eliminar "${fileName}"? Esta acción no se puede deshacer.`)) return;
+    const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+    if (res.ok) {
+      setDocs((prev) => prev.filter((d) => d.id !== docId));
+      setTotal((t) => t - 1);
+    }
+  }
+
   async function handleDownload(docId: string, fileName: string) {
     setDownloading(docId);
     try {
@@ -246,23 +255,32 @@ export function DocumentsClient({
                         })}
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => handleDownload(doc.id, doc.fileName)}
-                          disabled={downloading === doc.id}
-                          className="text-xs px-2 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1"
-                          title="Descargar"
-                        >
-                          {downloading === doc.id ? (
-                            <span className="text-gray-400">...</span>
-                          ) : (
-                            <>
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                              </svg>
-                              Descargar
-                            </>
-                          )}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleDownload(doc.id, doc.fileName)}
+                            disabled={downloading === doc.id}
+                            className="text-xs px-2 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1"
+                            title="Descargar"
+                          >
+                            {downloading === doc.id ? (
+                              <span className="text-gray-400">...</span>
+                            ) : (
+                              <>
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                Descargar
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(doc.id, doc.fileName)}
+                            title="Eliminar"
+                            className="text-gray-300 hover:text-red-500 transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
