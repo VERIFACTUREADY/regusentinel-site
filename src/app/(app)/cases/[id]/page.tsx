@@ -89,6 +89,33 @@ export default function CaseDetailPage() {
     setTimeout(() => setToastSuccess(null), 4000);
   }
 
+  function copyPortalLink() {
+    if (!caseData) return;
+    const url = `${window.location.origin}/portal/${caseData.portalToken}`;
+    navigator.clipboard.writeText(url).then(() => showSuccess("Enlace copiado al portapapeles"));
+  }
+
+  function buildPortalMailto(): string {
+    if (!caseData) return "#";
+    const url = `${window.location.origin}/portal/${caseData.portalToken}`;
+    const contactName = caseData.contact?.fullName?.split(",")[0]?.split(" ")[0] || "";
+    const deceasedName = caseData.deceased?.fullName || "su familiar";
+    const subject = `Acceso al portal del expediente ${caseData.ref}`;
+    const body =
+`Estimad${contactName ? "o/a " + contactName : "a familia"},
+
+Le facilitamos el enlace al portal donde puede consultar el estado del expediente de ${deceasedName}, subir documentación y comunicarse con nosotros:
+
+${url}
+
+Quedamos a su disposición para cualquier consulta.
+
+Atentamente,
+El equipo de gestión`;
+    const to = caseData.contact?.email ? encodeURIComponent(caseData.contact.email) : "";
+    return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+
   const uniqueTasks = useMemo(() => {
     if (!caseData) return [];
     const seen = new Set<string>();
@@ -966,8 +993,16 @@ export default function CaseDetailPage() {
             <div className="flex gap-2">
               <input type="text" readOnly value={`${typeof window !== 'undefined' ? window.location.origin : ''}/portal/${caseData.portalToken}`}
                 className="flex-1 px-3 py-2 border rounded-md text-sm bg-gray-50" />
-              <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/portal/${caseData.portalToken}`)}
+              <button onClick={copyPortalLink}
                 className="px-3 py-2 border rounded-md text-sm hover:bg-gray-50">Copiar</button>
+              <a href={buildPortalMailto()}
+                className="px-3 py-2 border rounded-md text-sm hover:bg-gray-50 inline-flex items-center gap-1"
+                title={caseData.contact?.email ? `Enviar a ${caseData.contact.email}` : "Abrir borrador de email"}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                Email
+              </a>
             </div>
             <button onClick={() => setTab("portal")} className="text-sm text-primary hover:underline">
               {portalUnread > 0 ? `Ver mensajes (${portalUnread} nuevo${portalUnread !== 1 ? "s" : ""}) →` : "Ver portal y mensajes →"}
@@ -1644,11 +1679,21 @@ export default function CaseDetailPage() {
                 className="flex-1 px-3 py-2 border rounded-md text-sm bg-gray-50"
               />
               <button
-                onClick={() => navigator.clipboard.writeText(`${window.location.origin}/portal/${caseData.portalToken}`)}
+                onClick={copyPortalLink}
                 className="px-3 py-2 border rounded-md text-sm hover:bg-gray-50"
               >
                 Copiar
               </button>
+              <a
+                href={buildPortalMailto()}
+                className="px-3 py-2 border rounded-md text-sm hover:bg-gray-50 inline-flex items-center gap-1"
+                title={caseData.contact?.email ? `Enviar a ${caseData.contact.email}` : "Abrir borrador de email"}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                Email
+              </a>
               <a
                 href={`/portal/${caseData.portalToken}`}
                 target="_blank"
