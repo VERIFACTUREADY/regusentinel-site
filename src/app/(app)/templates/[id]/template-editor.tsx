@@ -39,6 +39,13 @@ export function TemplateEditor({
   const [subject, setSubject] = useState(latest?.subject ?? "");
   const [body, setBody] = useState(latest?.body ?? "");
 
+  // Preview state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewCaseRef, setPreviewCaseRef] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewResult, setPreviewResult] = useState<{ rendered: string; subject: string | null } | null>(null);
+
   const current = versions.find((v) => v.version === selectedVersion) ?? latest;
 
   async function handleSave() {
@@ -54,6 +61,41 @@ export function TemplateEditor({
     }
     setSaving(false);
   }
+
+  const handlePreview = useCallback(async () => {
+    if (!previewCaseRef.trim()) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewResult(null);
+    // First resolve the case ref to an id
+    try {
+      const searchRes = await fetch(`/api/search?q=${encodeURIComponent(previewCaseRef.trim())}`);
+      const searchData = searchRes.ok ? await searchRes.json() : { results: [] };
+      const needle = previewCaseRef.trim().toLowerCase();
+      const matchedCase = searchData.results?.find(
+        (r: any) => r.type === "case" && r.title?.toLowerCase() === needle
+      ) ?? searchData.results?.find((r: any) => r.type === "case");
+      if (!matchedCase?.id) {
+        setPreviewError("Expediente no encontrado. Introduce la referencia exacta (ej. EXP-2025-001).");
+        setPreviewLoading(false);
+        return;
+      }
+      const renderRes = await fetch(`/api/templates/${templateId}/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caseId: matchedCase.id, versionId: current?.id }),
+      });
+      if (!renderRes.ok) {
+        const d = await renderRes.json().catch(() => ({}));
+        throw new Error(d.error || "Error al renderizar plantilla");
+      }
+      const rendered = await renderRes.json();
+      setPreviewResult(rendered);
+    } catch (err: any) {
+      setPreviewError(err.message);
+    }
+    setPreviewLoading(false);
+  }, [previewCaseRef, templateId, current]);
 
   const handleApproval = useCallback(async (versionId: string, approve: boolean) => {
     setApproving(true);
@@ -81,18 +123,30 @@ export function TemplateEditor({
               <span>{versions.length} version{versions.length !== 1 ? "es" : ""}</span>
             </div>
           </div>
-          {canEdit && !editing && (
+          <div className="flex gap-2">
             <button
-              onClick={() => {
-                setSubject(latest?.subject ?? "");
-                setBody(latest?.body ?? "");
-                setEditing(true);
-              }}
-              className="px-4 py-2 bg-primary text-white text-sm rounded-md hover:bg-primary/90"
+              onClick={() => { setPreviewOpen(true); setPreviewResult(null); setPreviewError(null); }}
+              className="px-4 py-2 border text-sm rounded-md hover:bg-gray-50 flex items-center gap-2"
             >
-              Editar plantilla
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              Previsualizar
             </button>
-          )}
+            {canEdit && !editing && (
+              <button
+                onClick={() => {
+                  setSubject(latest?.subject ?? "");
+                  setBody(latest?.body ?? "");
+                  setEditing(true);
+                }}
+                className="px-4 py-2 bg-primary text-white text-sm rounded-md hover:bg-primary/90"
+              >
+                Editar plantilla
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -246,6 +300,72 @@ export function TemplateEditor({
           </div>
         </div>
       </div>
+
+      {/* Preview modal */}
+      {previewOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="font-semibold">Previsualizar con datos reales</h3>
+              <button onClick={() => setPreviewOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-5 space-y-4 overflow-y-auto">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Referencia del expediente
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={previewCaseRef}
+                    onChange={(e) => setPreviewCaseRef(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handlePreview()}
+                    placeholder="EXP-2025-001"
+                    className="flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                  <button
+                    onClick={handlePreview}
+                    disabled={previewLoading || !previewCaseRef.trim()}
+                    className="px-4 py-2 bg-primary text-white text-sm rounded-md hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {previewLoading ? "Cargando..." : "Previsualizar"}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Versión actual: v{current?.version}
+                </p>
+              </div>
+
+              {previewError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+                  {previewError}
+                </div>
+              )}
+
+              {previewResult && (
+                <div className="space-y-3">
+                  {previewResult.subject && (
+                    <div className="p-3 bg-gray-50 border rounded-md">
+                      <p className="text-xs text-gray-500 mb-1">Asunto</p>
+                      <p className="text-sm font-medium">{previewResult.subject}</p>
+                    </div>
+                  )}
+                  <div className="p-4 bg-gray-50 border rounded-md">
+                    <p className="text-xs text-gray-500 mb-2">Contenido renderizado</p>
+                    <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
+                      {previewResult.rendered}
+                    </pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -114,8 +114,14 @@ export async function GET(req: NextRequest) {
     escapeCsv(c.contact?.relationship),
     String(c._count.tasks),
     String(c._count.documents),
-    (c as any).isdDeadline ? new Date((c as any).isdDeadline).toLocaleDateString("es-ES") : "",
-    (c as any).healthScore != null ? String((c as any).healthScore) : "",
+    c.deceased?.deathDate
+      ? (() => {
+          const d = new Date(c.deceased!.deathDate!);
+          d.setMonth(d.getMonth() + 6);
+          return d.toLocaleDateString("es-ES");
+        })()
+      : "",
+    "",
     new Date(c.createdAt).toLocaleDateString("es-ES"),
     c.closedAt ? new Date(c.closedAt).toLocaleDateString("es-ES") : "",
   ]);
