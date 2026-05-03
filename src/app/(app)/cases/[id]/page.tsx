@@ -78,6 +78,9 @@ export default function CaseDetailPage() {
   const [statusSuggestionDismissed, setStatusSuggestionDismissed] = useState<string | null>(null);
   const [toastError, setToastError] = useState<string | null>(null);
   const [toastSuccess, setToastSuccess] = useState<string | null>(null);
+  const [blockModal, setBlockModal] = useState<{ taskId: string; title: string } | null>(null);
+  const [blockReason, setBlockReason] = useState("");
+  const [blockedUntil, setBlockedUntil] = useState("");
 
   function showError(msg: string) {
     setToastError(msg);
@@ -541,10 +544,21 @@ El equipo de gestión`;
     fetchCase();
   }
 
-  async function updateTaskStatus(taskId: string, status: string) {
+  async function updateTaskStatus(taskId: string, status: string, reason?: string, until?: string) {
+    if (status === "BLOCKED" && reason === undefined) {
+      const task = caseData?.tasks.find((t: any) => t.id === taskId);
+      setBlockReason(task?.blockReason || "");
+      setBlockedUntil(task?.blockedUntil ? new Date(task.blockedUntil).toISOString().slice(0, 10) : "");
+      setBlockModal({ taskId, title: task?.title || "" });
+      return;
+    }
     await fetch(`/api/cases/${caseId}/tasks`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, status }),
+      body: JSON.stringify({
+        taskId,
+        status,
+        ...(status === "BLOCKED" && { blockReason: reason || null, blockedUntil: until || null }),
+      }),
     });
     fetchCase();
   }
@@ -860,6 +874,61 @@ El equipo de gestión`;
       )}
 
       {/* Tabs */}
+      {/* Block task modal */}
+      {blockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="font-semibold">Bloquear tarea</h3>
+              <button onClick={() => setBlockModal(null)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-600">{blockModal.title}</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Motivo del bloqueo</label>
+                <textarea
+                  value={blockReason}
+                  onChange={(e) => setBlockReason(e.target.value)}
+                  rows={3}
+                  placeholder="Ej: Esperando documentacion del banco, pendiente de firma notarial..."
+                  className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Disponible a partir de (opcional)</label>
+                <input
+                  type="date"
+                  value={blockedUntil}
+                  onChange={(e) => setBlockedUntil(e.target.value)}
+                  className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/50"
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setBlockModal(null)}
+                  className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    updateTaskStatus(blockModal.taskId, "BLOCKED", blockReason, blockedUntil);
+                    setBlockModal(null);
+                  }}
+                  className="px-4 py-2 text-sm bg-orange-500 text-white rounded-md hover:bg-orange-600"
+                >
+                  Marcar como bloqueada
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast notifications */}
       {(toastError || toastSuccess) && (
         <div className="fixed bottom-6 right-6 z-[60] flex flex-col gap-2 pointer-events-none">

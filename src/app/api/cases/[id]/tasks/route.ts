@@ -63,7 +63,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const body = await req.json();
-  const { taskId, status, assigneeId } = body;
+  const { taskId, status, assigneeId, blockReason, blockedUntil } = body;
 
   const task = await prisma.task.findFirst({
     where: { id: taskId, caseId: params.id, case: { orgId: session.user.orgId } },
@@ -75,6 +75,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     data: {
       ...(status && { status }),
       ...(assigneeId !== undefined && { assigneeId }),
+      ...(status === "BLOCKED" && {
+        blockReason: blockReason ?? null,
+        blockedUntil: blockedUntil ? new Date(blockedUntil) : null,
+      }),
+      ...(status && status !== "BLOCKED" && {
+        blockReason: null,
+        blockedUntil: null,
+      }),
     },
   });
 
