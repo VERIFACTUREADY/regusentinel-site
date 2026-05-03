@@ -349,6 +349,131 @@ function RuleModal({
   );
 }
 
+// ─── Test rule modal ───────────────────────────────────────
+
+function TestRuleModal({ rule, onClose }: { rule: WorkflowRule; onClose: () => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<{ id: string; title: string }[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedCase, setSelectedCase] = useState<{ id: string; title: string } | null>(null);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!query.trim() || query.length < 2) { setResults([]); return; }
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        setResults((data.results ?? []).filter((r: any) => r.type === "case").map((r: any) => ({ id: r.id, title: r.title })));
+      } catch {}
+      finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  async function handleRun() {
+    if (!selectedCase) return;
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await fetch(`/api/workflow-rules/${rule.id}/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caseId: selectedCase.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al ejecutar");
+      setResult({ success: true, message: data.message || "Regla ejecutada correctamente." });
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+        <h2 className="text-lg font-semibold mb-1">Probar regla</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Ejecuta <strong>{rule.name}</strong> contra un expediente real. La acción se ejecutará de verdad.
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Buscar expediente</label>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setSelectedCase(null); setResult(null); }}
+              placeholder="Ref. o nombre del fallecido…"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              autoFocus
+            />
+            {searching && <p className="text-xs text-gray-400 mt-1">Buscando…</p>}
+            {results.length > 0 && !selectedCase && (
+              <div className="mt-1 border rounded-md divide-y max-h-40 overflow-y-auto">
+                {results.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => { setSelectedCase(r); setQuery(r.title); setResults([]); }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                  >
+                    {r.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {selectedCase && (
+            <div className="flex items-center gap-2 p-2 bg-indigo-50 border border-indigo-100 rounded-md">
+              <svg className="w-4 h-4 text-indigo-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm text-indigo-800 font-medium truncate">{selectedCase.title}</span>
+              <button type="button" onClick={() => { setSelectedCase(null); setQuery(""); }} className="ml-auto text-indigo-400 hover:text-indigo-700 shrink-0">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+
+          {result && (
+            <div className="p-3 bg-green-50 border border-green-100 rounded-md">
+              <p className="text-sm text-green-800 font-medium">Ejecutado correctamente</p>
+              <p className="text-xs text-green-700 mt-0.5">{result.message}</p>
+            </div>
+          )}
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+
+        <div className="flex justify-end gap-3 mt-5">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+            Cerrar
+          </button>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={!selectedCase || running}
+            className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {running ? "Ejecutando…" : "Ejecutar regla"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Rule card ─────────────────────────────────────────────
 
 function RuleCard({
@@ -357,12 +482,14 @@ function RuleCard({
   onEdit,
   onDelete,
   onToggle,
+  onTest,
 }: {
   rule: WorkflowRule;
   canManage: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onToggle: () => void;
+  onTest: () => void;
 }) {
   const [showLogs, setShowLogs] = useState(false);
 
@@ -405,6 +532,12 @@ function RuleCard({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 )}
+              </button>
+              <button onClick={onTest} title="Probar regla" className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
               </button>
               <button onClick={onEdit} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -460,6 +593,7 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [testRule, setTestRule] = useState<WorkflowRule | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -595,6 +729,7 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
               onEdit={() => openEdit(rule)}
               onDelete={() => setDeleteConfirm(rule.id)}
               onToggle={() => handleToggle(rule)}
+              onTest={() => setTestRule(rule)}
             />
           ))}
         </div>
@@ -608,6 +743,10 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
           saving={saving}
           error={saveError}
         />
+      )}
+
+      {testRule && (
+        <TestRuleModal rule={testRule} onClose={() => setTestRule(null)} />
       )}
 
       {deleteConfirm && (
