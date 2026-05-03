@@ -89,6 +89,9 @@ export default function CaseDetailPage() {
   const [contactForm, setContactForm] = useState({ fullName: "", phone: "", email: "", relationship: "" });
   const [detailsForm, setDetailsForm] = useState({ province: "", categories: [] as string[], hasDeceasedInsurance: false });
   const [infoSaving, setInfoSaving] = useState(false);
+  const [addTaskOpen, setAddTaskOpen] = useState(false);
+  const [addTaskForm, setAddTaskForm] = useState({ title: "", category: "OTROS", description: "", deadline: "" });
+  const [addTaskSaving, setAddTaskSaving] = useState(false);
 
   function showError(msg: string) {
     setToastError(msg);
@@ -615,6 +618,27 @@ El equipo de gestión`;
     setContactEditOpen(false);
     setInfoSaving(false);
     fetchCase();
+  }
+
+  async function createTask() {
+    if (!addTaskForm.title.trim()) return;
+    setAddTaskSaving(true);
+    const res = await fetch(`/api/cases/${caseId}/tasks`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: addTaskForm.title.trim(),
+        category: addTaskForm.category,
+        description: addTaskForm.description.trim() || null,
+        dueDate: addTaskForm.deadline || null,
+        sortOrder: (caseData?.tasks?.length ?? 0) + 1,
+      }),
+    });
+    setAddTaskSaving(false);
+    if (res.ok) {
+      setAddTaskOpen(false);
+      setAddTaskForm({ title: "", category: "OTROS", description: "", deadline: "" });
+      fetchCase();
+    }
   }
 
   async function saveDetailsInfo() {
@@ -1779,6 +1803,73 @@ El equipo de gestión`;
             </div>
           ));
           })()}
+          {/* Add task form */}
+          {addTaskOpen ? (
+            <div className="bg-white p-4 rounded-lg border border-blue-200 space-y-3 mb-4">
+              <h4 className="text-sm font-semibold text-gray-700">Nueva tarea</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <input
+                    autoFocus
+                    placeholder="Titulo de la tarea *"
+                    className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={addTaskForm.title}
+                    onChange={(e) => setAddTaskForm((f) => ({ ...f, title: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter") createTask(); if (e.key === "Escape") setAddTaskOpen(false); }}
+                  />
+                </div>
+                <div>
+                  <select
+                    className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={addTaskForm.category}
+                    onChange={(e) => setAddTaskForm((f) => ({ ...f, category: e.target.value }))}
+                  >
+                    {Object.entries(CATEGORY_LABELS).map(([val, label]) => (
+                      <option key={val} value={val}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={addTaskForm.deadline}
+                    onChange={(e) => setAddTaskForm((f) => ({ ...f, deadline: e.target.value }))}
+                    placeholder="Fecha limite (opcional)"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <textarea
+                    rows={2}
+                    placeholder="Descripcion (opcional)"
+                    className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+                    value={addTaskForm.description}
+                    onChange={(e) => setAddTaskForm((f) => ({ ...f, description: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={createTask}
+                  disabled={addTaskSaving || !addTaskForm.title.trim()}
+                  className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {addTaskSaving ? "Guardando…" : "Crear tarea"}
+                </button>
+                <button onClick={() => setAddTaskOpen(false)} className="px-4 py-1.5 text-sm border rounded hover:bg-gray-50">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setAddTaskOpen(true)}
+              className="w-full py-2 text-sm text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-dashed border-gray-200 hover:border-blue-300 flex items-center justify-center gap-1.5 mb-4"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+              Añadir tarea
+            </button>
+          )}
           {caseData.tasks.length === 0 && (
             <div className="text-center py-12 bg-white rounded-lg border">
               <svg className="w-12 h-12 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
