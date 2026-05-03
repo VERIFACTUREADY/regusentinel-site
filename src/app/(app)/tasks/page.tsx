@@ -47,6 +47,8 @@ interface TaskItem {
   case: { id: string; ref: string; isUrgent: boolean };
   assignee: { id: string; name: string | null; email: string } | null;
   _count: { notes: number };
+  dependsOnId: string | null;
+  dependsOn: { id: string; title: string; status: string } | null;
 }
 
 const PAGE_SIZE = 50;
@@ -381,6 +383,11 @@ export default function TasksPage() {
                           "bg-gray-100 text-gray-600"
                         }`}>
                           {expired ? "VENCIDO" : `${deadlineDays}d`} — {new Date(task.deadline).toLocaleDateString("es-ES")}
+                        </span>
+                      )}
+                      {task.dependsOn && task.dependsOn.status !== "DONE" && task.dependsOn.status !== "SKIPPED" && (
+                        <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-700 rounded" title={`Espera: ${task.dependsOn.title}`}>
+                          ⛓ {task.dependsOn.title.length > 25 ? task.dependsOn.title.slice(0, 25) + "…" : task.dependsOn.title}
                         </span>
                       )}
                     </div>
