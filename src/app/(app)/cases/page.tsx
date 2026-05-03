@@ -50,6 +50,7 @@ export default function CasesPage() {
   const [urgentFilter, setUrgentFilter] = useState(false);
   const [provinceFilter, setProvinceFilter] = useState("");
   const [isdExpiringFilter, setIsdExpiringFilter] = useState("");
+  const [myTasksFilter, setMyTasksFilter] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchLoading, setBatchLoading] = useState(false);
@@ -59,14 +60,15 @@ export default function CasesPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const presets = [
-    { id: "urgent", label: "Urgentes", apply: () => { setUrgentFilter(true); setStatusFilter(""); setCategoryFilter(""); setIsdExpiringFilter(""); } },
-    { id: "isd30", label: "ISD < 30d", apply: () => { setIsdExpiringFilter("30"); setUrgentFilter(false); setStatusFilter(""); setCategoryFilter(""); }, className: "border-red-300 text-red-700" },
-    { id: "isd60", label: "ISD < 60d", apply: () => { setIsdExpiringFilter("60"); setUrgentFilter(false); setStatusFilter(""); setCategoryFilter(""); }, className: "border-orange-300 text-orange-700" },
-    { id: "pending_docs", label: "Docs pendientes", apply: () => { setStatusFilter("PENDING_DOCS"); setUrgentFilter(false); setCategoryFilter(""); setIsdExpiringFilter(""); } },
-    { id: "active", label: "En curso", apply: () => { setStatusFilter("IN_PROGRESS"); setUrgentFilter(false); setCategoryFilter(""); setIsdExpiringFilter(""); } },
-    { id: "intake", label: "Nuevos", apply: () => { setStatusFilter("INTAKE"); setUrgentFilter(false); setCategoryFilter(""); setIsdExpiringFilter(""); } },
-    { id: "ready", label: "Listos para enviar", apply: () => { setStatusFilter("READY_TO_SEND"); setUrgentFilter(false); setCategoryFilter(""); setIsdExpiringFilter(""); } },
-    { id: "closed", label: "Cerrados", apply: () => { setStatusFilter("CLOSED"); setUrgentFilter(false); setCategoryFilter(""); setIsdExpiringFilter(""); } },
+    { id: "mine", label: "Mis expedientes", apply: () => { setMyTasksFilter(true); setUrgentFilter(false); setStatusFilter(""); setCategoryFilter(""); setIsdExpiringFilter(""); }, className: "border-blue-300 text-blue-700" },
+    { id: "urgent", label: "Urgentes", apply: () => { setUrgentFilter(true); setMyTasksFilter(false); setStatusFilter(""); setCategoryFilter(""); setIsdExpiringFilter(""); } },
+    { id: "isd30", label: "ISD < 30d", apply: () => { setIsdExpiringFilter("30"); setMyTasksFilter(false); setUrgentFilter(false); setStatusFilter(""); setCategoryFilter(""); }, className: "border-red-300 text-red-700" },
+    { id: "isd60", label: "ISD < 60d", apply: () => { setIsdExpiringFilter("60"); setMyTasksFilter(false); setUrgentFilter(false); setStatusFilter(""); setCategoryFilter(""); }, className: "border-orange-300 text-orange-700" },
+    { id: "pending_docs", label: "Docs pendientes", apply: () => { setStatusFilter("PENDING_DOCS"); setMyTasksFilter(false); setUrgentFilter(false); setCategoryFilter(""); setIsdExpiringFilter(""); } },
+    { id: "active", label: "En curso", apply: () => { setStatusFilter("IN_PROGRESS"); setMyTasksFilter(false); setUrgentFilter(false); setCategoryFilter(""); setIsdExpiringFilter(""); } },
+    { id: "intake", label: "Nuevos", apply: () => { setStatusFilter("INTAKE"); setMyTasksFilter(false); setUrgentFilter(false); setCategoryFilter(""); setIsdExpiringFilter(""); } },
+    { id: "ready", label: "Listos para enviar", apply: () => { setStatusFilter("READY_TO_SEND"); setMyTasksFilter(false); setUrgentFilter(false); setCategoryFilter(""); setIsdExpiringFilter(""); } },
+    { id: "closed", label: "Cerrados", apply: () => { setStatusFilter("CLOSED"); setMyTasksFilter(false); setUrgentFilter(false); setCategoryFilter(""); setIsdExpiringFilter(""); } },
   ];
 
   function applyPreset(id: string) {
@@ -76,6 +78,7 @@ export default function CasesPage() {
       setUrgentFilter(false);
       setCategoryFilter("");
       setIsdExpiringFilter("");
+      setMyTasksFilter(false);
     } else {
       setActivePreset(id);
       presets.find((p) => p.id === id)?.apply();
@@ -95,6 +98,7 @@ export default function CasesPage() {
     if (urgentFilter) params.set("urgent", "true");
     if (provinceFilter) params.set("province", provinceFilter);
     if (isdExpiringFilter) params.set("isdExpiring", isdExpiringFilter);
+    if (myTasksFilter) params.set("myTasks", "true");
 
     fetch(`/api/cases?${params}`, { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
@@ -111,7 +115,7 @@ export default function CasesPage() {
       });
 
     return () => controller.abort();
-  }, [page, statusFilter, categoryFilter, search, urgentFilter, provinceFilter, isdExpiringFilter, refreshKey]);
+  }, [page, statusFilter, categoryFilter, search, urgentFilter, provinceFilter, isdExpiringFilter, myTasksFilter, refreshKey]);
 
   function handleSearchInput(value: string) {
     setSearchInput(value);
@@ -252,7 +256,7 @@ export default function CasesPage() {
         />
         <select
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); setActivePreset(null); setUrgentFilter(false); }}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); setActivePreset(null); setUrgentFilter(false); setMyTasksFilter(false); }}
           className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
         >
           {STATUS_OPTIONS.map((s) => (

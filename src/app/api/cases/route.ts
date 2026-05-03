@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
   const urgent = url.searchParams.get("urgent");
   const province = url.searchParams.get("province");
   const isdExpiring = url.searchParams.get("isdExpiring"); // "30" | "60" = days threshold
+  const myTasks = url.searchParams.get("myTasks"); // filter cases where current user has active tasks
   const page = parseInt(url.searchParams.get("page") || "1");
   const limit = Math.min(parseInt(url.searchParams.get("limit") || "25"), 100);
 
@@ -52,6 +53,11 @@ export async function GET(req: NextRequest) {
         { deceased: { fullName: { contains: search, mode: "insensitive" } } },
         { contact: { fullName: { contains: search, mode: "insensitive" } } },
       ],
+    });
+  }
+  if (myTasks === "true") {
+    conditions.push({
+      tasks: { some: { assigneeId: session.user.id, status: { notIn: ["DONE", "SKIPPED"] } } },
     });
   }
   const where = { AND: conditions };
