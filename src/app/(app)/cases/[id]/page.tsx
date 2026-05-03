@@ -571,6 +571,14 @@ El equipo de gestión`;
     fetchCase();
   }
 
+  async function setTaskDependency(taskId: string, dependsOnId: string | null) {
+    await fetch(`/api/cases/${caseId}/tasks`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId, dependsOnId }),
+    });
+    fetchCase();
+  }
+
   async function saveNotes() {
     setNotesSaving(true);
     await fetch(`/api/cases/${caseId}`, {
@@ -1401,6 +1409,12 @@ El equipo de gestión`;
                               </span>
                             );
                           })()}
+                          {task.dependsOn && task.dependsOn.status !== "DONE" && task.dependsOn.status !== "SKIPPED" && (
+                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-purple-50 text-purple-700 rounded" title={`Bloqueada hasta que se complete: ${task.dependsOn.title}`}>
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                              Espera: {task.dependsOn.title.length > 28 ? task.dependsOn.title.slice(0, 28) + "…" : task.dependsOn.title}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 ml-4 shrink-0">
@@ -1423,6 +1437,17 @@ El equipo de gestión`;
                           <option value="">Sin asignar</option>
                           {members.map((m) => (
                             <option key={m.id} value={m.id}>{m.name || m.email}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={task.dependsOnId || ""}
+                          onChange={(e) => setTaskDependency(task.id, e.target.value || null)}
+                          className="text-xs px-2 py-1 border rounded max-w-[110px]"
+                          title="Depende de"
+                        >
+                          <option value="">Sin dependencia</option>
+                          {uniqueTasks.filter((t: any) => t.id !== task.id).map((t: any) => (
+                            <option key={t.id} value={t.id}>{t.title.length > 22 ? t.title.slice(0, 22) + "…" : t.title}</option>
                           ))}
                         </select>
                         <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)}
