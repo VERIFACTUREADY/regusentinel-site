@@ -92,6 +92,7 @@ export default function CaseDetailPage() {
   const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [addTaskForm, setAddTaskForm] = useState({ title: "", category: "OTROS", description: "", deadline: "" });
   const [addTaskSaving, setAddTaskSaving] = useState(false);
+  const [titleEditId, setTitleEditId] = useState<string | null>(null);
 
   function showError(msg: string) {
     setToastError(msg);
@@ -617,6 +618,15 @@ El equipo de gestión`;
     });
     setContactEditOpen(false);
     setInfoSaving(false);
+    fetchCase();
+  }
+
+  async function updateTaskTitle(taskId: string, title: string) {
+    if (!title.trim()) return;
+    await fetch(`/api/cases/${caseId}/tasks`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId, title: title.trim() }),
+    });
     fetchCase();
   }
 
@@ -1653,7 +1663,31 @@ El equipo de gestión`;
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-medium">{task.title}</p>
+                          {titleEditId === task.id ? (
+                            <input
+                              autoFocus
+                              defaultValue={task.title}
+                              className="font-medium text-sm border-b border-blue-400 bg-transparent focus:outline-none px-0.5"
+                              onBlur={(e) => {
+                                setTitleEditId(null);
+                                if (e.target.value.trim() && e.target.value.trim() !== task.title) {
+                                  updateTaskTitle(task.id, e.target.value);
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                if (e.key === "Escape") { setTitleEditId(null); }
+                              }}
+                            />
+                          ) : (
+                            <p
+                              className="font-medium cursor-text hover:text-blue-600"
+                              title="Haz clic para editar el titulo"
+                              onClick={() => setTitleEditId(task.id)}
+                            >
+                              {task.title}
+                            </p>
+                          )}
                           {task.documents && task.documents.length > 0 && (
                             <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded" title={`${task.documents.length} doc(s) vinculado(s)`}>
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
