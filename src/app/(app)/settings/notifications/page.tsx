@@ -129,6 +129,8 @@ export default function NotificationsSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<BriefingPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [digestPreview, setDigestPreview] = useState<BriefingPreview | null>(null);
+  const [digestPreviewLoading, setDigestPreviewLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings/notifications")
@@ -160,6 +162,20 @@ export default function NotificationsSettingsPage() {
       setError("No se pudo generar la vista previa.");
     } finally {
       setPreviewLoading(false);
+    }
+  }
+
+  async function loadDigestPreview() {
+    setDigestPreviewLoading(true);
+    try {
+      const res = await fetch("/api/notifications/preview?type=weekly-digest");
+      if (!res.ok) throw new Error("preview failed");
+      const data = (await res.json()) as BriefingPreview;
+      setDigestPreview(data);
+    } catch {
+      setError("No se pudo generar la vista previa.");
+    } finally {
+      setDigestPreviewLoading(false);
     }
   }
 
@@ -248,6 +264,16 @@ export default function NotificationsSettingsPage() {
                     {previewLoading ? "Cargando…" : "Vista previa"}
                   </button>
                 )}
+                {cfg.key === "weeklyDigest" && (
+                  <button
+                    type="button"
+                    onClick={loadDigestPreview}
+                    disabled={digestPreviewLoading}
+                    className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-medium shrink-0 disabled:opacity-50"
+                  >
+                    {digestPreviewLoading ? "Cargando…" : "Vista previa"}
+                  </button>
+                )}
                 <Toggle
                   checked={prefs[cfg.key]}
                   onChange={() => toggle(cfg.key)}
@@ -258,6 +284,7 @@ export default function NotificationsSettingsPage() {
           </div>
 
           {preview && <PreviewModal preview={preview} onClose={() => setPreview(null)} />}
+          {digestPreview && <PreviewModal preview={digestPreview} onClose={() => setDigestPreview(null)} />}
 
           {error && (
             <p className="mt-3 text-sm text-red-600">{error}</p>
