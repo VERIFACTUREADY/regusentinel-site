@@ -103,7 +103,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!c) return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
 
   const body = await req.json();
-  const { status, notes, isUrgent, legitimationNote, consentAccepted, deceased, contact, province, categories, hasDeceasedInsurance } = body;
+  const { status, notes, isUrgent, legitimationNote, consentAccepted, deceased, contact, province, categories, hasDeceasedInsurance, portalEnabled } = body;
 
   const updated = await prisma.case.update({
     where: { id: params.id },
@@ -120,6 +120,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(province !== undefined && { province: province?.trim() || null }),
       ...(Array.isArray(categories) && { categories }),
       ...(hasDeceasedInsurance !== undefined && { hasDeceasedInsurance }),
+      ...(portalEnabled !== undefined && { portalEnabled }),
     },
     include: { deceased: true, contact: true },
   });
@@ -159,6 +160,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         details: `Datos del solicitante actualizados`,
       });
     }
+  }
+
+  if (portalEnabled !== undefined && portalEnabled !== c.portalEnabled) {
+    await logAudit({
+      orgId: session.user.orgId,
+      userId: session.user.id,
+      caseId: params.id,
+      action: portalEnabled ? "case.portal_enabled" : "case.portal_disabled",
+      details: `Acceso al portal ${portalEnabled ? "habilitado" : "deshabilitado"}`,
+    });
   }
 
   if (status && status !== c.status) {

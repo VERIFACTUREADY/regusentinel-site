@@ -704,6 +704,15 @@ El equipo de gestión`;
     fetchCase();
   }
 
+  async function togglePortalEnabled() {
+    const newValue = !caseData?.portalEnabled;
+    await fetch(`/api/cases/${caseId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ portalEnabled: newValue }),
+    });
+    setCaseData((prev) => prev ? { ...prev, portalEnabled: newValue } : prev);
+  }
+
   async function postComment() {
     if (!commentInput.trim()) return;
     setCommentSaving(true);
@@ -2185,7 +2194,29 @@ El equipo de gestión`;
         <div className="space-y-6">
           {/* Portal link */}
           <div className="bg-white p-6 rounded-lg border">
-            <h3 className="font-semibold mb-3">Portal de la familia</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Portal de la familia</h3>
+              <button
+                onClick={togglePortalEnabled}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  caseData.portalEnabled ? "bg-green-500" : "bg-gray-300"
+                }`}
+                title={caseData.portalEnabled ? "Deshabilitar acceso al portal" : "Habilitar acceso al portal"}
+                aria-label={caseData.portalEnabled ? "Portal activo" : "Portal desactivado"}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    caseData.portalEnabled ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+            {!caseData.portalEnabled && (
+              <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                El acceso al portal está desactivado. La familia no puede ver este expediente.
+              </div>
+            )}
             <p className="text-sm text-gray-500 mb-3">
               Comparte este enlace con la familia. Pueden ver el estado, subir documentos y enviarte mensajes.
             </p>
