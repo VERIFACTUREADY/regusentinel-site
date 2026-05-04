@@ -85,8 +85,9 @@ export async function GET(req: NextRequest) {
   ];
 
   const rows = tasks.map((t) => {
-    const daysLeft = t.deadline
-      ? Math.ceil((new Date(t.deadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    const effectiveDate = t.deadline ?? t.dueDate;
+    const daysLeft = effectiveDate
+      ? Math.ceil((new Date(effectiveDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
       : null;
     return [
       escapeCsv(t.case.ref),
@@ -95,7 +96,7 @@ export async function GET(req: NextRequest) {
       escapeCsv(t.title),
       escapeCsv(TASK_STATUS_LABELS[t.status] || t.status),
       escapeCsv(t.assignee?.name || t.assignee?.email),
-      t.deadline ? new Date(t.deadline).toLocaleDateString("es-ES") : "",
+      effectiveDate ? new Date(effectiveDate).toLocaleDateString("es-ES") : "",
       daysLeft !== null ? String(daysLeft) : "",
       t.blockedUntil ? new Date(t.blockedUntil).toLocaleDateString("es-ES") : "",
       escapeCsv(t.blockReason),

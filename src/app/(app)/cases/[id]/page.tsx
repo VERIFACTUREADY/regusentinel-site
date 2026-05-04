@@ -147,9 +147,10 @@ El equipo de gestión`;
     const done = uniqueTasks.filter((t: any) => t.status === "DONE" || t.status === "SKIPPED").length;
     const blocked = uniqueTasks.filter((t: any) => t.status === "BLOCKED").length;
     const inProgress = uniqueTasks.filter((t: any) => t.status === "IN_PROGRESS").length;
-    const overdue = uniqueTasks.filter((t: any) =>
-      t.deadline && t.status !== "DONE" && t.status !== "SKIPPED" && new Date(t.deadline) < new Date()
-    ).length;
+    const overdue = uniqueTasks.filter((t: any) => {
+      const d = t.deadline ?? t.dueDate;
+      return d && t.status !== "DONE" && t.status !== "SKIPPED" && new Date(d) < new Date();
+    }).length;
     const progressPct = total > 0 ? Math.round((done / total) * 100) : 0;
     return { total, done, blocked, inProgress, overdue, progressPct };
   }, [uniqueTasks]);
@@ -1732,28 +1733,39 @@ El equipo de gestión`;
                             <input
                               type="date"
                               autoFocus
-                              defaultValue={task.deadline ? new Date(task.deadline).toISOString().slice(0, 10) : ""}
+                              defaultValue={(task.deadline ?? task.dueDate) ? new Date((task.deadline ?? task.dueDate)!).toISOString().slice(0, 10) : ""}
                               className="text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
                               onBlur={(e) => {
                                 setDeadlineEditId(null);
-                                updateTaskDeadline(task.id, e.target.value || null);
+                                // tasks with no system deadline use dueDate; ISD tasks update deadline
+                                const val = e.target.value || null;
+                                if (task.deadline !== null && task.deadline !== undefined) {
+                                  updateTaskDeadline(task.id, val);
+                                } else {
+                                  fetch(`/api/cases/${caseId}/tasks`, {
+                                    method: "PATCH", headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ taskId: task.id, dueDate: val }),
+                                  }).then(() => fetchCase());
+                                }
                               }}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                                 if (e.key === "Escape") { setDeadlineEditId(null); }
                               }}
                             />
-                          ) : task.deadline && task.status !== "DONE" && task.status !== "SKIPPED" ? (() => {
-                            const days = Math.ceil((new Date(task.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                          ) : (task.deadline ?? task.dueDate) && task.status !== "DONE" && task.status !== "SKIPPED" ? (() => {
+                            const effectiveDate = task.deadline ?? task.dueDate;
+                            const days = Math.ceil((new Date(effectiveDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
                             const expired = days <= 0;
                             const urgent = days > 0 && days <= 14;
+                            const isSystemDeadline = !!task.deadline;
                             return (
                               <button
                                 onClick={() => setDeadlineEditId(task.id)}
                                 title="Editar plazo"
                                 className={`text-xs px-2 py-0.5 rounded cursor-pointer hover:ring-1 hover:ring-blue-300 ${expired ? "bg-red-100 text-red-700 font-medium" : urgent ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600"}`}
                               >
-                                {expired ? "VENCIDO" : `Plazo: ${days}d`} - {new Date(task.deadline).toLocaleDateString("es-ES")}
+                                {expired ? "VENCIDO" : `${isSystemDeadline ? "Plazo" : "Vence"}: ${days}d`} - {new Date(effectiveDate!).toLocaleDateString("es-ES")}
                               </button>
                             );
                           })() : task.status !== "DONE" && task.status !== "SKIPPED" ? (
