@@ -63,11 +63,11 @@ export default async function TodayPage() {
       where: {
         assigneeId: userId,
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
-        deadline: { lt: now },
         status: { notIn: ["DONE", "SKIPPED"] },
+        OR: [{ deadline: { lt: now } }, { deadline: null, dueDate: { lt: now } }],
       },
       select: {
-        id: true, title: true, status: true, deadline: true,
+        id: true, title: true, status: true, deadline: true, dueDate: true,
         case: { select: { id: true, ref: true, isUrgent: true, deceased: { select: { fullName: true } } } },
       },
       orderBy: { deadline: "asc" },
@@ -79,11 +79,14 @@ export default async function TodayPage() {
       where: {
         assigneeId: userId,
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
-        deadline: { gte: todayStart, lte: todayEnd },
         status: { notIn: ["DONE", "SKIPPED"] },
+        OR: [
+          { deadline: { gte: todayStart, lte: todayEnd } },
+          { deadline: null, dueDate: { gte: todayStart, lte: todayEnd } },
+        ],
       },
       select: {
-        id: true, title: true, status: true, deadline: true,
+        id: true, title: true, status: true, deadline: true, dueDate: true,
         case: { select: { id: true, ref: true, isUrgent: true, deceased: { select: { fullName: true } } } },
       },
       orderBy: { deadline: "asc" },
@@ -95,11 +98,14 @@ export default async function TodayPage() {
       where: {
         assigneeId: userId,
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
-        deadline: { gt: todayEnd, lte: weekEnd },
         status: { notIn: ["DONE", "SKIPPED"] },
+        OR: [
+          { deadline: { gt: todayEnd, lte: weekEnd } },
+          { deadline: null, dueDate: { gt: todayEnd, lte: weekEnd } },
+        ],
       },
       select: {
-        id: true, title: true, status: true, deadline: true,
+        id: true, title: true, status: true, deadline: true, dueDate: true,
         case: { select: { id: true, ref: true, isUrgent: true, deceased: { select: { fullName: true } } } },
       },
       orderBy: { deadline: "asc" },
@@ -111,11 +117,11 @@ export default async function TodayPage() {
       where: {
         assigneeId: { not: userId },
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
-        deadline: { lt: now },
         status: { notIn: ["DONE", "SKIPPED"] },
+        OR: [{ deadline: { lt: now } }, { deadline: null, dueDate: { lt: now } }],
       },
       select: {
-        id: true, title: true, deadline: true,
+        id: true, title: true, deadline: true, dueDate: true,
         case: { select: { id: true, ref: true } },
         assignee: { select: { name: true, email: true } },
       },
@@ -298,7 +304,7 @@ export default async function TodayPage() {
                     </p>
                   </div>
                   <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
-                    hace {daysOverdue(new Date(task.deadline), now)}d
+                    hace {daysOverdue(new Date(task.deadline ?? task.dueDate), now)}d
                   </span>
                 </li>
               ))}
@@ -505,7 +511,7 @@ export default async function TodayPage() {
                     </p>
                   </div>
                   <span className="text-xs text-gray-500 shrink-0">
-                    {new Date(task.deadline).toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })}
+                    {new Date(task.deadline ?? task.dueDate).toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })}
                   </span>
                 </li>
               ))}
@@ -535,7 +541,7 @@ export default async function TodayPage() {
                     </p>
                   </div>
                   <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
-                    hace {daysOverdue(new Date(task.deadline), now)}d
+                    hace {daysOverdue(new Date(task.deadline ?? task.dueDate), now)}d
                   </span>
                 </li>
               ))}
