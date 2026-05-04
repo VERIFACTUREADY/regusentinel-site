@@ -41,6 +41,7 @@ interface TaskItem {
   status: string;
   category: string;
   deadline: string | null;
+  dueDate: string | null;
   blockedUntil: string | null;
   blockReason: string | null;
   caseId: string;
@@ -182,7 +183,7 @@ export default function TasksPage() {
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   const overdueCount = useMemo(
-    () => tasks.filter((t) => t.deadline && t.status !== "DONE" && t.status !== "SKIPPED" && new Date(t.deadline) < new Date()).length,
+    () => tasks.filter((t) => { const d = t.deadline ?? t.dueDate; return d && t.status !== "DONE" && t.status !== "SKIPPED" && new Date(d) < new Date(); }).length,
     [tasks]
   );
 
@@ -319,8 +320,9 @@ export default function TasksPage() {
           </div>
         ) : (
           tasks.map((task) => {
-            const deadlineDays = task.deadline
-              ? Math.ceil((new Date(task.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+            const effectiveDate = task.deadline ?? task.dueDate;
+            const deadlineDays = effectiveDate
+              ? Math.ceil((new Date(effectiveDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
               : null;
             const expired = deadlineDays !== null && deadlineDays <= 0;
             const urgent = deadlineDays !== null && deadlineDays > 0 && deadlineDays <= 14;
@@ -376,13 +378,13 @@ export default function TasksPage() {
                           {task.blockReason}
                         </span>
                       )}
-                      {task.deadline && task.status !== "DONE" && task.status !== "SKIPPED" && (
+                      {effectiveDate && task.status !== "DONE" && task.status !== "SKIPPED" && (
                         <span className={`text-xs px-2 py-0.5 rounded ${
                           expired ? "bg-red-100 text-red-700 font-medium" :
                           urgent ? "bg-orange-100 text-orange-700" :
                           "bg-gray-100 text-gray-600"
                         }`}>
-                          {expired ? "VENCIDO" : `${deadlineDays}d`} — {new Date(task.deadline).toLocaleDateString("es-ES")}
+                          {expired ? "VENCIDO" : `${deadlineDays}d`} — {new Date(effectiveDate).toLocaleDateString("es-ES")}
                         </span>
                       )}
                       {task.dependsOn && task.dependsOn.status !== "DONE" && task.dependsOn.status !== "SKIPPED" && (
