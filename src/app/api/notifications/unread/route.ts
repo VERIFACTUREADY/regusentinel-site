@@ -34,13 +34,14 @@ export async function GET() {
     prisma.task.findMany({
       where: {
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
-        deadline: { lt: now },
         status: { notIn: ["DONE", "SKIPPED"] },
+        OR: [{ deadline: { lt: now } }, { deadline: null, dueDate: { lt: now } }],
       },
       select: {
         id: true,
         title: true,
         deadline: true,
+        dueDate: true,
         case: { select: { id: true, ref: true } },
       },
       orderBy: { deadline: "asc" },
@@ -103,7 +104,7 @@ export async function GET() {
       id: `overdue:${t.id}`,
       kind: "TASK_OVERDUE",
       recipient: t.title,
-      createdAt: t.deadline ?? now,
+      createdAt: t.deadline ?? (t as any).dueDate ?? now,
       case: t.case,
     } as any);
   }
