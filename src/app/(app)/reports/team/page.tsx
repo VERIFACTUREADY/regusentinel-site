@@ -88,7 +88,7 @@ export default async function TeamReportPage() {
       where: {
         case: { orgId, deletedAt: null },
         assigneeId: { not: null },
-        deadline: { lt: now },
+        OR: [{ deadline: { lt: now } }, { deadline: null, dueDate: { lt: now } }],
         status: { notIn: ["DONE", "SKIPPED"] },
       },
       _count: true,

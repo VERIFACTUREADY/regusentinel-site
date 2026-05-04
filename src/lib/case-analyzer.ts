@@ -62,8 +62,9 @@ function buildContext(caseData: any): string {
     for (const t of items) {
       let line = `- [${t.category}] ${t.title}`;
       if (t.assignee) line += ` (asignada a ${t.assignee.name || t.assignee.email})`;
-      if (t.deadline) {
-        const d = Math.ceil((new Date(t.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      const effectiveDeadline = t.deadline ?? t.dueDate;
+      if (effectiveDeadline) {
+        const d = Math.ceil((new Date(effectiveDeadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
         line += ` [plazo: ${d}d]`;
       }
       if (t.blockReason && t.status === "BLOCKED") {
@@ -266,7 +267,11 @@ export function heuristicAnalysis(caseData: any): CaseAnalysisResult {
   const total = tasks.length;
   const done = tasks.filter((t: any) => t.status === "DONE" || t.status === "SKIPPED").length;
   const blocked = tasks.filter((t: any) => t.status === "BLOCKED").length;
-  const overdue = tasks.filter((t: any) => t.deadline && new Date(t.deadline) < new Date() && t.status !== "DONE" && t.status !== "SKIPPED").length;
+  const now_ = new Date();
+  const overdue = tasks.filter((t: any) => {
+    const d = t.deadline ?? t.dueDate;
+    return d && new Date(d) < now_ && t.status !== "DONE" && t.status !== "SKIPPED";
+  }).length;
 
   const criticalIssues: CaseAnalysisResult["criticalIssues"] = [];
   const suggestedActions: CaseAnalysisResult["suggestedActions"] = [];
