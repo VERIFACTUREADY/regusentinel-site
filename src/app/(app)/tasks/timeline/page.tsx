@@ -9,7 +9,8 @@ interface TimelineTask {
   title: string;
   status: string;
   category: string;
-  deadline: string;
+  deadline: string | null;
+  dueDate: string | null;
   case: { id: string; ref: string; isUrgent: boolean };
   assignee: { id: string; name: string | null; email: string } | null;
 }
@@ -51,7 +52,9 @@ export default function TimelinePage() {
     const groups: Record<string, TimelineTask[]> = {};
 
     for (const task of data.tasks) {
-      const d = new Date(task.deadline);
+      const effectiveDate = task.deadline ?? task.dueDate;
+      if (!effectiveDate) continue;
+      const d = new Date(effectiveDate);
       const isPast = d < now && task.status !== "DONE";
       let key: string;
 
@@ -186,7 +189,7 @@ export default function TimelinePage() {
 
               <div className="ml-1.5 border-l-2 border-gray-200 pl-5 space-y-2">
                 {tasks.map((task) => {
-                  const deadline = new Date(task.deadline);
+                  const deadline = new Date((task.deadline ?? task.dueDate)!);
                   const daysLeft = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
                   const isOverdue = daysLeft < 0 && task.status !== "DONE";
                   const isUrgent = daysLeft >= 0 && daysLeft <= 7 && task.status !== "DONE";

@@ -23,7 +23,10 @@ export async function GET(req: NextRequest) {
 
   const conditions: Record<string, unknown>[] = [
     { case: { orgId: session.user.orgId, deletedAt: null } },
-    { deadline: { gte: pastLimit, lte: futureLimit } },
+    { OR: [
+      { deadline: { gte: pastLimit, lte: futureLimit } },
+      { deadline: null, dueDate: { gte: pastLimit, lte: futureLimit } },
+    ] },
     { status: { notIn: ["SKIPPED"] } },
   ];
 
@@ -47,8 +50,9 @@ export async function GET(req: NextRequest) {
   const monthEnd = now.getTime() + 30 * 24 * 60 * 60 * 1000;
   let overdue = 0, thisWeek = 0, thisMonth = 0;
   for (const t of tasks) {
-    if (!t.deadline || t.status === "DONE") continue;
-    const dl = new Date(t.deadline).getTime();
+    const effective = t.deadline ?? (t as any).dueDate;
+    if (!effective || t.status === "DONE") continue;
+    const dl = new Date(effective).getTime();
     if (dl < now.getTime()) { overdue++; continue; }
     if (dl <= weekEnd) thisWeek++;
     if (dl <= monthEnd) thisMonth++;
