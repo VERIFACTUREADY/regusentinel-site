@@ -63,6 +63,7 @@ export async function GET(req: NextRequest) {
     include: {
       case: { select: { ref: true, isUrgent: true } },
       assignee: { select: { name: true, email: true } },
+      dependsOn: { select: { title: true, status: true } },
     },
     orderBy: [{ deadline: { sort: "asc", nulls: "last" } }, { sortOrder: "asc" }],
     take: 5000,
@@ -80,6 +81,7 @@ export async function GET(req: NextRequest) {
     "Dias restantes",
     "Bloqueada hasta",
     "Motivo bloqueo",
+    "Tarea bloqueante",
   ];
 
   const rows = tasks.map((t) => {
@@ -97,6 +99,13 @@ export async function GET(req: NextRequest) {
       daysLeft !== null ? String(daysLeft) : "",
       t.blockedUntil ? new Date(t.blockedUntil).toLocaleDateString("es-ES") : "",
       escapeCsv(t.blockReason),
+      escapeCsv(
+        (t as any).dependsOn &&
+        (t as any).dependsOn.status !== "DONE" &&
+        (t as any).dependsOn.status !== "SKIPPED"
+          ? (t as any).dependsOn.title
+          : ""
+      ),
     ];
   });
 
