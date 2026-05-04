@@ -4,6 +4,7 @@ export interface BriefingTask {
   id: string;
   title: string;
   deadline: Date | null;
+  dueDate: Date | null;
   case: { id: string; ref: string };
   assignee: { id: string } | null;
 }
@@ -48,11 +49,11 @@ export async function fetchBriefingData(input: BriefingFetchInput): Promise<Brie
     prisma.task.findMany({
       where: {
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
-        deadline: { lt: now },
+        OR: [{ deadline: { lt: now } }, { deadline: null, dueDate: { lt: now } }],
         status: { notIn: ["DONE", "SKIPPED"] },
       },
       select: {
-        id: true, title: true, deadline: true,
+        id: true, title: true, deadline: true, dueDate: true,
         case: { select: { id: true, ref: true } },
         assignee: { select: { id: true } },
       },
@@ -62,11 +63,14 @@ export async function fetchBriefingData(input: BriefingFetchInput): Promise<Brie
     prisma.task.findMany({
       where: {
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
-        deadline: { gte: now, lte: todayEnd },
+        OR: [
+          { deadline: { gte: now, lte: todayEnd } },
+          { deadline: null, dueDate: { gte: now, lte: todayEnd } },
+        ],
         status: { notIn: ["DONE", "SKIPPED"] },
       },
       select: {
-        id: true, title: true, deadline: true,
+        id: true, title: true, deadline: true, dueDate: true,
         case: { select: { id: true, ref: true } },
         assignee: { select: { id: true } },
       },
@@ -76,11 +80,14 @@ export async function fetchBriefingData(input: BriefingFetchInput): Promise<Brie
     prisma.task.findMany({
       where: {
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
-        deadline: { gt: todayEnd, lte: tomorrowEnd },
+        OR: [
+          { deadline: { gt: todayEnd, lte: tomorrowEnd } },
+          { deadline: null, dueDate: { gt: todayEnd, lte: tomorrowEnd } },
+        ],
         status: { notIn: ["DONE", "SKIPPED"] },
       },
       select: {
-        id: true, title: true, deadline: true,
+        id: true, title: true, deadline: true, dueDate: true,
         case: { select: { id: true, ref: true } },
         assignee: { select: { id: true } },
       },
@@ -165,7 +172,7 @@ function taskRow(t: BriefingTask, appUrl: string, urgent = false): string {
         <a href="${appUrl}/cases/${t.case.id}" style="color:#4338ca;text-decoration:none">${t.case.ref}</a>
       </td>
       <td style="padding:8px 16px;font-size:12px;border-bottom:1px solid #f3f4f6;${urgent ? "color:#991b1b;font-weight:600" : "color:#6b7280"}">
-        ${t.deadline ? new Date(t.deadline).toLocaleDateString("es-ES") : "—"}
+        ${(t.deadline ?? t.dueDate) ? new Date((t.deadline ?? t.dueDate)!).toLocaleDateString("es-ES") : "—"}
       </td>
     </tr>`;
 }
