@@ -90,7 +90,7 @@ export default function CaseDetailPage() {
   const [detailsForm, setDetailsForm] = useState({ province: "", categories: [] as string[], hasDeceasedInsurance: false });
   const [infoSaving, setInfoSaving] = useState(false);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
-  const [addTaskForm, setAddTaskForm] = useState({ title: "", category: "OTROS", description: "", deadline: "" });
+  const [addTaskForm, setAddTaskForm] = useState({ title: "", category: "OTROS", description: "", deadline: "", assigneeId: "" });
   const [addTaskSaving, setAddTaskSaving] = useState(false);
   const [titleEditId, setTitleEditId] = useState<string | null>(null);
 
@@ -654,13 +654,14 @@ El equipo de gestión`;
         category: addTaskForm.category,
         description: addTaskForm.description.trim() || null,
         dueDate: addTaskForm.deadline || null,
+        assigneeId: addTaskForm.assigneeId || null,
         sortOrder: (caseData?.tasks?.length ?? 0) + 1,
       }),
     });
     setAddTaskSaving(false);
     if (res.ok) {
       setAddTaskOpen(false);
-      setAddTaskForm({ title: "", category: "OTROS", description: "", deadline: "" });
+      setAddTaskForm({ title: "", category: "OTROS", description: "", deadline: "", assigneeId: "" });
       fetchCase();
     }
   }
@@ -1362,9 +1363,14 @@ El equipo de gestión`;
           <div className="bg-white p-6 rounded-lg border space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">Portal familia</h3>
-              {portalUnread > 0 && (
-                <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">{portalUnread} mensaje{portalUnread !== 1 ? "s" : ""} nuevo{portalUnread !== 1 ? "s" : ""}</span>
-              )}
+              <div className="flex items-center gap-2">
+                {!caseData.portalEnabled && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">Desactivado</span>
+                )}
+                {portalUnread > 0 && (
+                  <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">{portalUnread} mensaje{portalUnread !== 1 ? "s" : ""} nuevo{portalUnread !== 1 ? "s" : ""}</span>
+                )}
+              </div>
             </div>
             <div className="flex gap-2">
               <input type="text" readOnly value={`${typeof window !== 'undefined' ? window.location.origin : ''}/portal/${caseData.portalToken}`}
@@ -1901,6 +1907,18 @@ El equipo de gestión`;
                     onChange={(e) => setAddTaskForm((f) => ({ ...f, deadline: e.target.value }))}
                     placeholder="Fecha limite (opcional)"
                   />
+                </div>
+                <div>
+                  <select
+                    className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    value={addTaskForm.assigneeId}
+                    onChange={(e) => setAddTaskForm((f) => ({ ...f, assigneeId: e.target.value }))}
+                  >
+                    <option value="">Sin asignar</option>
+                    {members.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name || m.email}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="col-span-2">
                   <textarea
