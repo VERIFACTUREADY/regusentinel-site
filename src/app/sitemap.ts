@@ -86,6 +86,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.95,
     },
     {
+      url: `${BASE_URL}/borrador-modelo650`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.9,
+    },
+    {
       url: `${BASE_URL}/docs/api`,
       lastModified: new Date(),
       changeFrequency: "monthly",
