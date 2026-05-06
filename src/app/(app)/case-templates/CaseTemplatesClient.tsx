@@ -579,12 +579,23 @@ export function CaseTemplatesClient({ canManage }: { canManage: boolean }) {
             Crea plantillas con conjuntos de tareas predefinidas para aplicarlas a tus expedientes en segundos.
           </p>
           {canManage && (
-            <button
-              onClick={openCreate}
-              className="px-5 py-2.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90"
-            >
-              Crear primera plantilla
-            </button>
+            <div className="flex flex-wrap gap-2 justify-center">
+              <button
+                onClick={async () => {
+                  const r = await fetch("/api/case-templates/seed", { method: "POST" });
+                  if (r.ok) refresh();
+                }}
+                className="px-5 py-2.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90"
+              >
+                Cargar 3 plantillas predefinidas
+              </button>
+              <button
+                onClick={openCreate}
+                className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
+              >
+                Crear desde cero
+              </button>
+            </div>
           )}
         </div>
       ) : (

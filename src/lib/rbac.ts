@@ -60,9 +60,16 @@ const PERMISSIONS_MAP: Record<Role, string[]> = {
     "documents.delete",
     "templates.read",
     "casetemplates.read",
+    "audit.read",
+    "workflow.read",
+    "autopilot.run",
+    "autopilot.approve",
   ],
 
-  [Role.VIEWER]: ALL_PERMISSIONS.filter((p) => p.endsWith(".read")),
+  [Role.VIEWER]: [
+    ...ALL_PERMISSIONS.filter((p) => p.endsWith(".read")),
+    "autopilot.approve",
+  ],
 
   [Role.MANAGED_OPS]: [
     "cases.create",
