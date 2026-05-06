@@ -155,6 +155,9 @@ export function LandingClient() {
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-primary">BARITUR PRO</h1>
           <div className="flex gap-2 sm:gap-4 items-center">
+            <Link href="/calculadora-isd" className="hidden md:inline px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">
+              Calculadora ISD
+            </Link>
             <Link href="/precios" className="hidden sm:inline px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">
               Precios
             </Link>
@@ -431,6 +434,7 @@ export function LandingClient() {
           <p>El autopiloto prepara acciones; el envio/ejecucion requiere aprobacion profesional.</p>
           <p>Tratamiento de datos conforme al RGPD y la LOPDGDD (LO 3/2018). Marco post-mortem: art. 3.</p>
           <p className="mt-4 space-x-3">
+            <Link href="/calculadora-isd" className="text-primary hover:underline">Calculadora ISD</Link>
             <Link href="/changelog" className="text-primary hover:underline">Changelog</Link>
             <Link href="/legal/privacidad" className="text-primary hover:underline">Privacidad</Link>
             <Link href="/legal/terminos" className="text-primary hover:underline">Terminos</Link>
