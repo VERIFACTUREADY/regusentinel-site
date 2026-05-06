@@ -8,53 +8,33 @@ import {
   type CCAAKey,
   type ParentescoGroup,
 } from "@/lib/isd-calculator";
+import { rateLimit, PUBLIC_API_CORS_HEADERS } from "@/lib/api-rate-limit";
 
 export const dynamic = "force-dynamic";
-
-// Rate limit en memoria para abuso accidental. No bloquea picos legítimos
-// porque el endpoint sólo computa (no hay DB ni IO), pero protege de bots
-// haciendo scraping continuo.
-const rateMap = new Map<string, { count: number; resetAt: number }>();
-const WINDOW_MS = 60_000;
-const MAX_PER_WINDOW = 60;
-
-function rateLimited(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateMap.get(ip);
-  if (!entry || entry.resetAt < now) {
-    rateMap.set(ip, { count: 1, resetAt: now + WINDOW_MS });
-    return false;
-  }
-  entry.count++;
-  if (entry.count > MAX_PER_WINDOW) return true;
-  return false;
-}
-
-function getIP(req: NextRequest): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    req.headers.get("x-real-ip") || "unknown";
-}
 
 const VALID_GROUPS: ParentescoGroup[] = ["I", "II", "III", "IV"];
 const VALID_CCAAS = Object.keys(CCAA_LABELS) as CCAAKey[];
 
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: PUBLIC_API_CORS_HEADERS });
+}
+
 export async function POST(req: NextRequest) {
-  if (rateLimited(getIP(req))) {
-    return NextResponse.json({ error: "Demasiadas peticiones" }, { status: 429 });
-  }
+  const limited = rateLimit(req, { bucket: "isd-calc", max: 60 });
+  if (limited) return limited;
 
   const body = await req.json().catch(() => ({}));
 
   if (!VALID_GROUPS.includes(body.group)) {
-    return NextResponse.json({ error: "Grupo inválido" }, { status: 400 });
+    return NextResponse.json({ error: "Grupo invalido" }, { status: 400, headers: PUBLIC_API_CORS_HEADERS });
   }
   if (body.ccaa && !VALID_CCAAS.includes(body.ccaa)) {
-    return NextResponse.json({ error: "CCAA inválida" }, { status: 400 });
+    return NextResponse.json({ error: "CCAA invalida" }, { status: 400, headers: PUBLIC_API_CORS_HEADERS });
   }
 
   const baseImponible = Number(body.baseImponible);
   if (!isFinite(baseImponible) || baseImponible <= 0 || baseImponible > 100_000_000) {
-    return NextResponse.json({ error: "Base imponible fuera de rango" }, { status: 400 });
+    return NextResponse.json({ error: "Base imponible fuera de rango" }, { status: 400, headers: PUBLIC_API_CORS_HEADERS });
   }
 
   const inputs: Omit<ISDInputs, "ccaaBonificationPct"> = {
@@ -75,5 +55,8 @@ export async function POST(req: NextRequest) {
 
   const comparison = compareCCAAs(inputs);
 
-  return NextResponse.json({ result, comparison, ccaa: ccaa ?? null });
+  return NextResponse.json(
+    { result, comparison, ccaa: ccaa ?? null },
+    { headers: PUBLIC_API_CORS_HEADERS }
+  );
 }

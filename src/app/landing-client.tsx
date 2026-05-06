@@ -440,6 +440,7 @@ export function LandingClient() {
             <Link href="/calculadora-isd" className="text-primary hover:underline">Calculadora ISD</Link>
             <Link href="/comparador-isd" className="text-primary hover:underline">Comparador por CCAA</Link>
             <Link href="/widget" className="text-primary hover:underline">Widget gratis</Link>
+            <Link href="/docs/api" className="text-primary hover:underline">API pública</Link>
             <Link href="/changelog" className="text-primary hover:underline">Changelog</Link>
             <Link href="/legal/privacidad" className="text-primary hover:underline">Privacidad</Link>
             <Link href="/legal/terminos" className="text-primary hover:underline">Terminos</Link>
