@@ -10,7 +10,9 @@ import { DeadlineCalendar } from "@/components/dashboard/deadline-calendar";
 import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import { CASE_STATUS_COLORS } from "@/lib/constants";
 import { getAiInsights, type AiInsightsData } from "@/lib/ai-insights";
+import { getOrgRiskOverview } from "@/lib/isd-risk-aggregator";
 import { BulkAnalyzeButton } from "@/components/dashboard/bulk-analyze-button";
+import { RiskRadarWidget } from "@/components/dashboard/risk-radar-widget";
 import Link from "next/link";
 
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
@@ -195,6 +197,11 @@ export default async function DashboardPage() {
     } as AiInsightsData
   );
 
+  const riskOverview = await safe(
+    () => getOrgRiskOverview(orgId, 6),
+    { totalCasesAnalyzed: 0, countsBySeverity: { critical: 0, warning: 0, info: 0 }, topCases: [], totalActiveAlerts: 0 }
+  );
+
   // In the public demo org surface 3 "try this" shortcuts so prospects
   // get to the wow-moments (urgente case, portal familia, pack banco)
   // in under 30 seconds.
@@ -373,13 +380,18 @@ export default async function DashboardPage() {
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         {kpis.map((kpi) => (
           <div key={kpi.label} className="bg-white p-4 rounded-lg border">
             <p className="text-xs text-gray-500">{kpi.label}</p>
             <p className={`text-2xl font-bold mt-1 ${kpi.color}`}>{kpi.value}</p>
           </div>
         ))}
+      </div>
+
+      {/* ISD Risk Radar — agregado de todos los expedientes activos */}
+      <div className="mb-8">
+        <RiskRadarWidget overview={riskOverview} />
       </div>
 
       <div className="grid lg:grid-cols-4 gap-6 mb-8">

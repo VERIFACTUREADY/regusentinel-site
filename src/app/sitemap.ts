@@ -1,9 +1,18 @@
 import { MetadataRoute } from "next";
+import { ALL_CCAA_SLUGS } from "@/lib/ccaa-content";
 
 const BASE_URL = process.env.NEXTAUTH_URL || "https://baritur.pro";
 
 export default function sitemap(): MetadataRoute.Sitemap {
+  const ccaaPages: MetadataRoute.Sitemap = ALL_CCAA_SLUGS.map((slug) => ({
+    url: `${BASE_URL}/sucesiones/${slug}`,
+    lastModified: new Date(),
+    changeFrequency: "monthly" as const,
+    priority: 0.85,
+  }));
+
   return [
+    ...ccaaPages,
     {
       url: BASE_URL,
       lastModified: new Date(),

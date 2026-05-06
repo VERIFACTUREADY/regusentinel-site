@@ -7,6 +7,7 @@ import {
   type CCAAKey,
   type ParentescoGroup,
 } from "@/lib/isd-calculator";
+import { CCAA_CONTENT } from "@/lib/ccaa-content";
 import { ComparadorClient } from "./comparador-client";
 
 export const metadata: Metadata = {
@@ -236,8 +237,13 @@ export default function ComparadorISDPage() {
                   medium: "bg-amber-100 text-amber-700",
                   low: "bg-red-100 text-red-700",
                 };
+                const ccaaSlug = CCAA_CONTENT[ccaa]?.slug;
                 return (
-                  <div key={ccaa} className={`rounded-lg border p-4 ${tierColors[tier]}`}>
+                  <Link
+                    key={ccaa}
+                    href={ccaaSlug ? `/sucesiones/${ccaaSlug}` : "#"}
+                    className={`rounded-lg border p-4 transition hover:shadow-md ${tierColors[tier]}`}
+                  >
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-semibold text-gray-900 text-sm">{CCAA_LABELS[ccaa]}</span>
                       <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${badgeColors[tier]}`}>
@@ -245,7 +251,8 @@ export default function ComparadorISDPage() {
                       </span>
                     </div>
                     <p className="text-xs text-gray-600 leading-snug line-clamp-2">{b.note}</p>
-                  </div>
+                    <p className="text-[10px] text-gray-500 mt-1 group-hover:underline">Guía completa →</p>
+                  </Link>
                 );
               })}
             </div>
