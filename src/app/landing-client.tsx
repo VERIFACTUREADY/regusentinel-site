@@ -435,6 +435,7 @@ export function LandingClient() {
           <p>Tratamiento de datos conforme al RGPD y la LOPDGDD (LO 3/2018). Marco post-mortem: art. 3.</p>
           <p className="mt-4 space-x-3">
             <Link href="/calculadora-isd" className="text-primary hover:underline">Calculadora ISD</Link>
+            <Link href="/widget" className="text-primary hover:underline">Widget gratis</Link>
             <Link href="/changelog" className="text-primary hover:underline">Changelog</Link>
             <Link href="/legal/privacidad" className="text-primary hover:underline">Privacidad</Link>
             <Link href="/legal/terminos" className="text-primary hover:underline">Terminos</Link>
