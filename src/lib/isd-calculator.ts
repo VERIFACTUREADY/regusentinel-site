@@ -223,6 +223,280 @@ export const CCAA_BONIFICATION_REFERENCE: Record<string, { groups: ParentescoGro
   "País Vasco": [{ groups: ["I", "II"], pct: 0, note: "Régimen foral propio" }],
 };
 
+// ─── Bonificaciones autonómicas progresivas (vigentes 2025) ──────────────
+// A diferencia de CCAA_BONIFICATION_REFERENCE (porcentaje plano), aquí se
+// modelan las CCAA cuya bonificación depende de la base liquidable o del
+// grupo III. Lo usa la calculadora pública para mostrar resultados realistas
+// sin que el usuario tenga que conocer los porcentajes.
+
+export type CCAAKey =
+  | "ANDALUCIA" | "ARAGON" | "ASTURIAS" | "BALEARES" | "CANARIAS"
+  | "CANTABRIA" | "CASTILLA_LEON" | "CASTILLA_LA_MANCHA" | "CATALUNA"
+  | "EXTREMADURA" | "GALICIA" | "LA_RIOJA" | "MADRID" | "MURCIA"
+  | "NAVARRA" | "PAIS_VASCO" | "VALENCIA";
+
+export const CCAA_LABELS: Record<CCAAKey, string> = {
+  ANDALUCIA: "Andalucía",
+  ARAGON: "Aragón",
+  ASTURIAS: "Asturias",
+  BALEARES: "Islas Baleares",
+  CANARIAS: "Canarias",
+  CANTABRIA: "Cantabria",
+  CASTILLA_LEON: "Castilla y León",
+  CASTILLA_LA_MANCHA: "Castilla-La Mancha",
+  CATALUNA: "Cataluña",
+  EXTREMADURA: "Extremadura",
+  GALICIA: "Galicia",
+  LA_RIOJA: "La Rioja",
+  MADRID: "Madrid",
+  MURCIA: "Murcia",
+  NAVARRA: "Navarra",
+  PAIS_VASCO: "País Vasco",
+  VALENCIA: "Comunidad Valenciana",
+};
+
+interface CCAARule {
+  /** Bonificación aplicada a la cuota tributaria (0-100) según grupo y base liquidable. */
+  bonification: (group: ParentescoGroup, baseLiquidable: number) => number;
+  /** Texto explicativo mostrado al usuario. */
+  note: (group: ParentescoGroup) => string;
+  /** True si la CCAA tiene régimen foral propio: cálculo estatal es orientativo. */
+  foralRegime?: boolean;
+}
+
+const CCAA_RULES: Record<CCAAKey, CCAARule> = {
+  ANDALUCIA: {
+    bonification: (g) => (g === "I" || g === "II" ? 99 : 0),
+    note: (g) => g === "I" || g === "II"
+      ? "Andalucía bonifica el 99% de la cuota para cónyuge, descendientes y ascendientes."
+      : "Andalucía no bonifica grupos III-IV; se aplica la cuota estatal completa.",
+  },
+  ARAGON: {
+    bonification: (g, b) => g === "I" ? 100 : g === "II" && b <= 100000 ? 65 : 0,
+    note: (g) => g === "I"
+      ? "Aragón bonifica el 100% para descendientes menores de 21 años."
+      : g === "II"
+      ? "Aragón aplica reducción del 65% en grupo II hasta 100.000€ de base liquidable."
+      : "Aragón no bonifica grupos III-IV.",
+  },
+  ASTURIAS: {
+    bonification: () => 0,
+    note: () => "Asturias mantiene tarifa propia y reducciones por discapacidad/vivienda; no aplica bonificación general en cuota.",
+  },
+  BALEARES: {
+    bonification: (g) => g === "I" || g === "II" ? 100 : g === "III" ? 50 : 0,
+    note: (g) => g === "I" || g === "II"
+      ? "Baleares bonifica el 100% para cónyuge, descendientes y ascendientes."
+      : g === "III"
+      ? "Baleares bonifica el 50% para hermanos, tíos y sobrinos."
+      : "Baleares no bonifica grupo IV.",
+  },
+  CANARIAS: {
+    bonification: (g, b) => g === "I" || g === "II" ? 99.9 : g === "III" && b <= 55000 ? 99.9 : 0,
+    note: (g) => g === "I" || g === "II"
+      ? "Canarias bonifica el 99,9% para cónyuge, descendientes y ascendientes."
+      : g === "III"
+      ? "Canarias bonifica el 99,9% en grupo III sólo si la base liquidable ≤ 55.000€."
+      : "Canarias no bonifica grupo IV.",
+  },
+  CANTABRIA: {
+    bonification: (g, b) => {
+      if (g === "I" || g === "II") return b <= 100000 ? 100 : 90;
+      if (g === "III") return 90;
+      return 0;
+    },
+    note: (g) => g === "I" || g === "II"
+      ? "Cantabria bonifica el 100% hasta 100.000€ y el 90% sobre el exceso, para cónyuge y descendientes."
+      : g === "III"
+      ? "Cantabria bonifica el 90% para hermanos, tíos y sobrinos."
+      : "Cantabria no bonifica grupo IV.",
+  },
+  CASTILLA_LEON: {
+    bonification: (g) => g === "I" || g === "II" ? 99 : 0,
+    note: (g) => g === "I" || g === "II"
+      ? "Castilla y León bonifica el 99% para cónyuge, descendientes y ascendientes (con condiciones sobre patrimonio preexistente)."
+      : "Castilla y León no bonifica grupos III-IV.",
+  },
+  CASTILLA_LA_MANCHA: {
+    bonification: (g, b) => {
+      if (g !== "I" && g !== "II") return 0;
+      if (b <= 175000) return 100;
+      if (b <= 225000) return 95;
+      if (b <= 275000) return 90;
+      if (b <= 300000) return 85;
+      return 80;
+    },
+    note: (g) => g === "I" || g === "II"
+      ? "Castilla-La Mancha aplica bonificación escalada del 80% al 100% según la base liquidable."
+      : "Castilla-La Mancha no bonifica grupos III-IV.",
+  },
+  CATALUNA: {
+    bonification: (g, b) => {
+      if (g !== "I" && g !== "II") return 0;
+      if (b <= 100000) return 99;
+      if (b <= 200000) return 97;
+      if (b <= 500000) return 90;
+      if (b <= 1000000) return 70;
+      return 50;
+    },
+    note: (g) => g === "I" || g === "II"
+      ? "Cataluña aplica bonificación inversa progresiva: 99% hasta 100.000€, decrece hasta el 50% en bases altas."
+      : "Cataluña no bonifica grupos III-IV.",
+  },
+  EXTREMADURA: {
+    bonification: (g) => g === "I" || g === "II" ? 99 : 0,
+    note: (g) => g === "I" || g === "II"
+      ? "Extremadura bonifica el 99% para cónyuge, descendientes y ascendientes."
+      : "Extremadura no bonifica grupos III-IV.",
+  },
+  GALICIA: {
+    bonification: (g, b) => g === "I" ? 100 : g === "II" && b <= 1000000 ? 99 : 0,
+    note: (g) => g === "I"
+      ? "Galicia bonifica el 100% para descendientes menores de 21 años."
+      : g === "II"
+      ? "Galicia bonifica el 99% para cónyuge y descendientes hasta 1.000.000€ de base liquidable."
+      : "Galicia no bonifica grupos III-IV.",
+  },
+  LA_RIOJA: {
+    bonification: (g) => g === "I" || g === "II" ? 99 : 0,
+    note: (g) => g === "I" || g === "II"
+      ? "La Rioja bonifica el 99% para cónyuge, descendientes y ascendientes."
+      : "La Rioja no bonifica grupos III-IV.",
+  },
+  MADRID: {
+    bonification: (g) => g === "I" || g === "II" ? 99 : g === "III" ? 25 : 0,
+    note: (g) => g === "I" || g === "II"
+      ? "Madrid bonifica el 99% para cónyuge, descendientes y ascendientes."
+      : g === "III"
+      ? "Madrid bonifica el 25% para hermanos, tíos y sobrinos por consanguinidad."
+      : "Madrid no bonifica grupo IV.",
+  },
+  MURCIA: {
+    bonification: (g) => g === "I" || g === "II" ? 99 : g === "III" ? 50 : 0,
+    note: (g) => g === "I" || g === "II"
+      ? "Murcia bonifica el 99% para cónyuge, descendientes y ascendientes."
+      : g === "III"
+      ? "Murcia bonifica el 50% para hermanos, tíos y sobrinos."
+      : "Murcia no bonifica grupo IV.",
+  },
+  NAVARRA: {
+    bonification: () => 0,
+    note: () => "Navarra tiene régimen foral propio (Ley Foral 13/1992). Cónyuge y ascendientes/descendientes: tipos del 0,8% al 16%. Esta calculadora aplica tarifa estatal como referencia; consulte con la Hacienda Foral.",
+    foralRegime: true,
+  },
+  PAIS_VASCO: {
+    bonification: () => 0,
+    note: () => "País Vasco tiene Concierto Económico (normativa foral propia en Álava, Bizkaia, Gipuzkoa). Cónyuge y descendientes tienen exenciones generalizadas. Cálculo orientativo según tarifa estatal.",
+    foralRegime: true,
+  },
+  VALENCIA: {
+    bonification: (g) => g === "I" || g === "II" ? 99 : 0,
+    note: (g) => g === "I" || g === "II"
+      ? "Comunidad Valenciana bonifica el 99% para cónyuge, descendientes y ascendientes (Decreto-ley 6/2023)."
+      : "Comunidad Valenciana no bonifica grupos III-IV.",
+  },
+};
+
+export function getCCAABonification(ccaa: CCAAKey, group: ParentescoGroup, baseLiquidable: number): { pct: number; note: string; foralRegime: boolean } {
+  const r = CCAA_RULES[ccaa];
+  return { pct: r.bonification(group, baseLiquidable), note: r.note(group), foralRegime: !!r.foralRegime };
+}
+
+export const PROVINCIA_TO_CCAA: Record<string, CCAAKey> = {
+  // Andalucía
+  almeria: "ANDALUCIA", cadiz: "ANDALUCIA", cordoba: "ANDALUCIA",
+  granada: "ANDALUCIA", huelva: "ANDALUCIA", jaen: "ANDALUCIA",
+  malaga: "ANDALUCIA", sevilla: "ANDALUCIA",
+  // Aragón
+  huesca: "ARAGON", teruel: "ARAGON", zaragoza: "ARAGON",
+  // Asturias
+  asturias: "ASTURIAS",
+  // Baleares
+  baleares: "BALEARES", "illes-balears": "BALEARES",
+  // Canarias
+  "las-palmas": "CANARIAS", "santa-cruz-de-tenerife": "CANARIAS",
+  // Cantabria
+  cantabria: "CANTABRIA",
+  // Castilla y León
+  avila: "CASTILLA_LEON", burgos: "CASTILLA_LEON", leon: "CASTILLA_LEON",
+  palencia: "CASTILLA_LEON", salamanca: "CASTILLA_LEON",
+  segovia: "CASTILLA_LEON", soria: "CASTILLA_LEON",
+  valladolid: "CASTILLA_LEON", zamora: "CASTILLA_LEON",
+  // Castilla-La Mancha
+  albacete: "CASTILLA_LA_MANCHA", "ciudad-real": "CASTILLA_LA_MANCHA",
+  cuenca: "CASTILLA_LA_MANCHA", guadalajara: "CASTILLA_LA_MANCHA",
+  toledo: "CASTILLA_LA_MANCHA",
+  // Cataluña
+  barcelona: "CATALUNA", girona: "CATALUNA", lleida: "CATALUNA",
+  tarragona: "CATALUNA",
+  // Extremadura
+  badajoz: "EXTREMADURA", caceres: "EXTREMADURA",
+  // Galicia
+  "a-coruna": "GALICIA", lugo: "GALICIA", ourense: "GALICIA",
+  pontevedra: "GALICIA",
+  // La Rioja
+  "la-rioja": "LA_RIOJA",
+  // Madrid
+  madrid: "MADRID",
+  // Murcia
+  murcia: "MURCIA",
+  // Navarra
+  navarra: "NAVARRA",
+  // País Vasco
+  alava: "PAIS_VASCO", araba: "PAIS_VASCO",
+  guipuzcoa: "PAIS_VASCO", gipuzkoa: "PAIS_VASCO",
+  vizcaya: "PAIS_VASCO", bizkaia: "PAIS_VASCO",
+  // Valencia
+  alicante: "VALENCIA", castellon: "VALENCIA", valencia: "VALENCIA",
+};
+
+export interface CCAAComparison {
+  ccaa: CCAAKey;
+  label: string;
+  cuotaAPagar: number;
+  bonificacionPct: number;
+  foralRegime: boolean;
+}
+
+/**
+ * Calcula el ISD para una CCAA aplicando su bonificación automáticamente.
+ * Usa el motor existente y el dataset de bonificaciones por CCAA.
+ */
+export function calculateISDForCCAA(ccaa: CCAAKey, baseInputs: Omit<ISDInputs, "ccaaBonificationPct">): ISDResult {
+  // Primer pase para conocer la base liquidable y aplicar la bonificación correcta
+  const reductions = calculateReducciones(baseInputs);
+  const baseLiquidable = Math.max(0, baseInputs.baseImponible - reductions.total);
+  const { pct } = getCCAABonification(ccaa, baseInputs.group, baseLiquidable);
+  return calculateISD({ ...baseInputs, ccaaBonificationPct: pct });
+}
+
+/**
+ * Compara la cuota a pagar entre todas las CCAAs para los mismos inputs.
+ * Útil para mostrar al usuario cuánto cambia el impuesto según residencia fiscal.
+ */
+export function compareCCAAs(baseInputs: Omit<ISDInputs, "ccaaBonificationPct">): CCAAComparison[] {
+  const all = Object.keys(CCAA_LABELS) as CCAAKey[];
+  return all
+    .map((ccaa) => {
+      const reductions = calculateReducciones(baseInputs);
+      const baseLiquidable = Math.max(0, baseInputs.baseImponible - reductions.total);
+      const { pct, foralRegime } = getCCAABonification(ccaa, baseInputs.group, baseLiquidable);
+      const result = calculateISD({ ...baseInputs, ccaaBonificationPct: pct });
+      return {
+        ccaa,
+        label: CCAA_LABELS[ccaa],
+        cuotaAPagar: result.cuotaAPagar,
+        bonificacionPct: pct,
+        foralRegime,
+      };
+    })
+    .sort((a, b) => a.cuotaAPagar - b.cuotaAPagar);
+}
+
+export function formatEUR(n: number): string {
+  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 2 }).format(n);
+}
+
 export function getReferenceBonification(province: string | null | undefined, group: ParentescoGroup): number {
   if (!province) return 0;
   // Simple province → CCAA mapping for the most common cases

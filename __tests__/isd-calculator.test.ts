@@ -5,6 +5,11 @@ import {
   calculateReducciones,
   getCoeficienteMultiplicador,
   getReferenceBonification,
+  getCCAABonification,
+  calculateISDForCCAA,
+  compareCCAAs,
+  CCAA_LABELS,
+  PROVINCIA_TO_CCAA,
 } from "../src/lib/isd-calculator";
 
 describe("calculateCuotaIntegra (state scale)", () => {
@@ -200,5 +205,117 @@ describe("getReferenceBonification", () => {
 
   it("maps Galician provinces", () => {
     expect(getReferenceBonification("Pontevedra", "II")).toBe(99);
+  });
+});
+
+describe("getCCAABonification (progressive autonomic rules)", () => {
+  it("Madrid: 99% for groups I-II, 25% for III, 0% for IV", () => {
+    expect(getCCAABonification("MADRID", "I", 100000).pct).toBe(99);
+    expect(getCCAABonification("MADRID", "II", 500000).pct).toBe(99);
+    expect(getCCAABonification("MADRID", "III", 100000).pct).toBe(25);
+    expect(getCCAABonification("MADRID", "IV", 100000).pct).toBe(0);
+  });
+
+  it("Cataluña: progressive inverse bonification by base", () => {
+    expect(getCCAABonification("CATALUNA", "II", 50000).pct).toBe(99);
+    expect(getCCAABonification("CATALUNA", "II", 150000).pct).toBe(97);
+    expect(getCCAABonification("CATALUNA", "II", 400000).pct).toBe(90);
+    expect(getCCAABonification("CATALUNA", "II", 800000).pct).toBe(70);
+    expect(getCCAABonification("CATALUNA", "II", 2000000).pct).toBe(50);
+  });
+
+  it("Castilla-La Mancha: scaled bonification", () => {
+    expect(getCCAABonification("CASTILLA_LA_MANCHA", "II", 100000).pct).toBe(100);
+    expect(getCCAABonification("CASTILLA_LA_MANCHA", "II", 200000).pct).toBe(95);
+    expect(getCCAABonification("CASTILLA_LA_MANCHA", "II", 270000).pct).toBe(90);
+    expect(getCCAABonification("CASTILLA_LA_MANCHA", "II", 290000).pct).toBe(85);
+    expect(getCCAABonification("CASTILLA_LA_MANCHA", "II", 500000).pct).toBe(80);
+  });
+
+  it("Cantabria: 100% up to 100k, 90% above", () => {
+    expect(getCCAABonification("CANTABRIA", "II", 50000).pct).toBe(100);
+    expect(getCCAABonification("CANTABRIA", "II", 150000).pct).toBe(90);
+  });
+
+  it("Foral regimes flagged", () => {
+    expect(getCCAABonification("NAVARRA", "II", 100000).foralRegime).toBe(true);
+    expect(getCCAABonification("PAIS_VASCO", "II", 100000).foralRegime).toBe(true);
+    expect(getCCAABonification("MADRID", "II", 100000).foralRegime).toBe(false);
+  });
+
+  it("returns explanatory note per CCAA and group", () => {
+    const r = getCCAABonification("MADRID", "II", 100000);
+    expect(r.note.length).toBeGreaterThan(20);
+    expect(r.note.toLowerCase()).toContain("madrid");
+  });
+});
+
+describe("calculateISDForCCAA", () => {
+  it("Madrid grupo II 200k → casi 0 cuota a pagar (99% bonificación)", () => {
+    const r = calculateISDForCCAA("MADRID", {
+      group: "II", baseImponible: 200000, preexistingPatrimony: 0,
+    });
+    expect(r.cuotaAPagar).toBeLessThan(500);
+    expect(r.cuotaTributaria).toBeGreaterThan(20000);
+  });
+
+  it("Asturias grupo II 200k → cuota completa (sin bonificación)", () => {
+    const r = calculateISDForCCAA("ASTURIAS", {
+      group: "II", baseImponible: 200000, preexistingPatrimony: 0,
+    });
+    expect(r.cuotaAPagar).toBe(r.cuotaTributaria);
+    expect(r.bonificacionCcaa).toBe(0);
+  });
+});
+
+describe("compareCCAAs", () => {
+  it("returns 17 CCAAs sorted by cuota a pagar", () => {
+    const list = compareCCAAs({
+      group: "II", baseImponible: 200000, preexistingPatrimony: 0,
+    });
+    expect(list).toHaveLength(17);
+    for (let i = 1; i < list.length; i++) {
+      expect(list[i].cuotaAPagar).toBeGreaterThanOrEqual(list[i - 1].cuotaAPagar);
+    }
+  });
+
+  it("includes Madrid among the cheapest for groups I-II", () => {
+    const list = compareCCAAs({
+      group: "II", baseImponible: 200000, preexistingPatrimony: 0,
+    });
+    const madrid = list.find((c) => c.ccaa === "MADRID");
+    expect(madrid).toBeDefined();
+    expect(madrid!.cuotaAPagar).toBeLessThan(500);
+  });
+
+  it("Asturias is among the most expensive (no general bonification)", () => {
+    const list = compareCCAAs({
+      group: "II", baseImponible: 200000, preexistingPatrimony: 0,
+    });
+    const asturias = list.find((c) => c.ccaa === "ASTURIAS");
+    expect(asturias!.cuotaAPagar).toBeGreaterThan(20000);
+  });
+
+  it("provides label for every CCAA", () => {
+    const list = compareCCAAs({
+      group: "II", baseImponible: 200000, preexistingPatrimony: 0,
+    });
+    list.forEach((c) => {
+      expect(CCAA_LABELS[c.ccaa]).toBeDefined();
+      expect(c.label).toBe(CCAA_LABELS[c.ccaa]);
+    });
+  });
+});
+
+describe("PROVINCIA_TO_CCAA mapping", () => {
+  it("maps known provinces to their CCAA", () => {
+    expect(PROVINCIA_TO_CCAA["madrid"]).toBe("MADRID");
+    expect(PROVINCIA_TO_CCAA["barcelona"]).toBe("CATALUNA");
+    expect(PROVINCIA_TO_CCAA["sevilla"]).toBe("ANDALUCIA");
+    expect(PROVINCIA_TO_CCAA["bizkaia"]).toBe("PAIS_VASCO");
+  });
+
+  it("does not map invalid province", () => {
+    expect(PROVINCIA_TO_CCAA["narnia"]).toBeUndefined();
   });
 });
