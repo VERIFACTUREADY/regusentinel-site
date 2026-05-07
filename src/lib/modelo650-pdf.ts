@@ -174,7 +174,7 @@ function fieldRow(
   text(page, font, label, MARGIN + 4, y + 11, 7.5, GRAY_MID, "left", labelW - 8);
 
   if (!value || value === "—") {
-    const msg = pending ? "⬤ Pendiente" : "—";
+    const msg = pending ? "* Pendiente" : "-";
     text(page, font, msg, MARGIN + labelW + 5, y + 11, 7.5, pending ? AMBER : GRAY_MID);
   } else {
     text(page, boldFont, value, MARGIN + labelW + 5, y + 11, 7.5, GRAY_DARK, "left", valueW - 8);
@@ -204,7 +204,7 @@ function twoColFields(
       rect(page, MARGIN + half + 4 + labelW + 1, y, valueW, 16, WHITE, GRAY_LIGHT, 0.3);
       text(page, font, b[0], MARGIN + half + 4 + 4, y + 11, 7.5, GRAY_MID, "left", labelW - 8);
       if (!b[1]) {
-        text(page, font, bPending ? "⬤ Pendiente" : "—", MARGIN + half + 4 + labelW + 5, y + 11, 7.5, bPending ? AMBER : GRAY_MID);
+        text(page, font, bPending ? "* Pendiente" : "-", MARGIN + half + 4 + labelW + 5, y + 11, 7.5, bPending ? AMBER : GRAY_MID);
       } else {
         text(page, boldFont, b[1], MARGIN + half + 4 + labelW + 5, y + 11, 7.5, GRAY_DARK, "left", valueW - 8);
       }
@@ -257,7 +257,7 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
   y = 60;
   rect(p1, 0, y, PAGE_W, 18, AMBER_BG);
   rect(p1, 0, y, 3, 18, AMBER);
-  text(p1, bold, "⚠  DOCUMENTO DE TRABAJO — NO SUSTITUYE AL MODELO OFICIAL DE LA AEAT", MARGIN + 6, y + 12, 7.5, rgb(0.5, 0.35, 0));
+  text(p1, bold, "AVISO  -  DOCUMENTO DE TRABAJO  -  NO SUSTITUYE AL MODELO OFICIAL DE LA AEAT", MARGIN + 6, y + 12, 7.5, rgb(0.5, 0.35, 0));
   y += 18;
 
   y += 8;
@@ -290,7 +290,7 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
 
   if (ccaa) {
     rect(p1, MARGIN, y, INNER_W, 20, GREEN_BG, rgb(0.1, 0.55, 0.2), 0.5);
-    text(p1, bold, `✓  ${ccaaLabel}`, MARGIN + 8, y + 13, 9, GREEN);
+    text(p1, bold, `[OK]  ${ccaaLabel}`, MARGIN + 8, y + 13, 9, GREEN);
     const bonif = getCCAABonification(ccaa, "II", 0);
     if (bonif.foralRegime) {
       text(p1, font, "Régimen foral — Hacienda Foral competente. No aplica tarifa estatal.", MARGIN + 8, y + 13, 8, GREEN);
@@ -298,7 +298,7 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
     y += 20;
   } else {
     rect(p1, MARGIN, y, INNER_W, 18, AMBER_BG, AMBER, 0.5);
-    text(p1, bold, "⬤  Provincia no especificada — determinar CCAA para calcular bonificación", MARGIN + 8, y + 12, 8, rgb(0.5, 0.35, 0));
+    text(p1, bold, "*  Provincia no especificada - determinar CCAA para calcular bonificacion", MARGIN + 8, y + 12, 8, rgb(0.5, 0.35, 0));
     y += 18;
   }
 
@@ -322,7 +322,7 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
     ], y);
   } else {
     rect(p1, MARGIN, y, INNER_W, 18, AMBER_BG, AMBER, 0.5);
-    text(p1, bold, "⬤  Datos del contacto/heredero no registrados en el expediente", MARGIN + 8, y + 12, 8, rgb(0.5, 0.35, 0));
+    text(p1, bold, "*  Datos del contacto/heredero no registrados en el expediente", MARGIN + 8, y + 12, 8, rgb(0.5, 0.35, 0));
     y += 18;
   }
 
@@ -402,7 +402,7 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
       badge(p2, font, g.note, MARGIN + INNER_W * 0.32, y + 1, rgb(0.92, 0.98, 0.93), GREEN);
     }
     text(p2, font, "Valor declarado (€)", MARGIN + INNER_W * 0.55 + 4, y + 10, 7, GRAY_MID);
-    text(p2, font, "⬤ Pendiente", MARGIN + INNER_W * 0.77 + 6, y + 10, 7, AMBER);
+    text(p2, font, "* Pendiente", MARGIN + INNER_W * 0.77 + 6, y + 10, 7, AMBER);
     y += 15;
   }
 
@@ -414,7 +414,7 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
   if (input.estimatedInheritanceValue) {
     text(p2, bold, formatEUR(input.estimatedInheritanceValue) + "  (estimado)", PAGE_W - MARGIN - 4, y + 11, 8, BLUE, "right");
   } else {
-    text(p2, font, "⬤ Pendiente de valoración", PAGE_W - MARGIN - 4, y + 11, 8, AMBER, "right");
+    text(p2, font, "* Pendiente de valoracion", PAGE_W - MARGIN - 4, y + 11, 8, AMBER, "right");
   }
   y += 16 + 6;
 
@@ -478,11 +478,11 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
 
     y += 80 + 4;
     rect(p2, MARGIN, y, INNER_W, 13, AMBER_BG);
-    text(p2, font, "⚠ Cálculo orientativo para grupo II sin reducciones. Revisar grupo real, patrimonio preexistente y reducciones aplicables.", MARGIN + 6, y + 9, 7, rgb(0.5, 0.35, 0));
+    text(p2, font, "AVISO: Calculo orientativo para grupo II sin reducciones. Revisar grupo real, patrimonio preexistente y reducciones aplicables.", MARGIN + 6, y + 9, 7, rgb(0.5, 0.35, 0));
     y += 13;
   } else {
     rect(p2, MARGIN, y, INNER_W, 22, AMBER_BG, AMBER, 0.5);
-    text(p2, bold, "⬤ Pendiente: añadir provincia y valor estimado de la herencia para calcular cuota", MARGIN + 8, y + 15, 8, rgb(0.5, 0.35, 0));
+    text(p2, bold, "* Pendiente: anyadir provincia y valor estimado de la herencia para calcular cuota", MARGIN + 8, y + 15, 8, rgb(0.5, 0.35, 0));
     y += 22;
   }
 
@@ -508,7 +508,7 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
   ].filter(Boolean) as string[];
 
   for (const doc of docs) {
-    text(p2, font, "☐  " + doc, MARGIN + 4, y + 10, 7.5, GRAY_DARK);
+    text(p2, font, "[ ]  " + doc, MARGIN + 4, y + 10, 7.5, GRAY_DARK);
     y += 14;
   }
 
