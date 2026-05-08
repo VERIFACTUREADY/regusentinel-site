@@ -444,7 +444,9 @@ export function LandingClient() {
             <Link href="/para-abogados" className="text-primary hover:underline">Abogados</Link>
             <Link href="/calculadora-roi" className="text-primary hover:underline">Calculadora ROI</Link>
             <Link href="/comparativa" className="text-primary hover:underline">Comparativa</Link>
-            <Link href="/calculadora-isd" className="text-primary hover:underline">Calculadora ISD</Link>
+            <Link href="/calculadora-isd" className="text-primary hover:underline">Calculadora Sucesiones</Link>
+            <Link href="/calculadora-donaciones" className="text-primary hover:underline">Calculadora Donaciones</Link>
+            <Link href="/donaciones" className="text-primary hover:underline">Modelo 651</Link>
             <Link href="/comparador-isd" className="text-primary hover:underline">Comparador por CCAA</Link>
             <Link href="/borrador-modelo650" className="text-primary hover:underline">Borrador 650 gratis</Link>
             <Link href="/widget" className="text-primary hover:underline">Widget gratis</Link>
