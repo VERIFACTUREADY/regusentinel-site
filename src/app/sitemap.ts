@@ -1,6 +1,7 @@
 import { MetadataRoute } from "next";
 import { ALL_CCAA_SLUGS } from "@/lib/ccaa-content";
 import { BLOG_POSTS } from "@/lib/blog-posts";
+import { ALL_VERTICAL_SLUGS } from "@/lib/vertical-landings";
 
 const BASE_URL = process.env.NEXTAUTH_URL || "https://baritur.pro";
 
@@ -19,9 +20,17 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.75,
   }));
 
+  const verticalPages: MetadataRoute.Sitemap = ALL_VERTICAL_SLUGS.map((slug) => ({
+    url: `${BASE_URL}/para-${slug}`,
+    lastModified: new Date(),
+    changeFrequency: "monthly" as const,
+    priority: 0.9,
+  }));
+
   return [
     ...ccaaPages,
     ...blogPages,
+    ...verticalPages,
     {
       url: BASE_URL,
       lastModified: new Date(),

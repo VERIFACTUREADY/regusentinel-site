@@ -439,6 +439,9 @@ export function LandingClient() {
           <p className="mt-4 space-x-3">
             <Link href="/recursos" className="text-primary hover:underline">Recursos</Link>
             <Link href="/blog" className="text-primary hover:underline">Blog</Link>
+            <Link href="/para-funerarias" className="text-primary hover:underline">Funerarias</Link>
+            <Link href="/para-gestorias" className="text-primary hover:underline">Gestorías</Link>
+            <Link href="/para-abogados" className="text-primary hover:underline">Abogados</Link>
             <Link href="/calculadora-roi" className="text-primary hover:underline">Calculadora ROI</Link>
             <Link href="/comparativa" className="text-primary hover:underline">Comparativa</Link>
             <Link href="/calculadora-isd" className="text-primary hover:underline">Calculadora ISD</Link>

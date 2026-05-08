@@ -511,6 +511,294 @@ export const BLOG_POSTS: BlogPost[] = [
       },
     ],
   },
+
+  {
+    slug: "que-es-grupo-parentesco-isd",
+    title: "Grupos de parentesco en el Impuesto de Sucesiones: I, II, III y IV",
+    description:
+      "Cómo se clasifica el parentesco en el ISD según el art. 20 de la Ley 29/1987 y por qué determina cuánto pagas. Ejemplos de cada grupo con cifras.",
+    publishedAt: "2025-01-22",
+    category: "Fiscalidad",
+    tags: ["grupos parentesco", "isd", "art 20", "ley 29/1987"],
+    readingMinutes: 5,
+    lead: "El parentesco con el causante es el factor que más influye en cuánto se paga de Impuesto de Sucesiones. La Ley 29/1987 los clasifica en 4 grupos, cada uno con reducciones, coeficientes multiplicadores y bonificaciones autonómicas distintas.",
+    blocks: [
+      { type: "h2", text: "Marco legal: art. 20.2 Ley 29/1987" },
+      {
+        type: "p",
+        text: "El art. 20.2 de la Ley 29/1987 del Impuesto sobre Sucesiones y Donaciones establece 4 grupos según el grado de parentesco con el causante. Cada grupo tiene una reducción base distinta y un coeficiente multiplicador propio.",
+      },
+
+      { type: "h2", text: "Grupo I: descendientes y adoptados menores de 21 años" },
+      {
+        type: "p",
+        text: "Hijos, nietos y demás descendientes (incluidos adoptados) menores de 21 años en el momento del fallecimiento. La reducción base es de 15.956,87 € más 3.990,72 € por cada año menos de 21, con un máximo de 47.858,59 €.",
+      },
+      {
+        type: "callout",
+        tone: "info",
+        title: "Coeficiente multiplicador",
+        text: "Para grupo I oscila entre 1,0 y 1,2 según el patrimonio preexistente del heredero. Es el coeficiente más bajo de los 4 grupos.",
+      },
+
+      { type: "h2", text: "Grupo II: descendientes ≥21, cónyuge y ascendientes" },
+      {
+        type: "p",
+        text: "Engloba a hijos y descendientes mayores de 21 años, cónyuge (también pareja de hecho registrada en algunas CCAA), padres y demás ascendientes. La reducción base es de 15.956,87 €. Es el grupo más numeroso y al que aplican la mayoría de bonificaciones autonómicas.",
+      },
+      {
+        type: "p",
+        text: "El coeficiente multiplicador es 1,0 si el patrimonio preexistente del heredero es bajo, hasta 1,2 si es muy alto.",
+      },
+      {
+        type: "callout",
+        tone: "success",
+        title: "Bonificaciones del 99% en grupo II",
+        text: "Madrid, Andalucía, Galicia, Murcia, Castilla y León, Extremadura, La Rioja, Canarias y Comunitat Valenciana aplican el 99% de bonificación a grupo II. Baleares y Cantabria llegan al 100% en algunos tramos.",
+      },
+
+      { type: "h2", text: "Grupo III: colaterales de 2º y 3er grado" },
+      {
+        type: "p",
+        text: "Hermanos, sobrinos, tíos y descendientes/ascendientes por afinidad (suegros, yernos, nueras). La reducción base es de 7.993,46 €.",
+      },
+      {
+        type: "p",
+        text: "El coeficiente multiplicador parte de 1,5882 y puede subir hasta 1,9059 con patrimonio preexistente alto. Casi el doble que el grupo II — la diferencia fiscal con grupo II es enorme.",
+      },
+
+      { type: "h2", text: "Grupo IV: colaterales de 4º grado, parientes lejanos y extraños" },
+      {
+        type: "p",
+        text: "Primos, parientes consanguíneos lejanos y personas sin parentesco con el causante (amigos, cónyuge no registrado en CCAA donde no equivale a matrimonio). No hay reducción base por parentesco.",
+      },
+      {
+        type: "p",
+        text: "El coeficiente multiplicador parte de 2,0 y llega a 2,4 con patrimonio preexistente muy alto. Pagas más del doble que un familiar directo.",
+      },
+
+      { type: "h2", text: "Tabla resumen comparativa" },
+      {
+        type: "ul",
+        items: [
+          "Grupo I (hijos <21): reducción 15.956 € + 3.990 €/año < 21 (tope 47.858 €), coef 1,0-1,2",
+          "Grupo II (hijos ≥21, cónyuge, padres): reducción 15.956 €, coef 1,0-1,2, casi todas las CCAA bonifican al 99%",
+          "Grupo III (hermanos, sobrinos, tíos): reducción 7.993 €, coef 1,5882-1,9059, bonificación residual",
+          "Grupo IV (primos, sin parentesco): sin reducción, coef 2,0-2,4, sin bonificación general",
+        ],
+      },
+
+      { type: "h2", text: "Casos prácticos" },
+      { type: "h3", text: "Hermano que hereda 100.000 € en Madrid (grupo III)" },
+      {
+        type: "p",
+        text: "Reducción: 7.993,46 €. Base liquidable: 92.006,54 €. Cuota íntegra (tarifa estatal): ~10.700 €. Coeficiente 1,5882: cuota tributaria ~17.000 €. Madrid bonifica grupo III al 25% desde 2023, así que cuota a pagar ≈ 12.750 €.",
+      },
+      { type: "h3", text: "Hijo que hereda 100.000 € en Madrid (grupo II)" },
+      {
+        type: "p",
+        text: "Reducción: 15.956,87 €. Base liquidable: 84.043,13 €. Cuota íntegra: ~9.450 €. Coeficiente 1,0: cuota tributaria 9.450 €. Madrid bonifica grupo II al 99%: cuota a pagar ≈ 95 €.",
+      },
+      {
+        type: "p",
+        text: "Diferencia entre grupos II y III por la misma herencia: 12.655 € en Madrid. En CCAA sin bonificación a grupo III, la diferencia puede superar los 16.000 €.",
+      },
+
+      {
+        type: "cta",
+        title: "Calcula tu caso con tu grupo de parentesco",
+        href: "/calculadora-isd",
+        label: "Abrir calculadora →",
+      },
+    ],
+  },
+
+  {
+    slug: "como-evitar-recargo-modelo-650-fuera-plazo",
+    title: "Cómo evitar el recargo del 5-20% si presentas el Modelo 650 fuera de plazo",
+    description:
+      "Estrategias para reducir el coste fiscal cuando se va a presentar el Impuesto de Sucesiones fuera del plazo de 6 meses: prórroga, autoliquidación parcial y regularización.",
+    publishedAt: "2025-01-25",
+    category: "Plazos",
+    tags: ["modelo 650", "recargo", "fuera plazo", "lgt 27"],
+    readingMinutes: 6,
+    lead: "Si te das cuenta de que el plazo de 6 meses del Modelo 650 está vencido o a punto de vencer y la documentación no estará lista, no estás obligado a aceptar un recargo del 20%. Hay tres estrategias para reducir el coste fiscal según en qué momento te encuentres.",
+    blocks: [
+      { type: "h2", text: "Recargos del art. 27 LGT" },
+      {
+        type: "p",
+        text: "Si presentas el Modelo 650 sin requerimiento previo de la Administración pero fuera de plazo, los recargos son:",
+      },
+      {
+        type: "ol",
+        items: [
+          "Hasta 3 meses tarde: 5%",
+          "Entre 3 y 6 meses tarde: 10%",
+          "Entre 6 y 12 meses tarde: 15%",
+          "Más de 12 meses tarde: 20% más intereses de demora desde el final del primer año",
+        ],
+      },
+      {
+        type: "callout",
+        tone: "warning",
+        title: "Recargo del 50% si Hacienda te requiere antes",
+        text: "Si Hacienda te notifica un requerimiento antes de que presentes la autoliquidación, el recargo se eleva al 50% (sanción por infracción tributaria leve). Es fundamental presentarla por iniciativa propia aunque sea tarde.",
+      },
+
+      { type: "h2", text: "Estrategia 1: solicitar prórroga si aún estás en mes 5" },
+      {
+        type: "p",
+        text: "Hasta el último día del quinto mes desde el fallecimiento puedes solicitar una prórroga de 6 meses adicionales. La prórroga aplaza el plazo hasta el mes 12 sin recargo, aunque devenga intereses de demora desde el final del mes 6.",
+      },
+      {
+        type: "p",
+        text: "Cómo: escrito dirigido a la oficina liquidadora competente (CCAA del causante). No se exige justificar la causa: cualquier motivo válido (pendiente de tasación, herederos en disputa, dificultad para reunir documentación) es aceptable.",
+      },
+
+      { type: "h2", text: "Estrategia 2: presentación parcial en plazo y rectificación posterior" },
+      {
+        type: "p",
+        text: "Si tienes la mayor parte de la documentación pero falta algún dato puntual (por ejemplo, valoración pendiente de un inmueble menor o saldo de una cuenta secundaria), presenta la autoliquidación dentro del plazo de 6 meses con los datos disponibles, y solicita una rectificación cuando tengas todo.",
+      },
+      {
+        type: "p",
+        text: "La rectificación al alza no genera recargo si se hace en plazo de 4 años. La rectificación a la baja (quieres que te devuelvan) requiere acreditar el error.",
+      },
+
+      { type: "h2", text: "Estrategia 3: presentación tardía con recargo voluntario" },
+      {
+        type: "p",
+        text: "Si has agotado los plazos de prórroga y la documentación sigue sin estar lista, lo mejor es presentar lo antes posible con un recargo del 5% (hasta el mes 9). Cada mes de retraso adicional aumenta significativamente el recargo.",
+      },
+      {
+        type: "ol",
+        items: [
+          "Antes del mes 9: recargo 5% (sin intereses de demora)",
+          "Mes 9 a 12: recargo 10% (sin intereses de demora)",
+          "Mes 12 a 18: recargo 15% (sin intereses de demora)",
+          "Después del mes 18: recargo 20% más intereses de demora desde el mes 12",
+        ],
+      },
+
+      { type: "h2", text: "Riesgo añadido: pérdida de bonificaciones autonómicas" },
+      {
+        type: "callout",
+        tone: "warning",
+        title: "Algunas CCAA exigen presentación en plazo",
+        text: "En determinadas CCAA y supuestos (reducción por empresa familiar, bonificación de vivienda habitual), la normativa exige que la autoliquidación se presente en plazo para mantener la bonificación. Una presentación tardía puede convertir una cuota de cero euros en una cuota completa. Verifica siempre la normativa de la CCAA del causante.",
+      },
+
+      { type: "h2", text: "Recomendaciones" },
+      {
+        type: "ul",
+        items: [
+          "Marca en el calendario los meses 4 y 5 como hitos de revisión: ¿está todo listo? ¿solicitamos prórroga?",
+          "Si hay cualquier duda sobre tasaciones, escrituras o saldos, solicita la prórroga en el mes 4 sin esperar al 5",
+          "Antes de presentar fuera de plazo, calcula si conviene esperar al pase de tramo (de 5% a 10%) o presentar ya",
+          "Documenta por escrito cualquier comunicación con el cliente sobre los plazos para evitar responsabilidad profesional",
+        ],
+      },
+
+      {
+        type: "cta",
+        title: "Detecta plazos críticos antes de que sea tarde",
+        href: "/borrador-modelo650",
+        label: "Generar borrador con plazos calculados →",
+      },
+    ],
+  },
+
+  {
+    slug: "diferencia-modelo-650-modelo-651",
+    title: "Modelo 650 vs Modelo 651: cuál se usa para herencia y cuál para donación",
+    description:
+      "Cómo distinguir el Modelo 650 (herencia mortis causa) del Modelo 651 (donaciones inter vivos). Cuándo aplica cada uno, plazos y consecuencias de presentar el equivocado.",
+    publishedAt: "2025-01-28",
+    category: "Tramites",
+    tags: ["modelo 650", "modelo 651", "herencia", "donacion"],
+    readingMinutes: 4,
+    lead: "El Impuesto sobre Sucesiones y Donaciones tiene dos modelos distintos según el origen de la transmisión patrimonial: el Modelo 650 para sucesiones mortis causa y el Modelo 651 para donaciones inter vivos. Confundirlos es un error frecuente que puede tener consecuencias fiscales.",
+    blocks: [
+      { type: "h2", text: "Modelo 650: transmisiones mortis causa" },
+      {
+        type: "p",
+        text: "El Modelo 650 se utiliza para autoliquidar el ISD cuando la transmisión patrimonial deriva del fallecimiento del causante. Es el modelo que se presenta tras una herencia, sea testada (con testamento) o intestada (declaración de herederos).",
+      },
+      {
+        type: "ul",
+        items: [
+          "Plazo: 6 meses desde el fallecimiento, prorrogables a 12",
+          "Sujeto pasivo: cada uno de los herederos por su parte",
+          "Aplica reducciones del art. 20 (parentesco, vivienda, seguros, empresa familiar)",
+          "Aplica bonificaciones autonómicas según CCAA del causante",
+        ],
+      },
+
+      { type: "h2", text: "Modelo 651: donaciones inter vivos" },
+      {
+        type: "p",
+        text: "El Modelo 651 se utiliza cuando el donante transmite un bien o derecho a otra persona sin contraprestación, estando ambos vivos. Aplica tanto a dinero como a inmuebles, vehículos, valores y otros derechos.",
+      },
+      {
+        type: "ul",
+        items: [
+          "Plazo: 30 días hábiles desde la donación",
+          "Sujeto pasivo: el donatario (quien recibe)",
+          "Reducciones más limitadas que en sucesiones",
+          "CCAA aplicable: la del donatario para bienes muebles, la de ubicación del inmueble si es donación de inmueble",
+        ],
+      },
+
+      { type: "h2", text: "Diferencias clave" },
+      {
+        type: "callout",
+        tone: "info",
+        title: "Plazo y CCAA aplicable",
+        text: "La diferencia más práctica está en el plazo (6 meses vs 30 días) y en la CCAA aplicable: en el 650 manda la residencia del causante, en el 651 depende del tipo de bien y de la residencia del donatario.",
+      },
+
+      { type: "h2", text: "Cuándo se acumulan donaciones previas a la herencia" },
+      {
+        type: "p",
+        text: "Si el causante hizo donaciones a un heredero en los 4 años previos al fallecimiento, esas donaciones se acumulan a la base imponible de la herencia para evitar planificaciones fraudulentas. Esto exige presentar el Modelo 650 declarando también las donaciones acumulables.",
+      },
+
+      { type: "h2", text: "Casos donde la confusión es frecuente" },
+      { type: "h3", text: "Cesión gratuita del usufructo" },
+      {
+        type: "p",
+        text: "Si en vida el causante cedió el usufructo de un bien al cónyuge y luego este fallece, la consolidación del pleno dominio en el nudo propietario tributa como sucesión (Modelo 650), no como donación.",
+      },
+      { type: "h3", text: "Pareja de hecho con donación previa" },
+      {
+        type: "p",
+        text: "Si se donó un piso a la pareja de hecho hace 6 años (sin acumulable) y luego fallece el donante, la donación ya no se acumula a la herencia. Pero si fue hace 2 años, sí se acumula.",
+      },
+      { type: "h3", text: "Renuncia y posterior donación" },
+      {
+        type: "p",
+        text: "Renunciar a una herencia para que pase a otro familiar y luego este lo done de vuelta: Hacienda puede recalificarlo como herencia directa al supuesto donante para evitar la doble tributación.",
+      },
+
+      { type: "h2", text: "Consecuencias de presentar el modelo equivocado" },
+      {
+        type: "ul",
+        items: [
+          "Si el plazo del modelo correcto ya venció, recargo por presentación fuera de plazo",
+          "Pérdida de reducciones específicas que solo aplican a uno u otro",
+          "Riesgo de comprobación administrativa con sanciones por infracción tributaria",
+          "En caso de inmuebles, problemas en el Registro de la Propiedad para inscribir la titularidad",
+        ],
+      },
+
+      {
+        type: "cta",
+        title: "Calcula la cuota del Modelo 650 para tu herencia",
+        href: "/calculadora-isd",
+        label: "Abrir calculadora →",
+      },
+    ],
+  },
 ];
 
 export function getPostBySlug(slug: string): BlogPost | null {
