@@ -13,6 +13,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.85,
   }));
 
+  const donacionesPages: MetadataRoute.Sitemap = ALL_CCAA_SLUGS.map((slug) => ({
+    url: `${BASE_URL}/donaciones/${slug}`,
+    lastModified: new Date(),
+    changeFrequency: "monthly" as const,
+    priority: 0.85,
+  }));
+
   const blogPages: MetadataRoute.Sitemap = BLOG_POSTS.map((p) => ({
     url: `${BASE_URL}/blog/${p.slug}`,
     lastModified: new Date(p.updatedAt ?? p.publishedAt),
@@ -29,8 +36,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   return [
     ...ccaaPages,
+    ...donacionesPages,
     ...blogPages,
     ...verticalPages,
+    {
+      url: `${BASE_URL}/casos-de-uso`,
+      lastModified: new Date(),
+      changeFrequency: "monthly" as const,
+      priority: 0.85,
+    },
     {
       url: BASE_URL,
       lastModified: new Date(),
