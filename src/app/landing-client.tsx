@@ -449,6 +449,7 @@ export function LandingClient() {
             <Link href="/donaciones" className="text-primary hover:underline">Modelo 651</Link>
             <Link href="/comparador-isd" className="text-primary hover:underline">Comparador por CCAA</Link>
             <Link href="/borrador-modelo650" className="text-primary hover:underline">Borrador 650 gratis</Link>
+            <Link href="/borrador-modelo651" className="text-primary hover:underline">Borrador 651 gratis</Link>
             <Link href="/widget" className="text-primary hover:underline">Widget gratis</Link>
             <Link href="/docs/api" className="text-primary hover:underline">API pública</Link>
             <Link href="/changelog" className="text-primary hover:underline">Changelog</Link>
