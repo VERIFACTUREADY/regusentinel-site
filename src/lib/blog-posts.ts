@@ -799,6 +799,281 @@ export const BLOG_POSTS: BlogPost[] = [
       },
     ],
   },
+
+  {
+    slug: "rgpd-datos-personas-fallecidas-gestoria",
+    title: "RGPD y datos de personas fallecidas: qué puede y qué no puede hacer tu gestoría",
+    description:
+      "Marco legal del tratamiento de datos del causante y los herederos tras un fallecimiento: art. 3 LOPDGDD, derechos ejercitables y obligaciones del despacho.",
+    publishedAt: "2025-01-30",
+    category: "Profesional",
+    tags: ["rgpd", "lopdgdd", "fallecidos", "gestoria", "art 3"],
+    readingMinutes: 7,
+    lead: "El RGPD no protege a las personas fallecidas en sentido estricto, pero el art. 3 de la LOPDGDD (LO 3/2018) introduce reglas específicas que afectan directamente a gestorías, funerarias y abogados que tramitan herencias. Esta es la guía práctica del cumplimiento.",
+    blocks: [
+      { type: "h2", text: "El marco general: art. 3 LOPDGDD" },
+      {
+        type: "p",
+        text: "El art. 3 de la LO 3/2018 establece que las personas vinculadas al fallecido por razones familiares o de hecho, así como sus herederos, pueden ejercer los derechos de acceso, rectificación y supresión sobre los datos del causante, salvo que el propio causante hubiese prohibido expresamente este ejercicio en vida.",
+      },
+      {
+        type: "callout",
+        tone: "info",
+        title: "Conclusión práctica",
+        text: "Los datos del causante no son datos personales en el sentido del RGPD, pero los herederos pueden ejercer derechos sobre ellos. Como gestoría, debes atender estas solicitudes en plazo.",
+      },
+
+      { type: "h2", text: "Datos del causante: tratamiento" },
+      {
+        type: "p",
+        text: "Para tramitar el Modelo 650 y la sucesión, la gestoría procesa una cantidad importante de datos del causante: DNI, fecha de fallecimiento, domicilio, datos bancarios, escrituras, posibles datos de salud (causa de muerte para seguros). Todo ello sin que aplique el RGPD en sentido estricto, pero con las cautelas del art. 3 LOPDGDD.",
+      },
+      { type: "h3", text: "Base de legitimación" },
+      {
+        type: "ul",
+        items: [
+          "Mandato del heredero o albacea (art. 6.1.b RGPD aplicado por analogía al causante)",
+          "Cumplimiento de obligación legal: presentación del Modelo 650 conforme a Ley 29/1987",
+          "Interés legítimo del despacho en gestionar el expediente profesionalmente",
+        ],
+      },
+
+      { type: "h2", text: "Datos de los herederos: RGPD pleno" },
+      {
+        type: "p",
+        text: "A diferencia del causante, los herederos son personas vivas y se les aplica el RGPD íntegramente. Esto implica obligaciones específicas:",
+      },
+      {
+        type: "ol",
+        items: [
+          "Informar al heredero del tratamiento al inicio del expediente (cláusula informativa art. 13 RGPD)",
+          "Recabar consentimiento explícito si aplicas tratamientos no necesarios para el mandato (newsletter, marketing)",
+          "Atender derechos de acceso, rectificación, supresión, oposición y portabilidad en plazo (1 mes desde solicitud, ampliable 2 meses)",
+          "Conservar evidencia documental del cumplimiento (registros de actividades del tratamiento - RAT)",
+        ],
+      },
+
+      { type: "h2", text: "Errores frecuentes en gestorías" },
+      { type: "h3", text: "Compartir información por WhatsApp del despacho" },
+      {
+        type: "p",
+        text: "WhatsApp Business cumple RGPD a efectos de transporte, pero el contenido enviado debe ser proporcional y necesario. Compartir certificados de defunción, DNIs o escrituras por WhatsApp sin un canal cifrado complementario genera responsabilidad para el despacho.",
+      },
+      { type: "h3", text: "Conservar datos del causante indefinidamente" },
+      {
+        type: "p",
+        text: "Aunque los datos del causante no son personales bajo el RGPD, el espíritu del art. 3 LOPDGDD obliga a la minimización. La AEPD recomienda conservar los datos del expediente solo durante los plazos legales (4 años para responsabilidades fiscales, 5 años para contables) y luego destruirlos.",
+      },
+      { type: "h3", text: "Acceso no restringido del equipo" },
+      {
+        type: "p",
+        text: "Cualquier miembro del despacho que no participe activamente en el expediente no debería tener acceso a sus datos. El principio de mínimo privilegio implica RBAC: roles diferenciados, acceso por necesidad y auditoría de las consultas.",
+      },
+
+      { type: "h2", text: "Subencargados del tratamiento" },
+      {
+        type: "p",
+        text: "Si tu gestoría usa software SaaS para tramitar herencias (como BARITUR PRO), ese proveedor es Encargado del Tratamiento según el art. 28 RGPD. Necesitas:",
+      },
+      {
+        type: "ul",
+        items: [
+          "Contrato de Encargo del Tratamiento (DPA) firmado",
+          "Cláusula que el proveedor no use los datos para fines propios",
+          "Listado de subencargados del proveedor (proveedores de hosting, email, etc.)",
+          "Garantías de medidas de seguridad técnicas y organizativas",
+          "Procedimiento de notificación de brechas en menos de 72h",
+        ],
+      },
+
+      { type: "h2", text: "Política de retención" },
+      {
+        type: "p",
+        text: "Define en tu propia política de retención los plazos máximos de conservación de cada tipo de dato. Algunos plazos típicos para una gestoría especializada en herencias:",
+      },
+      {
+        type: "ul",
+        items: [
+          "Documentación del expediente activo: hasta el cierre y archivo",
+          "Modelo 650 presentado y justificantes: 4 años (prescripción fiscal art. 66 LGT)",
+          "Comunicaciones con el cliente: 5 años (responsabilidad contractual)",
+          "Audit trail y logs de acceso: 1 año tras cierre del expediente",
+          "Datos identificativos para emisión de facturas: 6 años (Código de Comercio)",
+        ],
+      },
+
+      { type: "h2", text: "Brechas de seguridad" },
+      {
+        type: "p",
+        text: "Cualquier incidente de seguridad que afecte a datos personales (pérdida de un USB, hackeo del email, acceso no autorizado al software del despacho) debe notificarse a la AEPD en menos de 72 horas y, si supone riesgo alto, también a las personas afectadas. Las multas pueden alcanzar el 4% de la facturación anual.",
+      },
+
+      { type: "h2", text: "Resumen práctico" },
+      {
+        type: "ol",
+        items: [
+          "Mantén actualizado el Registro de Actividades del Tratamiento (RAT)",
+          "Firma DPA con todos los proveedores SaaS que procesan datos en tu nombre",
+          "Aplica el principio de minimización: pide solo lo estrictamente necesario",
+          "Define una política de retención con plazos máximos por tipo de dato",
+          "Forma a tu equipo sobre WhatsApp, email, USB y prácticas de seguridad básicas",
+          "Audit trail con quién accede a qué expediente y cuándo",
+        ],
+      },
+
+      {
+        type: "cta",
+        title: "Software de gestoría con RGPD y audit trail",
+        href: "/seguridad",
+        label: "Ver medidas de BARITUR PRO →",
+      },
+    ],
+  },
+
+  {
+    slug: "ley-29-1987-isd-articulos-clave-gestor",
+    title: "Ley 29/1987 del ISD: los 8 artículos que todo gestor debe dominar",
+    description:
+      "Los 8 artículos de la Ley del Impuesto sobre Sucesiones y Donaciones que todo gestor con expedientes activos debe tener interiorizados, con ejemplos prácticos.",
+    publishedAt: "2025-02-03",
+    category: "Profesional",
+    tags: ["ley 29/1987", "isd", "art 20", "art 22", "doctrina"],
+    readingMinutes: 8,
+    lead: "La Ley 29/1987 del Impuesto sobre Sucesiones y Donaciones tiene 41 artículos. Sin embargo, el 95% de los expedientes que se tramitan en una gestoría se resuelven dominando bien 8 de ellos. Esta es la lista priorizada con ejemplos.",
+    blocks: [
+      { type: "h2", text: "Art. 3: Hecho imponible" },
+      {
+        type: "p",
+        text: "Define qué transmisiones están sujetas al impuesto: adquisiciones mortis causa (a), donaciones inter vivos (b) y percepción de cantidades por contratos de seguro sobre la vida (c). Lo importante: el seguro de vida con beneficiario distinto del contratante tributa por ISD, no por IRPF.",
+      },
+      {
+        type: "callout",
+        tone: "info",
+        title: "Caso típico mal resuelto",
+        text: "Padre contrata seguro de vida en favor de hijo, padre fallece. El hijo cobra el capital. Tributa por ISD (no por IRPF). Olvidar declararlo en el Modelo 650 es un error frecuente que se regulariza con recargos.",
+      },
+
+      { type: "h2", text: "Art. 9: Base imponible (sucesiones)" },
+      {
+        type: "p",
+        text: "La base imponible en sucesiones es el valor neto de la adquisición individual de cada heredero: el valor de los bienes y derechos minorado por las cargas, deudas y gastos deducibles. Conceptos clave del cálculo:",
+      },
+      {
+        type: "ul",
+        items: [
+          "Inmuebles: Valor de Referencia del Catastro como mínimo (Ley 11/2021)",
+          "Saldos bancarios: a la fecha exacta del fallecimiento",
+          "Valores mobiliarios: cotización de cierre del día del fallecimiento",
+          "Vehículos: valoración por el cuadro de la Orden HFP anual",
+          "Ajuar: 3% del caudal hereditario salvo prueba en contrario",
+        ],
+      },
+
+      { type: "h2", text: "Art. 11: Adición de bienes" },
+      {
+        type: "p",
+        text: "Hacienda añade al caudal hereditario determinados bienes que el causante donó o transmitió en los últimos años antes de fallecer, para evitar planificaciones fraudulentas:",
+      },
+      {
+        type: "ul",
+        items: [
+          "Bienes vendidos por el causante en los 4 años previos (presunción a favor de Hacienda)",
+          "Bienes adquiridos a título oneroso por personas próximas en los 4 años previos",
+          "Donaciones de los 5 años previos hechas al heredero (se acumulan a la base liquidable)",
+        ],
+      },
+      {
+        type: "callout",
+        tone: "warning",
+        title: "Riesgo profesional habitual",
+        text: "No revisar las donaciones previas del causante a los herederos en los últimos 5 años es la principal causa de regularizaciones posteriores. La acumulación al ISD puede cambiar significativamente la cuota.",
+      },
+
+      { type: "h2", text: "Art. 13: Deudas deducibles" },
+      {
+        type: "p",
+        text: "El cálculo del caudal hereditario neto admite deducir las siguientes partidas. Conocerlas y aplicarlas correctamente puede reducir miles de euros la base imponible:",
+      },
+      {
+        type: "ol",
+        items: [
+          "Deudas del causante acreditadas documentalmente (hipotecas pendientes, préstamos)",
+          "Gastos del último ítem médico, sepelio y funeral con factura",
+          "Gastos del juicio en interés común si los herederos litigan sobre la herencia",
+          "Determinadas deudas tributarias o con la Seguridad Social del causante",
+        ],
+      },
+
+      { type: "h2", text: "Art. 20: Reducciones de la base imponible" },
+      {
+        type: "p",
+        text: "Es el artículo más importante y más complejo. Establece las reducciones por:",
+      },
+      {
+        type: "ul",
+        items: [
+          "Parentesco (grupos I-IV): de 7.993 € a 47.858 € según grupo",
+          "Discapacidad: hasta 47.858 € (33-65%) o 150.253 € (≥65%)",
+          "Seguros de vida: 9.195,49 € por beneficiario, grupos I y II",
+          "Vivienda habitual del causante: 95% con tope 122.606,47 € por heredero",
+          "Empresa familiar y participaciones: 95% si se cumplen requisitos",
+          "Patrimonio histórico, agrario, y otros casos específicos",
+        ],
+      },
+
+      { type: "h2", text: "Art. 21: Tarifa estatal" },
+      {
+        type: "p",
+        text: "La tarifa progresiva del 7,65% al 34% se aplica a la base liquidable. Las CCAA pueden aprobar tarifas propias (Asturias, Cataluña la tienen) pero la estatal es la subsidiaria.",
+      },
+      {
+        type: "ul",
+        items: [
+          "Hasta 7.993,46 €: 7,65%",
+          "De 7.993 a 15.980 €: 8,50%",
+          "Tramo intermedio: progresivo",
+          "Más de 797.555 €: 34%",
+        ],
+      },
+
+      { type: "h2", text: "Art. 22: Coeficientes multiplicadores" },
+      {
+        type: "p",
+        text: "La cuota íntegra se multiplica por un coeficiente que depende de: (1) el grupo de parentesco y (2) el patrimonio preexistente del heredero. Va de 1,0 (grupo I/II, sin patrimonio) hasta 2,4 (grupo IV, patrimonio muy alto).",
+      },
+      {
+        type: "callout",
+        tone: "warning",
+        title: "Olvidar el coeficiente puede duplicar la cuota",
+        text: "Un hermano (grupo III) que hereda 100.000 € con patrimonio preexistente alto tributa un 90% más que un hijo (grupo II) sin patrimonio. El coeficiente multiplicador es el factor diferencial más infravalorado.",
+      },
+
+      { type: "h2", text: "Art. 32 y 33: Bonificaciones autonómicas" },
+      {
+        type: "p",
+        text: "Aunque no son exactamente los artículos 32-33 originalmente, las bonificaciones autonómicas que se aplican sobre la cuota tributaria son competencia exclusiva de cada CCAA y pueden modificar dramáticamente el resultado final. Madrid bonifica al 99%, Asturias al 0%.",
+      },
+
+      { type: "h2", text: "Recomendaciones para el día a día" },
+      {
+        type: "ol",
+        items: [
+          "Ten siempre a mano una tabla actualizada de bonificaciones por CCAA",
+          "Revisa los 4-5 años previos al fallecimiento para detectar donaciones acumulables",
+          "Aplica TODAS las reducciones del art. 20 antes de calcular la cuota: muchas se olvidan",
+          "Comprueba siempre el coeficiente multiplicador del art. 22 según el patrimonio del heredero",
+          "Para inmuebles, contrasta Valor de Referencia con valor de mercado",
+        ],
+      },
+
+      {
+        type: "cta",
+        title: "Calculadora que aplica todos los artículos automáticamente",
+        href: "/calculadora-isd",
+        label: "Probar calculadora →",
+      },
+    ],
+  },
 ];
 
 export function getPostBySlug(slug: string): BlogPost | null {

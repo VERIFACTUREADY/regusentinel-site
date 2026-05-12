@@ -452,6 +452,8 @@ export function LandingClient() {
             <Link href="/borrador-modelo650" className="text-primary hover:underline">Borrador 650 gratis</Link>
             <Link href="/borrador-modelo651" className="text-primary hover:underline">Borrador 651 gratis</Link>
             <Link href="/plantillas-documentos" className="text-primary hover:underline">Plantillas documentos</Link>
+            <Link href="/seguridad" className="text-primary hover:underline">Seguridad y RGPD</Link>
+            <Link href="/integraciones" className="text-primary hover:underline">Integraciones</Link>
             <Link href="/widget" className="text-primary hover:underline">Widget gratis</Link>
             <Link href="/docs/api" className="text-primary hover:underline">API pública</Link>
             <Link href="/changelog" className="text-primary hover:underline">Changelog</Link>
