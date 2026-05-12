@@ -14,6 +14,8 @@ interface Props {
 export function OnboardingPanel({ steps, completed, total }: Props) {
   const router = useRouter();
   const [dismissing, setDismissing] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [seedError, setSeedError] = useState<string | null>(null);
   const nextStep = steps.find((s) => !s.done);
   const progressPct = Math.round((completed / total) * 100);
 
@@ -21,6 +23,29 @@ export function OnboardingPanel({ steps, completed, total }: Props) {
     setDismissing(true);
     await fetch("/api/onboarding/dismiss", { method: "POST" });
     router.refresh();
+  }
+
+  async function seedSampleCase() {
+    setSeeding(true);
+    setSeedError(null);
+    try {
+      const res = await fetch("/api/onboarding/seed-sample-case", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setSeedError(data?.error ?? "No se pudo crear el expediente de ejemplo");
+        setSeeding(false);
+        return;
+      }
+      const data = await res.json();
+      if (data.caseId) {
+        router.push(`/cases/${data.caseId}`);
+      } else {
+        router.refresh();
+      }
+    } catch {
+      setSeedError("Error de red, intentalo de nuevo");
+      setSeeding(false);
+    }
   }
 
   return (
@@ -109,6 +134,32 @@ export function OnboardingPanel({ steps, completed, total }: Props) {
             )}
           </div>
         ))}
+      </div>
+
+      {/* Sample case shortcut */}
+      <div className="mt-5 pt-5 border-t border-primary/15">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-900">
+              ¿Quieres ver cómo es un expediente real?
+            </p>
+            <p className="text-xs text-gray-600 mt-0.5">
+              Cargamos un caso de ejemplo con causante, heredero, 10 tareas con plazos, Radar ISD activo y todo listo para explorar.
+            </p>
+          </div>
+          <button
+            onClick={seedSampleCase}
+            disabled={seeding}
+            className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/90 disabled:opacity-50 transition whitespace-nowrap"
+          >
+            {seeding ? "Creando..." : "Cargar expediente de ejemplo →"}
+          </button>
+        </div>
+        {seedError && (
+          <p className="mt-2 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded p-2">
+            {seedError}
+          </p>
+        )}
       </div>
     </div>
   );
