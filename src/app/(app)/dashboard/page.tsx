@@ -11,8 +11,10 @@ import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import { CASE_STATUS_COLORS } from "@/lib/constants";
 import { getAiInsights, type AiInsightsData } from "@/lib/ai-insights";
 import { getOrgRiskOverview } from "@/lib/isd-risk-aggregator";
+import { getOrgActionQueue } from "@/lib/action-queue";
 import { BulkAnalyzeButton } from "@/components/dashboard/bulk-analyze-button";
 import { RiskRadarWidget } from "@/components/dashboard/risk-radar-widget";
+import { ActionQueueWidget } from "@/components/dashboard/action-queue-widget";
 import Link from "next/link";
 
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
@@ -202,6 +204,11 @@ export default async function DashboardPage() {
     { totalCasesAnalyzed: 0, countsBySeverity: { critical: 0, warning: 0, info: 0 }, topCases: [], totalActiveAlerts: 0 }
   );
 
+  const actionQueue = await safe(
+    () => getOrgActionQueue(orgId, 8),
+    { items: [], totalCases: 0, countsByUrgency: { critical: 0, high: 0, medium: 0, low: 0 } }
+  );
+
   // In the public demo org surface 3 "try this" shortcuts so prospects
   // get to the wow-moments (urgente case, portal familia, pack banco)
   // in under 30 seconds.
@@ -389,8 +396,9 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* ISD Risk Radar — agregado de todos los expedientes activos */}
-      <div className="mb-8">
+      {/* Plan de acciones + Radar ISD */}
+      <div className="grid lg:grid-cols-2 gap-6 mb-8">
+        <ActionQueueWidget queue={actionQueue} />
         <RiskRadarWidget overview={riskOverview} />
       </div>
 
