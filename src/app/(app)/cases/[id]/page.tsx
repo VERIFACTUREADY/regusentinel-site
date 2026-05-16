@@ -6,6 +6,7 @@ import { generateBankPack } from "@/lib/bank-pack";
 import { CASE_STATUS_COLORS, TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/constants";
 import { IsdRisksBanner } from "@/components/isd-risks-banner";
 import { CaseHealthCard } from "@/components/case-health-card";
+import { CaseDocumentGenerator } from "@/components/case-document-generator";
 const statuses = ["INTAKE", "VALIDATION", "IN_PROGRESS", "PENDING_DOCS", "READY_TO_SEND", "SENT", "FOLLOW_UP", "CLOSED", "ARCHIVED"];
 const taskStatuses = ["PENDING", "IN_PROGRESS", "BLOCKED", "READY", "APPROVED", "DONE", "SKIPPED"];
 
@@ -2453,6 +2454,7 @@ El equipo de gestión`;
 
       {tab === "export" && (
         <div className="space-y-4">
+          <CaseDocumentGenerator caseId={caseId} />
           <div className="bg-white p-6 rounded-lg border">
             <h3 className="font-semibold mb-1">Borrador Modelo 650</h3>
             <p className="text-sm text-gray-500 mb-4">
