@@ -448,6 +448,7 @@ export function LandingClient() {
             <Link href="/calculadora-isd" className="text-primary hover:underline">Calculadora Sucesiones</Link>
             <Link href="/calculadora-donaciones" className="text-primary hover:underline">Calculadora Donaciones</Link>
             <Link href="/calculadora-plusvalia" className="text-primary hover:underline">Calculadora Plusvalía</Link>
+            <Link href="/coste-herencia" className="text-primary hover:underline">Coste de heredar</Link>
             <Link href="/donaciones" className="text-primary hover:underline">Modelo 651</Link>
             <Link href="/comparador-isd" className="text-primary hover:underline">Comparador por CCAA</Link>
             <Link href="/borrador-modelo650" className="text-primary hover:underline">Borrador 650 gratis</Link>
