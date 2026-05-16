@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { generateBankPack } from "@/lib/bank-pack";
 import { CASE_STATUS_COLORS, TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/constants";
 import { IsdRisksBanner } from "@/components/isd-risks-banner";
+import { CaseHealthCard } from "@/components/case-health-card";
 const statuses = ["INTAKE", "VALIDATION", "IN_PROGRESS", "PENDING_DOCS", "READY_TO_SEND", "SENT", "FOLLOW_UP", "CLOSED", "ARCHIVED"];
 const taskStatuses = ["PENDING", "IN_PROGRESS", "BLOCKED", "READY", "APPROVED", "DONE", "SKIPPED"];
 
@@ -1089,6 +1090,7 @@ El equipo de gestión`;
       {/* Tab content */}
       {tab === "overview" && (
         <div className="grid md:grid-cols-2 gap-6">
+          <CaseHealthCard caseId={caseId} />
           <IsdRisksBanner caseId={caseId} />
           {/* Stats cards */}
           {(() => {
