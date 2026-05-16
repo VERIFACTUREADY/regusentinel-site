@@ -455,6 +455,7 @@ export function LandingClient() {
             <Link href="/seguridad" className="text-primary hover:underline">Seguridad y RGPD</Link>
             <Link href="/integraciones" className="text-primary hover:underline">Integraciones</Link>
             <Link href="/glosario" className="text-primary hover:underline">Glosario ISD</Link>
+            <Link href="/guia-fallecimiento" className="text-primary hover:underline">Guía tras fallecimiento</Link>
             <Link href="/widget" className="text-primary hover:underline">Widget gratis</Link>
             <Link href="/docs/api" className="text-primary hover:underline">API pública</Link>
             <Link href="/changelog" className="text-primary hover:underline">Changelog</Link>
