@@ -2,6 +2,7 @@ import { MetadataRoute } from "next";
 import { ALL_CCAA_SLUGS } from "@/lib/ccaa-content";
 import { BLOG_POSTS } from "@/lib/blog-posts";
 import { ALL_VERTICAL_SLUGS } from "@/lib/vertical-landings";
+import { ALL_GLOSSARY_SLUGS } from "@/lib/glossary";
 
 const BASE_URL = process.env.NEXTAUTH_URL || "https://baritur.pro";
 
@@ -34,11 +35,25 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.9,
   }));
 
+  const glossaryPages: MetadataRoute.Sitemap = ALL_GLOSSARY_SLUGS.map((slug) => ({
+    url: `${BASE_URL}/glosario/${slug}`,
+    lastModified: new Date(),
+    changeFrequency: "monthly" as const,
+    priority: 0.7,
+  }));
+
   return [
     ...ccaaPages,
     ...donacionesPages,
     ...blogPages,
     ...verticalPages,
+    ...glossaryPages,
+    {
+      url: `${BASE_URL}/glosario`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    },
     {
       url: `${BASE_URL}/casos-de-uso`,
       lastModified: new Date(),
