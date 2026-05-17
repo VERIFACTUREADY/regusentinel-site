@@ -47,6 +47,39 @@ const features = [
   },
 ];
 
+const freeTools = [
+  {
+    title: "Calculadora del Impuesto de Sucesiones",
+    desc: "Cuota del Modelo 650 con reducciones y bonificacion de tu CCAA.",
+    href: "/calculadora-isd",
+  },
+  {
+    title: "Cuanto cuesta heredar",
+    desc: "ISD + plusvalia + notaria + registro en un unico desglose.",
+    href: "/coste-herencia",
+  },
+  {
+    title: "Comparador de las 17 CCAA",
+    desc: "Donde se paga menos: tabla interactiva por grupo de parentesco.",
+    href: "/comparador-isd",
+  },
+  {
+    title: "Borrador del Modelo 650 en PDF",
+    desc: "Genera un borrador de trabajo con plazos y cuota en 30 segundos.",
+    href: "/borrador-modelo650",
+  },
+  {
+    title: "Guia: que hacer tras un fallecimiento",
+    desc: "Plan personalizado de tramites con plazos, respondiendo 6 preguntas.",
+    href: "/guia-fallecimiento",
+  },
+  {
+    title: "Plantillas de documentos",
+    desc: "Carta al banco, prorroga del ISD, declaracion de siniestro... en PDF.",
+    href: "/plantillas-documentos",
+  },
+];
+
 export function LandingClient() {
   const [form, setForm] = useState({ name: "", email: "", company: "", phone: "", message: "", preferredTime: "" });
   const [sent, setSent] = useState(false);
@@ -225,6 +258,38 @@ export function LandingClient() {
               <p className="text-2xl font-bold text-amber-900 mb-1">+20 entidades</p>
               <p>Bancos, SS, AEAT, suministros, telecom, seguros, plataformas digitales por expediente</p>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Free tools */}
+      <section className="py-16 bg-gray-50 border-b">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="text-center mb-10">
+            <p className="text-sm font-semibold text-primary mb-2 uppercase tracking-wider">Empieza gratis, sin registro</p>
+            <h3 className="text-2xl font-bold mb-3">Herramientas gratuitas para herencias y donaciones</h3>
+            <p className="text-gray-500 max-w-2xl mx-auto">
+              Calculadoras, comparadores y generadores de documentos que cualquiera puede usar al instante.
+              La misma tecnologia que automatiza BARITUR PRO, abierta y sin coste.
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {freeTools.map((t) => (
+              <Link
+                key={t.href}
+                href={t.href}
+                className="group p-5 bg-white border rounded-lg hover:border-primary/40 hover:shadow-md transition flex flex-col"
+              >
+                <h4 className="text-sm font-semibold text-gray-900 group-hover:text-primary transition mb-1">{t.title}</h4>
+                <p className="text-xs text-gray-600 leading-relaxed flex-1">{t.desc}</p>
+                <span className="mt-3 text-xs font-medium text-primary">Abrir herramienta &rarr;</span>
+              </Link>
+            ))}
+          </div>
+          <div className="text-center mt-8">
+            <Link href="/recursos" className="text-sm font-medium text-primary hover:underline">
+              Ver todas las herramientas y recursos &rarr;
+            </Link>
           </div>
         </div>
       </section>
