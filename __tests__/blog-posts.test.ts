@@ -36,7 +36,7 @@ describe("blog-posts", () => {
   });
 
   it("each post has at least one CTA pointing to a product surface", () => {
-    const productPaths = ["/calculadora-isd", "/calculadora-donaciones", "/borrador-modelo650", "/borrador-modelo651", "/comparador-isd", "/donaciones", "/seguridad", "/integraciones", "/plantillas-documentos", "/#demo"];
+    const productPaths = ["/calculadora-isd", "/calculadora-donaciones", "/calculadora-plusvalia", "/coste-herencia", "/borrador-modelo650", "/borrador-modelo651", "/comparador-isd", "/comparador-donaciones", "/donaciones", "/seguridad", "/integraciones", "/plantillas-documentos", "/#demo"];
     for (const p of BLOG_POSTS) {
       const ctas = p.blocks.filter((b) => b.type === "cta") as { type: "cta"; href: string }[];
       expect(ctas.length).toBeGreaterThan(0);

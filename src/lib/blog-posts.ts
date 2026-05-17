@@ -1074,6 +1074,329 @@ export const BLOG_POSTS: BlogPost[] = [
       },
     ],
   },
+
+  {
+    slug: "plusvalia-municipal-herencia-cuando-se-paga",
+    title: "Plusvalía municipal en una herencia: cuándo se paga y cuándo no",
+    description:
+      "Cómo funciona la plusvalía municipal al heredar un inmueble: los dos métodos de cálculo tras la reforma de 2021, el plazo y los casos en que no se paga.",
+    publishedAt: "2025-02-06",
+    category: "Fiscalidad",
+    tags: ["plusvalia municipal", "iivtnu", "herencia", "inmuebles"],
+    readingMinutes: 6,
+    lead: "Al heredar una vivienda se pagan dos impuestos distintos: el de Sucesiones (autonómico) y la plusvalía municipal (del ayuntamiento). Tras la reforma de 2021 hay dos formas de calcular la plusvalía y se puede elegir la más barata — o incluso no pagarla.",
+    blocks: [
+      { type: "h2", text: "Qué es la plusvalía municipal" },
+      {
+        type: "p",
+        text: "La plusvalía municipal —oficialmente IIVTNU, Impuesto sobre el Incremento de Valor de los Terrenos de Naturaleza Urbana— grava el aumento de valor del suelo urbano cuando se transmite un inmueble. En una herencia la pagan los herederos.",
+      },
+      {
+        type: "callout",
+        tone: "info",
+        title: "Es independiente del Impuesto de Sucesiones",
+        text: "La plusvalía es un impuesto municipal; el Impuesto de Sucesiones (Modelo 650) es autonómico. Por una vivienda heredada se pagan los dos, en administraciones distintas.",
+      },
+
+      { type: "h2", text: "Los dos métodos de cálculo desde 2021" },
+      {
+        type: "p",
+        text: "La STC 182/2021 anuló el sistema anterior. El RDL 26/2021 estableció dos métodos y el contribuyente puede elegir el que le resulte más bajo:",
+      },
+      { type: "h3", text: "Método objetivo" },
+      {
+        type: "p",
+        text: "Valor catastral del suelo × un coeficiente que depende de los años de tenencia × el tipo de gravamen municipal (máximo 30%). Los coeficientes los fija el Estado cada año; los ayuntamientos pueden aplicar valores iguales o inferiores.",
+      },
+      { type: "h3", text: "Método real (estimación directa)" },
+      {
+        type: "p",
+        text: "Incremento real de valor (valor de transmisión − valor de adquisición) × la proporción que el suelo representa del valor catastral × el tipo de gravamen.",
+      },
+
+      { type: "h2", text: "Cuándo NO se paga plusvalía" },
+      {
+        type: "p",
+        text: "Si no ha habido incremento real de valor del inmueble entre su adquisición y la transmisión por herencia, la operación está no sujeta al impuesto. Es frecuente en inmuebles comprados en el pico de 2007-2008.",
+      },
+      {
+        type: "callout",
+        tone: "warning",
+        title: "Hay que acreditarlo",
+        text: "Para beneficiarse de la no sujeción, el heredero debe poder demostrar la ausencia de incremento con las escrituras de compra del causante y el valor declarado en la herencia.",
+      },
+
+      { type: "h2", text: "Plazo de presentación" },
+      {
+        type: "p",
+        text: "En una herencia, el plazo para liquidar la plusvalía es de 6 meses desde el fallecimiento, prorrogable a un año en la mayoría de municipios. Si hay varios inmuebles en distintos municipios, son tramitaciones independientes ante cada ayuntamiento.",
+      },
+
+      { type: "h2", text: "Recomendaciones" },
+      {
+        type: "ul",
+        items: [
+          "Calcula los dos métodos antes de presentar: la diferencia puede ser de miles de euros",
+          "Localiza la escritura de compra del causante: es la prueba para el método real y para la no sujeción",
+          "Si hay varios inmuebles, organiza una liquidación por municipio",
+          "Comprueba la ordenanza fiscal del ayuntamiento: el tipo y los coeficientes concretos los fija cada municipio",
+        ],
+      },
+
+      {
+        type: "cta",
+        title: "Calcula la plusvalía municipal por los dos métodos",
+        href: "/calculadora-plusvalia",
+        label: "Abrir calculadora de plusvalía →",
+      },
+    ],
+  },
+
+  {
+    slug: "aceptar-o-renunciar-herencia-guia-decision",
+    title: "Aceptar o renunciar a una herencia: guía para decidir",
+    description:
+      "Cómo decidir entre aceptar una herencia, aceptarla a beneficio de inventario o renunciar a ella. Plazos, consecuencias y el caso de las herencias con deudas.",
+    publishedAt: "2025-02-10",
+    category: "Tramites",
+    tags: ["aceptacion herencia", "renuncia", "beneficio de inventario", "deudas"],
+    readingMinutes: 7,
+    lead: "Heredar no es solo recibir bienes: también se heredan las deudas del causante. Antes de aceptar conviene conocer las tres opciones que da la ley y cuándo conviene cada una.",
+    blocks: [
+      { type: "h2", text: "Las tres opciones del heredero" },
+      {
+        type: "p",
+        text: "Ante una herencia, el llamado a heredar tiene tres caminos: aceptarla de forma pura y simple, aceptarla a beneficio de inventario, o renunciar a ella.",
+      },
+
+      { type: "h2", text: "1. Aceptación pura y simple" },
+      {
+        type: "p",
+        text: "El heredero recibe todos los bienes y derechos, pero también responde de todas las deudas del causante — incluso con su propio patrimonio si los bienes heredados no bastan para cubrirlas.",
+      },
+      {
+        type: "callout",
+        tone: "warning",
+        title: "El riesgo de la aceptación pura",
+        text: "Si la herencia tiene más deudas que bienes, una aceptación pura puede obligar al heredero a pagar esas deudas con su dinero. Por eso, ante cualquier duda sobre las deudas del causante, conviene NO aceptar de forma pura.",
+      },
+
+      { type: "h2", text: "2. Aceptación a beneficio de inventario" },
+      {
+        type: "p",
+        text: "El heredero acepta, pero su responsabilidad por las deudas queda limitada al valor de los bienes recibidos. Si las deudas superan los bienes, el heredero no pone dinero propio: simplemente los acreedores cobran hasta donde alcance la herencia.",
+      },
+      {
+        type: "p",
+        text: "Requiere un trámite formal: hacer inventario de los bienes y deudas ante notario, con plazos concretos. Es la opción prudente cuando se desconoce el alcance real de las deudas.",
+      },
+
+      { type: "h2", text: "3. Renuncia a la herencia" },
+      {
+        type: "p",
+        text: "El heredero rechaza la herencia por completo. No recibe nada, pero tampoco responde de ninguna deuda. La renuncia se formaliza ante notario y es irrevocable.",
+      },
+      {
+        type: "p",
+        text: "Al renunciar, la herencia pasa a los siguientes llamados (otros descendientes, ascendientes, etc.). Es importante saberlo: renunciar puede trasladar el problema —y las deudas— a un familiar.",
+      },
+
+      { type: "h2", text: "El ius delationis: heredar el derecho a heredar" },
+      {
+        type: "p",
+        text: "Si el llamado a heredar fallece sin haber aceptado ni renunciado, ese derecho a decidir pasa a sus propios herederos. Es una situación frecuente en familias mayores y conviene resolverla con asesoramiento.",
+      },
+
+      { type: "h2", text: "Plazos" },
+      {
+        type: "ul",
+        items: [
+          "No hay un plazo legal estricto para aceptar o renunciar, pero cualquier interesado (un acreedor) puede pedir al notario que requiera al heredero a pronunciarse en 30 días",
+          "El Impuesto de Sucesiones sí tiene plazo: 6 meses desde el fallecimiento, independientemente de cuándo se acepte formalmente",
+          "Renunciar no exime de presentar el ISD si ya se habían realizado actos de aceptación tácita",
+        ],
+      },
+
+      { type: "h2", text: "Cómo decidir" },
+      {
+        type: "ol",
+        items: [
+          "Inventaría primero: bienes, cuentas, inmuebles, y también deudas, hipotecas y avales del causante",
+          "Si el patrimonio es claramente positivo: aceptación pura, es lo más simple",
+          "Si hay deudas o incertidumbre: aceptación a beneficio de inventario",
+          "Si las deudas superan con certeza a los bienes: valorar la renuncia (y avisar a los siguientes llamados)",
+        ],
+      },
+
+      {
+        type: "cta",
+        title: "Organiza el inventario y los plazos del expediente",
+        href: "/#demo",
+        label: "Ver BARITUR PRO →",
+      },
+    ],
+  },
+
+  {
+    slug: "cuanto-tarda-tramitar-una-herencia",
+    title: "Cuánto tarda en tramitarse una herencia en España",
+    description:
+      "Los tiempos reales de una herencia: desde el certificado de defunción hasta la inscripción de los bienes. Qué fases hay y qué las puede retrasar.",
+    publishedAt: "2025-02-13",
+    category: "Plazos",
+    tags: ["plazos herencia", "tiempos", "tramitacion"],
+    readingMinutes: 5,
+    lead: "Una herencia sencilla puede cerrarse en 3-4 meses; una compleja con varios herederos e inmuebles puede llevar más de un año. Estos son los tiempos reales fase por fase.",
+    blocks: [
+      { type: "h2", text: "Fase 1: certificados (semanas 1 a 4)" },
+      {
+        type: "p",
+        text: "El certificado literal de defunción se obtiene en días. Pero el Certificado de Últimas Voluntades y el de Seguros de Vida exigen esperar 15 días hábiles desde el fallecimiento, y luego unos días más de tramitación. En la práctica, esta fase ocupa de 3 a 5 semanas.",
+      },
+
+      { type: "h2", text: "Fase 2: título sucesorio (semanas 4 a 10)" },
+      {
+        type: "p",
+        text: "Si hay testamento, se solicita copia autorizada al notario: rápido. Si no hay testamento, hay que tramitar la declaración de herederos abintestato, un acta notarial que suele requerir un plazo de unos 20 días desde la solicitud.",
+      },
+
+      { type: "h2", text: "Fase 3: inventario y valoración (semanas 6 a 16)" },
+      {
+        type: "p",
+        text: "Reunir certificados de saldo bancario, tasar inmuebles, valorar vehículos y otros bienes. Es la fase más variable: con un solo inmueble puede ser rápida; con varios inmuebles, un negocio o bienes en el extranjero, puede alargarse meses.",
+      },
+
+      { type: "h2", text: "Fase 4: aceptación y reparto (semanas 12 a 24)" },
+      {
+        type: "p",
+        text: "La escritura de aceptación y partición ante notario. Si los herederos están de acuerdo, es ágil. Si hay desacuerdo sobre el reparto, la fase puede bloquearse indefinidamente hasta que se resuelva (incluso judicialmente).",
+      },
+
+      { type: "h2", text: "Fase 5: impuestos (antes del mes 6)" },
+      {
+        type: "p",
+        text: "El Impuesto de Sucesiones (Modelo 650) y la plusvalía municipal deben presentarse en 6 meses desde el fallecimiento. Esta fase corre en paralelo a las anteriores — no se espera a tener todo cerrado para empezar a prepararla.",
+      },
+
+      { type: "h2", text: "Fase 6: cambios de titularidad (meses 6 a 12+)" },
+      {
+        type: "p",
+        text: "Inscripción de inmuebles en el Registro de la Propiedad, cambio de titularidad de vehículos, suministros, cuentas. Ocurre después de pagar los impuestos y puede prolongarse varios meses.",
+      },
+
+      {
+        type: "callout",
+        tone: "info",
+        title: "Resumen de tiempos",
+        text: "Herencia sencilla (un heredero, sin inmuebles complejos): 3-4 meses. Herencia media (vivienda, 2-3 herederos): 6-9 meses. Herencia compleja (varios inmuebles, negocio, desacuerdos): más de 12 meses.",
+      },
+
+      { type: "h2", text: "Qué retrasa una herencia" },
+      {
+        type: "ul",
+        items: [
+          "Desacuerdo entre herederos sobre el reparto",
+          "No haber testamento (la declaración de herederos añade semanas)",
+          "Inmuebles que requieren tasación o tienen cargas",
+          "Documentación incompleta que la familia tarda en aportar",
+          "Herederos o bienes en el extranjero",
+          "Litigios sobre la validez del testamento",
+        ],
+      },
+
+      {
+        type: "cta",
+        title: "Controla cada fase y plazo del expediente",
+        href: "/#demo",
+        label: "Ver BARITUR PRO →",
+      },
+    ],
+  },
+
+  {
+    slug: "heredar-vivienda-tramites-y-costes",
+    title: "Heredar una vivienda: todos los trámites y costes paso a paso",
+    description:
+      "Guía completa de heredar una casa: certificados, Impuesto de Sucesiones, plusvalía municipal, notaría, Registro de la Propiedad y cambio de titularidades.",
+    publishedAt: "2025-02-17",
+    category: "Tramites",
+    tags: ["heredar vivienda", "inmueble", "tramites", "costes"],
+    readingMinutes: 7,
+    lead: "Heredar una vivienda es el caso más habitual y también el que más trámites genera. Esta es la secuencia completa, con los costes asociados a cada paso.",
+    blocks: [
+      { type: "h2", text: "Paso 1: certificados básicos" },
+      {
+        type: "p",
+        text: "Certificado literal de defunción, Certificado de Últimas Voluntades y Certificado de Seguros de Vida. Los dos últimos con el Modelo 790-006 tras 15 días hábiles. Coste: unos pocos euros de tasas.",
+      },
+
+      { type: "h2", text: "Paso 2: título sucesorio" },
+      {
+        type: "p",
+        text: "Copia del testamento o, si no lo hay, declaración de herederos abintestato ante notario. La declaración de herederos tiene un coste notarial de unos cientos de euros.",
+      },
+
+      { type: "h2", text: "Paso 3: valorar la vivienda" },
+      {
+        type: "p",
+        text: "Desde 2022, la vivienda se declara por el Valor de Referencia del Catastro como mínimo. Conviene consultarlo en la Sede del Catastro. Si el Valor de Referencia es superior al de mercado, una tasación oficial (200-400 €) puede permitir declarar un valor real inferior.",
+      },
+
+      { type: "h2", text: "Paso 4: escritura de aceptación de herencia" },
+      {
+        type: "p",
+        text: "Ante notario, los herederos aceptan y se adjudican la vivienda. Coste notarial: variable según el valor, habitualmente entre 300 y 1.200 € para una vivienda normal.",
+      },
+
+      { type: "h2", text: "Paso 5: Impuesto de Sucesiones (Modelo 650)" },
+      {
+        type: "p",
+        text: "Plazo: 6 meses desde el fallecimiento. La vivienda habitual del causante tiene una reducción del 95% (con tope de 122.606 € por heredero) si el heredero es cónyuge, descendiente o ascendiente y la mantiene 10 años. La cuota final depende mucho de la CCAA.",
+      },
+      {
+        type: "callout",
+        tone: "success",
+        title: "Reducción de vivienda habitual",
+        text: "Si la casa heredada era la vivienda habitual del causante, la reducción del 95% puede reducir drásticamente la base del impuesto. Es una de las reducciones más valiosas y conviene asegurarse de aplicarla.",
+      },
+
+      { type: "h2", text: "Paso 6: plusvalía municipal" },
+      {
+        type: "p",
+        text: "Impuesto del ayuntamiento sobre el incremento de valor del suelo. Mismo plazo de 6 meses. Se puede calcular por dos métodos y elegir el más bajo; si no hubo incremento real de valor, no se paga.",
+      },
+
+      { type: "h2", text: "Paso 7: inscripción en el Registro de la Propiedad" },
+      {
+        type: "p",
+        text: "Con la escritura de aceptación y los impuestos pagados, se inscribe la vivienda a nombre de los herederos. Coste registral: habitualmente entre 200 y 600 €.",
+      },
+
+      { type: "h2", text: "Paso 8: cambios de titularidad" },
+      {
+        type: "ul",
+        items: [
+          "IBI: Modelo 901N en el ayuntamiento",
+          "Suministros (luz, gas, agua): cambio de titular o baja",
+          "Comunidad de propietarios: comunicar el nuevo titular al administrador",
+          "Seguro del hogar: actualizar o contratar a nombre del heredero",
+        ],
+      },
+
+      { type: "h2", text: "Resumen de costes" },
+      {
+        type: "p",
+        text: "Para una vivienda heredada de valor medio, los costes fijos (certificados, notaría, registro) suelen sumar entre 600 y 2.000 €. El Impuesto de Sucesiones puede ir desde casi cero (CCAA con bonificación del 99% y reducción de vivienda) hasta varios miles de euros. La plusvalía municipal, de cientos a algunos miles según el municipio y los años de tenencia.",
+      },
+
+      {
+        type: "cta",
+        title: "Calcula el coste total de heredar la vivienda",
+        href: "/coste-herencia",
+        label: "Calculadora de coste de herencia →",
+      },
+    ],
+  },
 ];
 
 export function getPostBySlug(slug: string): BlogPost | null {
