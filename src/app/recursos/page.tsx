@@ -18,42 +18,105 @@ interface Resource {
   icon: string;
 }
 
+const ICON_CALC = "M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z";
+const ICON_PDF = "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z";
+const ICON_CHART = "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z";
+const ICON_CODE = "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4";
+const ICON_BOOK = "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253";
+const ICON_LIST = "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4";
+
 const TOOLS: Resource[] = [
   {
-    title: "Calculadora ISD avanzada",
-    desc: "Calcula la cuota del Impuesto de Sucesiones con todas las reducciones estatales (vivienda, seguros, discapacidad) y la bonificación autonómica de tu CCAA.",
+    title: "Calculadora ISD (Sucesiones)",
+    desc: "Calcula la cuota del Modelo 650 con todas las reducciones estatales y la bonificación autonómica de tu CCAA.",
     href: "/calculadora-isd",
     badge: "Más usado",
     badgeTone: "blue",
-    icon: "M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z",
+    icon: ICON_CALC,
+  },
+  {
+    title: "Calculadora de Donaciones",
+    desc: "Cuánto tributa una donación (Modelo 651) según CCAA, parentesco, tipo de bien y reducciones específicas.",
+    href: "/calculadora-donaciones",
+    icon: ICON_CALC,
+  },
+  {
+    title: "Calculadora de Plusvalía Municipal",
+    desc: "Plusvalía municipal (IIVTNU) de un inmueble heredado por los dos métodos legales: el sistema elige el más barato.",
+    href: "/calculadora-plusvalia",
+    icon: ICON_CALC,
+  },
+  {
+    title: "Coste total de heredar",
+    desc: "ISD + plusvalía + notaría + registro en un único desglose. Responde la pregunta: ¿cuánto cuesta heredar?",
+    href: "/coste-herencia",
+    badge: "Nuevo",
+    badgeTone: "emerald",
+    icon: ICON_CALC,
   },
   {
     title: "Borrador Modelo 650 en PDF",
-    desc: "Genera un PDF profesional de 2 páginas en 30 segundos: causante, plazos, cuota estimada, reducciones y checklist de documentación.",
+    desc: "Genera un PDF de trabajo de 2 páginas: causante, plazos, cuota estimada, reducciones y checklist documental.",
     href: "/borrador-modelo650",
-    badge: "Nuevo",
-    badgeTone: "emerald",
-    icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+    icon: ICON_PDF,
   },
   {
-    title: "Comparador 17 CCAA",
-    desc: "Tabla interactiva con la cuota a pagar en cada Comunidad Autónoma para los 4 grupos de parentesco. Ordena por cuota, ve diferencias máximas.",
+    title: "Borrador Modelo 651 en PDF",
+    desc: "El borrador de trabajo para donaciones: donante, donatario, plazos, reducción aplicable y cuota estimada.",
+    href: "/borrador-modelo651",
+    icon: ICON_PDF,
+  },
+  {
+    title: "Comparador ISD por CCAA",
+    desc: "Tabla interactiva con la cuota a pagar en las 17 comunidades para los 4 grupos de parentesco.",
     href: "/comparador-isd",
-    icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
+    icon: ICON_CHART,
+  },
+  {
+    title: "Comparador de Donaciones por CCAA",
+    desc: "La misma comparativa interactiva pero para el Modelo 651: dónde se paga menos por una donación.",
+    href: "/comparador-donaciones",
+    badge: "Nuevo",
+    badgeTone: "emerald",
+    icon: ICON_CHART,
+  },
+  {
+    title: "Plantillas de documentos",
+    desc: "Modelos de carta al banco, prórroga del ISD, declaración de siniestro y más. Auto-rellenados, descargables en PDF.",
+    href: "/plantillas-documentos",
+    icon: ICON_PDF,
+  },
+  {
+    title: "Guía: qué hacer tras un fallecimiento",
+    desc: "Responde 6 preguntas y obtén un plan personalizado de trámites con plazos, ordenado por urgencia.",
+    href: "/guia-fallecimiento",
+    icon: ICON_LIST,
+  },
+  {
+    title: "Glosario del ISD",
+    desc: "35 términos del Impuesto de Sucesiones y Donaciones explicados: base imponible, coeficiente, bonificación...",
+    href: "/glosario",
+    icon: ICON_BOOK,
+  },
+  {
+    title: "Calculadora de ROI para gestorías",
+    desc: "Cuánto ahorra tu despacho automatizando la tramitación: horas, errores evitados y capacidad recuperada.",
+    href: "/calculadora-roi",
+    icon: ICON_CHART,
   },
   {
     title: "Widget gratuito para tu web",
-    desc: "Embed de la calculadora ISD en cualquier web (gestorías, funerarias, abogados) con personalización de color y tema. Atribución incluida.",
+    desc: "Embed de la calculadora ISD en cualquier web con personalización de color y tema. Atribución incluida.",
     href: "/widget",
-    icon: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4",
+    icon: ICON_CODE,
   },
   {
     title: "API pública v1",
-    desc: "Endpoints REST para calcular ISD, comparar CCAA y detectar riesgos. Sin autenticación, rate limit 60-120 req/min/IP, CORS abierto.",
+    desc: "Endpoints REST para calcular ISD, comparar CCAA y detectar riesgos. Sin autenticación, CORS abierto.",
     href: "/docs/api",
     badge: "Para devs",
     badgeTone: "purple",
-    icon: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4",
+    icon: ICON_CODE,
   },
 ];
 
