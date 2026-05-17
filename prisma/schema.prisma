@@ -1,0 +1,548 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  MANAGER
+  OPERATOR
+  VIEWER
+  MANAGED_OPS
+}
+
+enum CaseStatus {
+  INTAKE
+  VALIDATION
+  IN_PROGRESS
+  PENDING_DOCS
+  READY_TO_SEND
+  SENT
+  FOLLOW_UP
+  CLOSED
+  ARCHIVED
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  BLOCKED
+  READY
+  APPROVED
+  DONE
+  SKIPPED
+}
+
+enum TaskCategory {
+  BANCOS
+  SUMINISTROS
+  TELECOM
+  SUSCRIPCIONES
+  SEGUROS
+  VIDA_DIGITAL
+  FISCAL
+  OTROS
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PlanTier {
+  INICIA
+  DESPACHO
+  FIRMA
+}
+
+enum BillingInterval {
+  MONTHLY
+  ANNUAL
+}
+
+// ─── ORGANIZATION ────────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members       Membership[]
+  cases         Case[]
+  templates     Template[]
+  subscription  Subscription?
+  usageRecords  UsageRecord[]
+  auditLogs     AuditLog[]
+  demoRequests  DemoRequest[]
+  notifications NotificationLog[]
+  workflowRules WorkflowRule[]
+  caseTemplates CaseTemplate[]
+
+  retentionDays Int @default(90)
+
+  // White-label del portal familia. Unlocked en plan DESPACHO/FIRMA
+  // (INICIA sigue mostrando "Powered by BARITUR PRO").
+  brandDisplayName  String?
+  brandLogoUrl      String?
+  brandPrimaryColor String? // hex, e.g. "#1e40af"
+  brandSupportEmail String?
+  brandFooterText   String?
+
+  // Onboarding guiado. Se oculta al marcarse dismiss o al completar los 5 pasos.
+  onboardingDismissedAt DateTime?
+}
+
+// ─── USER & MEMBERSHIP ──────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String?
+  magicToken    String?
+  magicTokenExp DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  memberships   Membership[]
+  assignedTasks Task[]       @relation("AssignedTo")
+  approvals     Approval[]
+  auditLogs     AuditLog[]
+  promptLogs    PromptLog[]
+  taskNotes     TaskNote[]
+}
+
+model Membership {
+  id          String @id @default(cuid())
+  role        Role
+  userId      String
+  orgId       String
+  notifPrefs  Json?  // { dailyBriefing, weeklyDigest, taskOverdue, portalMessage, isdAlerts }
+
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, orgId])
+}
+
+// ─── CASE ───────────────────────────────────────────────
+
+model Case {
+  id     String     @id @default(cuid())
+  orgId  String
+  ref    String
+  status CaseStatus @default(INTAKE)
+
+  isUrgent             Boolean @default(false)
+  hasDeceasedInsurance Boolean @default(false)
+
+  categories TaskCategory[]
+  province   String?
+  notes      String?
+
+  portalToken   String  @unique @default(cuid())
+  portalEnabled Boolean @default(true)
+
+  consentAccepted  Boolean   @default(false)
+  consentDate      DateTime?
+  legitimationNote String?
+
+  deletedAt DateTime?
+  closedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org            Organization      @relation(fields: [orgId], references: [id])
+  deceased       Deceased?
+  contact        CaseContact?
+  tasks          Task[]
+  documents      Document[]
+  approvals      Approval[]
+  promptLogs     PromptLog[]
+  auditLogs      AuditLog[]
+  notifications  NotificationLog[]
+  workflowLogs   WorkflowLog[]
+  portalMessages PortalMessage[]
+}
+
+model Deceased {
+  id        String    @id @default(cuid())
+  caseId    String    @unique
+  fullName  String
+  deathDate DateTime?
+  dni       String?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+model CaseContact {
+  id           String  @id @default(cuid())
+  caseId       String  @unique
+  fullName     String
+  phone        String?
+  email        String?
+  relationship String?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+// ─── PORTAL MESSAGE ─────────────────────────────────────
+
+model PortalMessage {
+  id         String    @id @default(cuid())
+  caseId     String
+  fromFamily Boolean
+  authorName String?
+  content    String
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+  case       Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+}
+
+// ─── TASK ───────────────────────────────────────────────
+
+model Task {
+  id           String       @id @default(cuid())
+  caseId       String
+  category     TaskCategory
+  title        String
+  description  String?
+  status       TaskStatus   @default(PENDING)
+  sortOrder    Int          @default(0)
+  docTag       String? // tag for document matching
+  blockedUntil DateTime? // date-based blocking (e.g., 15 business days)
+  deadline     DateTime? // hard deadline (e.g., 6 months ISD)
+  blockReason  String? // human-readable reason for block
+
+  dueDate     DateTime?
+  assigneeId  String?
+  dependsOnId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  case       Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignee   User?      @relation("AssignedTo", fields: [assigneeId], references: [id])
+  dependsOn  Task?      @relation("TaskDependency", fields: [dependsOnId], references: [id])
+  dependents Task[]     @relation("TaskDependency")
+  approval   Approval?
+  documents  Document[] @relation("TaskDocuments")
+  notes      TaskNote[]
+}
+
+// ─── TASK NOTE ──────────────────────────────────────────
+
+model TaskNote {
+  id        String   @id @default(cuid())
+  taskId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([taskId, createdAt])
+}
+
+// ─── DOCUMENT ───────────────────────────────────────────
+
+model Document {
+  id             String  @id @default(cuid())
+  caseId         String
+  taskId         String? // linked task (auto or manual)
+  fileName       String
+  fileKey        String
+  mimeType       String?
+  fileSize       Int?
+  uploadedBy     String?
+  isPortalUpload Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  case Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  task Task? @relation("TaskDocuments", fields: [taskId], references: [id])
+}
+
+// ─── TEMPLATE ───────────────────────────────────────────
+
+model Template {
+  id       String        @id @default(cuid())
+  orgId    String
+  name     String
+  category TaskCategory?
+  type     String        @default("email") // email | carta | solicitud
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org      Organization      @relation(fields: [orgId], references: [id])
+  versions TemplateVersion[]
+}
+
+model TemplateVersion {
+  id         String   @id @default(cuid())
+  templateId String
+  version    Int      @default(1)
+  subject    String?
+  body       String
+  variables  String[] // e.g. ["deceased.fullName", "contact.fullName"]
+  isApproved Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+}
+
+// ─── AUTOPILOT / IA ─────────────────────────────────────
+
+model PromptLog {
+  id       String  @id @default(cuid())
+  caseId   String?
+  userId   String
+  action   String // "generate_checklist" | "generate_draft" | etc
+  prompt   String
+  response String
+  model    String?
+  tokens   Int?
+
+  createdAt DateTime @default(now())
+
+  case Case? @relation(fields: [caseId], references: [id])
+  user User  @relation(fields: [userId], references: [id])
+}
+
+model Approval {
+  id         String         @id @default(cuid())
+  caseId     String
+  taskId     String?        @unique
+  action     String // "send_email" | "mark_sent" | etc
+  status     ApprovalStatus @default(PENDING)
+  details    String?
+  reviewerId String?
+
+  createdAt  DateTime  @default(now())
+  reviewedAt DateTime?
+
+  case     Case  @relation(fields: [caseId], references: [id])
+  task     Task? @relation(fields: [taskId], references: [id])
+  reviewer User? @relation(fields: [reviewerId], references: [id])
+}
+
+// ─── AUDIT ──────────────────────────────────────────────
+
+model AuditLog {
+  id      String  @id @default(cuid())
+  orgId   String
+  userId  String?
+  caseId  String?
+  action  String
+  details String?
+  ip      String?
+
+  createdAt DateTime @default(now())
+
+  org  Organization @relation(fields: [orgId], references: [id])
+  user User?        @relation(fields: [userId], references: [id])
+  case Case?        @relation(fields: [caseId], references: [id])
+}
+
+// ─── BILLING ────────────────────────────────────────────
+
+model Subscription {
+  id               String          @id @default(cuid())
+  orgId            String          @unique
+  stripeCustomerId String?
+  stripeSubId      String?
+  plan             PlanTier        @default(INICIA)
+  interval         BillingInterval @default(MONTHLY)
+  status           String          @default("active") // active | past_due | canceled
+  currentPeriodEnd DateTime?
+
+  // Setup fee (one-time, required for DESPACHO/FIRMA onboarding)
+  setupFeePaid   Boolean   @default(false)
+  setupFeePaidAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id])
+}
+
+model UsageRecord {
+  id           String @id @default(cuid())
+  orgId        String
+  month        String // "2026-04"
+  casesCreated Int    @default(0)
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, month])
+}
+
+// ─── NOTIFICATIONS ──────────────────────────────────────
+
+enum NotificationKind {
+  ISD_60D
+  ISD_30D
+  ISD_7D
+  ISD_1D
+  ISD_PASSED
+  FAMILY_PENDING_DOCS
+}
+
+enum NotificationChannel {
+  EMAIL_INTERNAL
+  EMAIL_FAMILY
+}
+
+model NotificationLog {
+  id        String              @id @default(cuid())
+  orgId     String
+  caseId    String
+  kind      NotificationKind
+  channel   NotificationChannel
+  recipient String // email
+  status    String              @default("sent") // sent | failed
+  error     String?
+
+  createdAt DateTime @default(now())
+
+  org  Organization @relation(fields: [orgId], references: [id])
+  case Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  // One notification of each kind per case (ISD alerts) — family reminders use
+  // a rolling 7-day window handled in application logic.
+  @@index([caseId, kind])
+  @@index([orgId, createdAt])
+}
+
+// ─── CASE TASK TEMPLATES ────────────────────────────────
+
+model CaseTemplate {
+  id          String         @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  categories  TaskCategory[]
+  isDefault   Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  org   Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tasks CaseTemplateTask[]
+
+  @@index([orgId])
+}
+
+model CaseTemplateTask {
+  id                 String       @id @default(cuid())
+  templateId         String
+  category           TaskCategory
+  title              String
+  description        String?
+  deadlineOffsetDays Int?
+  sortOrder          Int          @default(0)
+
+  template CaseTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, sortOrder])
+}
+
+// ─── WORKFLOW AUTOMATION ────────────────────────────────
+
+enum WorkflowTrigger {
+  CASE_STATUS_CHANGED
+  TASK_STATUS_CHANGED
+  CASE_CREATED
+  DOCUMENT_UPLOADED
+}
+
+enum WorkflowAction {
+  SEND_EMAIL_CONTACT
+  SEND_EMAIL_TEAM
+  ADD_CASE_COMMENT
+  CHANGE_CASE_STATUS
+}
+
+enum WorkflowLogStatus {
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+model WorkflowRule {
+  id           String          @id @default(cuid())
+  orgId        String
+  name         String
+  description  String?
+  isActive     Boolean         @default(true)
+  trigger      WorkflowTrigger
+  conditions   Json
+  action       WorkflowAction
+  actionConfig Json
+  execCount    Int             @default(0)
+  lastRunAt    DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  org  Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  logs WorkflowLog[]
+
+  @@index([orgId, isActive])
+}
+
+model WorkflowLog {
+  id        String            @id @default(cuid())
+  ruleId    String
+  caseId    String?
+  status    WorkflowLogStatus
+  details   Json?
+  error     String?
+  createdAt DateTime          @default(now())
+
+  rule WorkflowRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  case Case?        @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@index([ruleId, createdAt])
+  @@index([caseId])
+}
+
+// ─── DEMO REQUEST ───────────────────────────────────────
+
+model DemoRequest {
+  id      String  @id @default(cuid())
+  orgId   String?
+  name    String
+  email   String
+  company String?
+  phone   String?
+  message String?
+
+  // Attribution: where the prospect came from. E.g. "landing_hero",
+  // "demo_banner" (clicked from inside the live demo), "demo_dashboard",
+  // "pricing". Null for legacy rows.
+  source String?
+
+  // Mini-CRM pipeline. NEW → CONTACTED → MEETING → PILOT → CUSTOMER | LOST
+  leadStatus    String  @default("NEW")
+  internalNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org Organization? @relation(fields: [orgId], references: [id])
+}
