@@ -6,6 +6,7 @@ import {
 } from "@/lib/donaciones-calculator";
 import { CCAA_LABELS, type CCAAKey } from "@/lib/isd-calculator";
 import { ComparadorDonacionesClient } from "./comparador-donaciones-client";
+import { SiteHeader } from "@/components/site-header";
 
 export const metadata: Metadata = {
   title: "Comparador del Impuesto de Donaciones por CCAA 2025 — Modelo 651",
@@ -71,17 +72,7 @@ export default function ComparadorDonacionesPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/calculadora-donaciones" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/comparador-isd" className="text-gray-700 hover:text-primary hidden sm:inline">Sucesiones</Link>
-              <Link href="/donaciones" className="text-gray-700 hover:text-primary hidden md:inline">Modelo 651</Link>
-              <Link href="/#demo" className="text-primary font-semibold">Probar gratis</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
           <div className="max-w-5xl mx-auto px-4 py-12 sm:py-16">

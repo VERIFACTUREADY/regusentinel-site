@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { GuiaClient } from "./guia-client";
+import { SiteHeader } from "@/components/site-header";
 
 export const metadata: Metadata = {
   title: "Qué hacer tras un fallecimiento: guía de trámites paso a paso",
@@ -43,16 +44,7 @@ export default function GuiaFallecimientoPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/calculadora-isd" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/glosario" className="text-gray-700 hover:text-primary hidden sm:inline">Glosario</Link>
-              <Link href="/blog" className="text-gray-700 hover:text-primary hidden sm:inline">Blog</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         {/* Hero */}
         <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">

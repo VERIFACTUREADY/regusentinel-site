@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { PlusvaliaClient } from "./plusvalia-client";
 import { ProUpsell } from "@/components/pro-upsell";
+import { SiteHeader } from "@/components/site-header";
 
 export const metadata: Metadata = {
   title: "Calculadora de Plusvalía Municipal 2025 — IIVTNU por herencia",
@@ -60,17 +60,7 @@ export default function CalculadoraPlusvaliaPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/calculadora-isd" className="text-gray-700 hover:text-primary">Sucesiones</Link>
-              <Link href="/calculadora-donaciones" className="text-gray-700 hover:text-primary hidden sm:inline">Donaciones</Link>
-              <Link href="/recursos" className="text-gray-700 hover:text-primary hidden md:inline">Recursos</Link>
-              <Link href="/#demo" className="text-primary font-semibold">Probar gratis</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
           <div className="max-w-4xl mx-auto px-4 py-12 sm:py-14">

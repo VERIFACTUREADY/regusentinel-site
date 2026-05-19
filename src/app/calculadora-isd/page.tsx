@@ -2,6 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { CalculatorClient } from "./calculator-client";
 import { ProUpsell } from "@/components/pro-upsell";
+import { SiteHeader } from "@/components/site-header";
 
 export const metadata: Metadata = {
   title: "Calculadora del Impuesto de Sucesiones (ISD) por Comunidad Autónoma | BARITUR PRO",
@@ -89,23 +90,7 @@ export default function CalculadoraISDPage() {
       />
 
       {/* ─── Header ───────────────────────────────────────── */}
-      <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <Link href="/" className="text-lg font-semibold text-slate-900">
-            BARITUR PRO
-          </Link>
-          <nav className="flex items-center gap-6 text-sm">
-            <Link href="/precios" className="text-slate-600 hover:text-slate-900">Precios</Link>
-            <Link href="/contacto" className="text-slate-600 hover:text-slate-900">Contacto</Link>
-            <Link
-              href="/login"
-              className="rounded-md bg-slate-900 px-3 py-1.5 text-white hover:bg-slate-800"
-            >
-              Acceder
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* ─── Hero ───────────────────────────────────────────── */}
       <section className="mx-auto max-w-6xl px-4 pt-12 pb-6">
