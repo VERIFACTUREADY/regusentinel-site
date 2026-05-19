@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CosteHerenciaClient } from "./coste-herencia-client";
+import { ProUpsell } from "@/components/pro-upsell";
 
 export const metadata: Metadata = {
   title: "Cuánto cuesta heredar una casa — Calculadora del coste total de una herencia",
@@ -130,21 +131,10 @@ export default function CosteHerenciaPage() {
         </div>
 
         {/* CTA */}
-        <div className="max-w-3xl mx-auto px-4 pb-16">
-          <div className="bg-gradient-to-br from-slate-900 to-blue-900 rounded-2xl p-8 text-white text-center">
-            <h2 className="text-xl font-bold mb-2">¿Gestionas herencias profesionalmente?</h2>
-            <p className="text-blue-200 text-sm mb-5">
-              BARITUR PRO calcula automáticamente todos los impuestos y coordina los plazos de cada
-              expediente. 14 días gratis.
-            </p>
-            <Link
-              href="/#demo"
-              className="inline-block px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-lg text-sm transition"
-            >
-              Probar BARITUR PRO →
-            </Link>
-          </div>
-        </div>
+        <ProUpsell
+          freeToolName="Esta calculadora del coste de heredar"
+          freeToolDesc="da una estimación puntual; no la guarda ni la convierte en un expediente con plazos."
+        />
 
         <div className="max-w-3xl mx-auto px-4 pb-10">
           <p className="text-xs text-gray-500 border-t pt-6">

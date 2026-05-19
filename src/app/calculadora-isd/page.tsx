@@ -1,6 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
 import { CalculatorClient } from "./calculator-client";
+import { ProUpsell } from "@/components/pro-upsell";
 
 export const metadata: Metadata = {
   title: "Calculadora del Impuesto de Sucesiones (ISD) por Comunidad Autónoma | BARITUR PRO",
@@ -184,30 +185,10 @@ export default function CalculadoraISDPage() {
       </section>
 
       {/* ─── CTA al producto ──────────────────────────────── */}
-      <section className="bg-slate-900 text-white">
-        <div className="mx-auto max-w-4xl px-4 py-16 text-center">
-          <h2 className="text-3xl font-bold">¿Gestionas herencias profesionalmente?</h2>
-          <p className="mt-4 text-slate-300">
-            BARITUR PRO automatiza el ISD, los plazos legales, los certificados,
-            los bancos y el portal de la familia. Reduce 4 horas por expediente
-            y elimina recargos por presentaciones fuera de plazo.
-          </p>
-          <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <Link
-              href="/?source=calculadora_isd#demo"
-              className="rounded-md bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-500"
-            >
-              Pedir demo
-            </Link>
-            <Link
-              href="/precios"
-              className="rounded-md border border-white/20 px-6 py-3 font-medium text-white hover:bg-white/10"
-            >
-              Ver precios
-            </Link>
-          </div>
-        </div>
-      </section>
+      <ProUpsell
+        freeToolName="Esta calculadora del Impuesto de Sucesiones"
+        freeToolDesc="estima la cuota de un caso puntual; hay que reintroducir todos los datos en cada consulta."
+      />
 
       {/* ─── Disclaimer + Footer ──────────────────────────── */}
       <footer className="border-t bg-white">
