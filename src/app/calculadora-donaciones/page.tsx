@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CalculadoraDonacionesClient } from "./donaciones-client";
+import { ProUpsell } from "@/components/pro-upsell";
 
 export const metadata: Metadata = {
   title: "Calculadora Modelo 651 — Impuesto sobre Donaciones por CCAA 2025",
@@ -122,21 +123,10 @@ export default function CalculadoraDonacionesPage() {
         </div>
 
         {/* CTA */}
-        <div className="max-w-3xl mx-auto px-4 pb-16">
-          <div className="bg-gradient-to-br from-slate-900 to-blue-900 rounded-2xl p-8 text-white text-center">
-            <h2 className="text-xl font-bold mb-2">¿Tramitas donaciones para clientes?</h2>
-            <p className="text-blue-200 mb-5 text-sm">
-              BARITUR PRO automatiza también los expedientes de donación: plazos del Modelo 651, captura
-              documental por portal y generación de borradores.
-            </p>
-            <Link
-              href="/#demo"
-              className="inline-block px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-lg text-sm transition"
-            >
-              Probar BARITUR PRO →
-            </Link>
-          </div>
-        </div>
+        <ProUpsell
+          freeToolName="Esta calculadora del Modelo 651"
+          freeToolDesc="estima la cuota de una donación puntual; no guarda el caso ni controla el plazo de 30 días."
+        />
 
         <div className="max-w-3xl mx-auto px-4 pb-10">
           <p className="text-xs text-gray-500 border-t pt-6">

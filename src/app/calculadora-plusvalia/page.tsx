@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PlusvaliaClient } from "./plusvalia-client";
+import { ProUpsell } from "@/components/pro-upsell";
 
 export const metadata: Metadata = {
   title: "Calculadora de Plusvalía Municipal 2025 — IIVTNU por herencia",
@@ -137,23 +138,10 @@ export default function CalculadoraPlusvaliaPage() {
         </div>
 
         {/* CTA */}
-        <div className="max-w-3xl mx-auto px-4 pb-16">
-          <div className="bg-gradient-to-br from-slate-900 to-blue-900 rounded-2xl p-8 text-white text-center">
-            <h2 className="text-xl font-bold mb-2">Una herencia, varios impuestos</h2>
-            <p className="text-blue-200 text-sm mb-5">
-              BARITUR PRO coordina el Modelo 650, la plusvalía municipal y todos los trámites de
-              cada expediente con sus plazos.
-            </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              <Link href="/calculadora-isd" className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition">
-                Calculadora del Modelo 650
-              </Link>
-              <Link href="/#demo" className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-lg text-sm transition">
-                Probar BARITUR PRO →
-              </Link>
-            </div>
-          </div>
-        </div>
+        <ProUpsell
+          freeToolName="Esta calculadora de plusvalía municipal"
+          freeToolDesc="estima el IIVTNU de un inmueble puntual; no lo vincula al expediente ni a sus plazos."
+        />
 
         <div className="max-w-3xl mx-auto px-4 pb-10">
           <p className="text-xs text-gray-500 border-t pt-6">
