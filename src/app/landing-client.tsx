@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { Reveal } from "@/components/reveal";
 
 // ─── Datos ────────────────────────────────────────────────
 
@@ -92,47 +93,6 @@ const toneTile: Record<string, string> = {
   sky: "bg-sky-50 text-sky-600 ring-sky-100",
   rose: "bg-rose-50 text-rose-600 ring-rose-100",
 };
-
-// ─── Reveal al hacer scroll ───────────────────────────────
-
-function Reveal({
-  children,
-  delay = 0,
-  className = "",
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  className?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          obs.disconnect();
-        }
-      },
-      { threshold: 0.12, rootMargin: "0px 0px -40px 0px" }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-
-  return (
-    <div
-      ref={ref}
-      className={`reveal ${visible ? "is-visible" : ""} ${className}`}
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      {children}
-    </div>
-  );
-}
 
 // ─── Tarjeta-preview del producto en el hero ─────────────
 
