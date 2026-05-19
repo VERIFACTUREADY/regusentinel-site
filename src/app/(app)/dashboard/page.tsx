@@ -15,6 +15,8 @@ import { getOrgActionQueue } from "@/lib/action-queue";
 import { BulkAnalyzeButton } from "@/components/dashboard/bulk-analyze-button";
 import { RiskRadarWidget } from "@/components/dashboard/risk-radar-widget";
 import { ActionQueueWidget } from "@/components/dashboard/action-queue-widget";
+import { NoOrgSetup } from "@/components/no-org-setup";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
@@ -33,8 +35,11 @@ export default async function DashboardPage() {
   } catch {
     session = null;
   }
-  const orgId = session?.user?.orgId;
-  if (!session || !orgId) return <p>No org</p>;
+  if (!session?.user) redirect("/login");
+  const orgId = session.user.orgId;
+  // Usuario autenticado pero sin organización: le ofrecemos crearla
+  // en lugar de mostrar un callejón sin salida.
+  if (!orgId) return <NoOrgSetup userName={session.user.name} />;
 
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);

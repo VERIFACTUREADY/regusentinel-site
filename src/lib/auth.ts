@@ -119,18 +119,29 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }): Promise<JWT> {
       if (user) {
         token.userId = user.id;
+      }
 
+      // Auto-reparación: si tenemos usuario pero todavía no hay organización
+      // en el token, intentamos (re)cargar la membresía en cada petición.
+      // Esto recupera sesiones creadas antes de que existiera la organización
+      // o cuando la consulta de membresía falló de forma transitoria al
+      // iniciar sesión. En cuanto la membresía existe, el token se sana solo
+      // y deja de consultarse.
+      if (token.userId && !token.orgId) {
         try {
           const membership = await prisma.membership.findFirst({
-            where: { userId: user.id },
+            where: { userId: token.userId },
             orderBy: { createdAt: "asc" },
           });
-
-          token.orgId = membership?.orgId ?? null;
-          token.role = membership?.role ?? null;
+          if (membership) {
+            token.orgId = membership.orgId;
+            token.role = membership.role;
+          } else {
+            token.orgId = token.orgId ?? null;
+            token.role = token.role ?? null;
+          }
         } catch {
-          token.orgId = null;
-          token.role = null;
+          // Mantener los valores actuales del token ante un fallo transitorio.
         }
       }
 
