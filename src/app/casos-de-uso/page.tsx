@@ -188,8 +188,11 @@ export default function CasosDeUsoPage() {
     <div className="min-h-screen bg-gray-50">
       <SiteHeader />
 
-      <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
-        <div className="max-w-4xl mx-auto px-4 py-14 sm:py-16">
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-blue-900 text-white">
+        <div className="absolute inset-0 dot-grid-light opacity-30" />
+        <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl animate-float-slow" />
+        <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
+        <div className="relative max-w-4xl mx-auto px-4 py-14 sm:py-16">
           <h1 className="text-3xl sm:text-4xl font-bold mb-3">Casos de uso reales con cifras</h1>
           <p className="text-base sm:text-lg text-blue-100 max-w-2xl mb-2">
             Cómo gestorías, funerarias y despachos de derecho sucesorio usan BARITUR PRO para multiplicar
