@@ -122,6 +122,62 @@ export default function PreciosPage() {
         </div>
       </section>
 
+      {/* Moat features — lo que justifica el precio */}
+      <section className="py-12 bg-gradient-to-b from-white to-slate-50 border-y">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="text-center mb-10">
+            <p className="text-xs font-bold uppercase tracking-wider text-primary mb-2">Qué incluye cualquier plan</p>
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Las 3 piezas que justifican el precio</h2>
+            <p className="mt-3 text-gray-600 max-w-2xl mx-auto text-sm sm:text-base">
+              No vendemos un CRM más. Vendemos las tres herramientas que evitan que
+              pierdas un cliente, un plazo o una tarde en tareas repetitivas.
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-5">
+            {[
+              {
+                href: "/radar-isd",
+                tile: "from-rose-500/15 to-amber-500/10 text-rose-600 ring-rose-100",
+                title: "Radar ISD",
+                desc: "Vigila los 17 calendarios autonómicos, las ventanas de prórroga y los tramos de patrimonio. Cero recargos del 5-20%.",
+              },
+              {
+                href: "/portal-familia",
+                tile: "from-emerald-500/15 to-sky-500/10 text-emerald-700 ring-emerald-100",
+                title: "Portal Familia",
+                desc: "Cada heredero ve el estado del expediente sin llamarte. Reduce 68% las consultas, capta por recomendación.",
+              },
+              {
+                href: "/borrador-modelo650",
+                tile: "from-indigo-500/15 to-blue-500/10 text-indigo-600 ring-indigo-100",
+                title: "Borrador automático",
+                desc: "Modelo 650 y 651 generados desde el expediente con plazos, bonificación CCAA y cuota estimada. PDF en 5 segundos.",
+              },
+            ].map((m) => (
+              <Link
+                key={m.href}
+                href={m.href}
+                className="group relative bg-white border rounded-2xl p-6 shadow-sm card-lift hover:border-primary/30"
+              >
+                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${m.tile} ring-4 flex items-center justify-center mb-4`}>
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 mb-2">{m.title}</h3>
+                <p className="text-sm text-gray-600 leading-relaxed mb-3">{m.desc}</p>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary group-hover:gap-2 transition-all">
+                  Saber más
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Feature comparison */}
       <section className="py-16 bg-gray-50">
         <div className="max-w-4xl mx-auto px-4">
@@ -140,9 +196,10 @@ export default function PreciosPage() {
                 {[
                   ["Usuarios", "2", "5", "20"],
                   ["Expedientes/mes incluidos", "15", "50", "200"],
-                  ["Motor de plazos ISD (6m)", "✓", "✓", "✓"],
+                  ["Radar ISD (los 17 calendarios autonómicos)", "✓", "✓", "✓"],
                   ["Checklist inteligente por categoría", "✓", "✓", "✓"],
-                  ["Portal familia", "Básico", "White-label", "White-label"],
+                  ["Portal Familia", "Básico", "White-label", "White-label"],
+                  ["Borrador automático Modelo 650 / 651", "✓", "✓", "✓"],
                   ["Pack banco unificado (PDF+ZIP)", "—", "✓", "✓"],
                   ["Plantillas versionadas con aprobación", "—", "✓", "✓"],
                   ["Notificaciones email automáticas ISD", "—", "✓", "✓"],
