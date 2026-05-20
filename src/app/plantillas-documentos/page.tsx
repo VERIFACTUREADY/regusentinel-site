@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DOCUMENT_TEMPLATES } from "@/lib/document-templates";
 import { PlantillasClient } from "./plantillas-client";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Plantillas gratuitas de documentos para herencia y post-mortem",
@@ -161,6 +162,7 @@ export default function PlantillasDocumentosPage() {
             especificos de cada entidad.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

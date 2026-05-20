@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { CosteHerenciaClient } from "./coste-herencia-client";
 import { ProUpsell } from "@/components/pro-upsell";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Cuánto cuesta heredar una casa — Calculadora del coste total de una herencia",
@@ -132,6 +133,7 @@ export default function CosteHerenciaPage() {
             Los aranceles de notaría y registro son estimaciones simplificadas de las escalas oficiales.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

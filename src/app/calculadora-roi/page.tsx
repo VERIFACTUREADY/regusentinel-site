@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ROICalculatorClient } from "./roi-client";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Calculadora ROI: cuánto ahorra tu gestoría con BARITUR PRO",
@@ -89,6 +90,7 @@ export default function ROIPage() {
           </Link>
         </section>
       </div>
+      <SiteFooter />
     </div>
   );
 }

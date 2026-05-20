@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BorradorClient } from "./borrador-client";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Borrador Modelo 650 gratis — Generador de PDF de Sucesiones",
@@ -195,6 +196,7 @@ export default function BorradorModelo650Page() {
             (Navarra, País Vasco) tributan según su normativa propia.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

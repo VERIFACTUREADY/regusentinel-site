@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BorradorM651Client } from "./borrador-client";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Borrador Modelo 651 gratis - Generador de PDF de Donaciones",
@@ -108,6 +109,7 @@ export default function BorradorM651Page() {
             adicionales que deben verificarse caso a caso.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

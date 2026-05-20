@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { GuiaClient } from "./guia-client";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Qué hacer tras un fallecimiento: guía de trámites paso a paso",
@@ -146,6 +147,7 @@ export default function GuiaFallecimientoPage() {
             profesional colegiado.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

@@ -7,6 +7,7 @@ import {
 import { CCAA_LABELS, type CCAAKey } from "@/lib/isd-calculator";
 import { ComparadorDonacionesClient } from "./comparador-donaciones-client";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Comparador del Impuesto de Donaciones por CCAA 2025 — Modelo 651",
@@ -186,6 +187,7 @@ export default function ComparadorDonacionesPage() {
             </div>
           </div>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

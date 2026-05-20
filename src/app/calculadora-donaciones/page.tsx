@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { CalculadoraDonacionesClient } from "./donaciones-client";
 import { ProUpsell } from "@/components/pro-upsell";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Calculadora Modelo 651 — Impuesto sobre Donaciones por CCAA 2025",
@@ -125,6 +126,7 @@ export default function CalculadoraDonacionesPage() {
             contempladas aquí. Para una valoración rigurosa consulta con un asesor fiscal.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

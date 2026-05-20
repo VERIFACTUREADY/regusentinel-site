@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CCAA_LABELS, type CCAAKey } from "@/lib/isd-calculator";
 import { getDonacionBonification, calculateDonacion } from "@/lib/donaciones-calculator";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Impuesto sobre Donaciones (Modelo 651) — Guía completa por CCAA 2025",
@@ -279,6 +280,7 @@ export default function DonacionesPage() {
             No constituye asesoramiento jurídico ni fiscal individualizado.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

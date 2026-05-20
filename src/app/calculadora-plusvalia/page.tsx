@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { PlusvaliaClient } from "./plusvalia-client";
 import { ProUpsell } from "@/components/pro-upsell";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Calculadora de Plusvalía Municipal 2025 — IIVTNU por herencia",
@@ -140,6 +141,7 @@ export default function CalculadoraPlusvaliaPage() {
             inferiores a los máximos legales). No constituye asesoramiento fiscal.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

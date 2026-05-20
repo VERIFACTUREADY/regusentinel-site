@@ -10,6 +10,7 @@ import {
 import { CCAA_CONTENT } from "@/lib/ccaa-content";
 import { ComparadorClient } from "./comparador-client";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Comparador ISD por Comunidad Autónoma 2025 — Cuánto se paga en cada CCAA",
@@ -310,6 +311,7 @@ export default function ComparadorISDPage() {
             </Link>
           </div>
         </div>
+        <SiteFooter />
       </div>
     </>
   );
