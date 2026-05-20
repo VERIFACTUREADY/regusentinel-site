@@ -126,6 +126,10 @@
     background-image: radial-gradient(hsl(221.2 83.2% 53.3% / 0.16) 1px, transparent 1px);
     background-size: 22px 22px;
   }
+  .dot-grid-light {
+    background-image: radial-gradient(rgba(255, 255, 255, 0.22) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
 
   /* Brillo sutil en hover de tarjetas */
   .card-lift {
