@@ -20,12 +20,14 @@ const features = [
     desc: "El dashboard detecta riesgos en toda tu cartera y te dice, expediente a expediente, la única acción siguiente ordenada por urgencia.",
     icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6",
     tone: "amber",
+    href: "/radar-isd",
   },
   {
     title: "Borradores del Modelo 650 y 651",
     desc: "Genera en PDF el borrador de Sucesiones y Donaciones con datos del expediente, plazos calculados y cuota estimada por CCAA.",
     icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
     tone: "emerald",
+    href: "/borrador-modelo650",
   },
   {
     title: "Pipeline de expedientes",
@@ -38,6 +40,7 @@ const features = [
     desc: "Enlace seguro para que la familia suba documentos clasificados automáticamente. Vinculación documento-tarea y resumen claro de cómo va todo.",
     icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z",
     tone: "sky",
+    href: "/portal-familia",
   },
   {
     title: "Pack 'listo para banco'",
@@ -524,7 +527,8 @@ export function LandingClient() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {features.map((f, i) => (
               <Reveal key={f.title} delay={(i % 4) * 80}>
-                <div className="card-lift h-full rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm hover:shadow-xl hover:border-slate-300/80">
+                <div className={`relative card-lift h-full rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm hover:shadow-xl hover:border-slate-300/80 ${f.href ? "group" : ""}`}>
+                  {f.href && <Link href={f.href} className="absolute inset-0 rounded-2xl" aria-label={f.title} />}
                   <span className={`inline-flex w-12 h-12 rounded-xl items-center justify-center ring-4 ${toneTile[f.tone]}`}>
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d={f.icon} />
@@ -532,6 +536,14 @@ export function LandingClient() {
                   </span>
                   <h3 className="mt-4 text-base font-bold text-slate-900">{f.title}</h3>
                   <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">{f.desc}</p>
+                  {f.href && (
+                    <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary group-hover:gap-2 transition-all">
+                      Saber más
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                      </svg>
+                    </span>
+                  )}
                 </div>
               </Reveal>
             ))}
