@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
 import { notFound } from "next/navigation";
 import {
   GLOSSARY,
@@ -63,17 +64,7 @@ export default function GlossaryTermPage({ params }: { params: { term: string } 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/glosario" className="text-gray-700 hover:text-primary">Glosario</Link>
-              <Link href="/calculadora-isd" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/blog" className="text-gray-700 hover:text-primary hidden sm:inline">Blog</Link>
-              <Link href="/#demo" className="text-primary font-semibold hidden sm:inline">Probar gratis</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         <nav className="max-w-3xl mx-auto px-4 py-3 text-xs text-gray-500">
           <Link href="/" className="hover:text-primary">Inicio</Link>

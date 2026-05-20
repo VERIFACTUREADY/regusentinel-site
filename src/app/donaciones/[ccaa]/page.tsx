@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
 import { notFound } from "next/navigation";
 import { CCAA_CONTENT, getCCAABySlug } from "@/lib/ccaa-content";
 import { CCAA_LABELS, type ParentescoGroup } from "@/lib/isd-calculator";
@@ -96,16 +97,7 @@ export default function DonacionCCAAPage({ params }: { params: { ccaa: string } 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/calculadora-donaciones" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/donaciones" className="text-primary font-semibold">Donaciones</Link>
-              <Link href="/sucesiones/{content.slug}" className="text-gray-700 hover:text-primary hidden sm:inline">Sucesiones {label}</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         <nav className="max-w-5xl mx-auto px-4 py-3 text-xs text-gray-500">
           <Link href="/" className="hover:text-primary">Inicio</Link>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
 
 export const metadata: Metadata = {
   title: "Casos de uso reales — Cómo gestorías y funerarias usan BARITUR PRO",
@@ -184,17 +185,7 @@ const VERTICAL_COLORS: Record<UseCase["vertical"], string> = {
 export default function CasosDeUsoPage() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-          <nav className="flex gap-3 sm:gap-4 text-sm">
-            <Link href="/casos-de-uso" className="text-primary font-semibold">Casos</Link>
-            <Link href="/calculadora-roi" className="text-gray-700 hover:text-primary">ROI</Link>
-            <Link href="/precios" className="text-gray-700 hover:text-primary">Precios</Link>
-            <Link href="/#demo" className="text-primary font-semibold hidden sm:inline">Probar gratis</Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
         <div className="max-w-4xl mx-auto px-4 py-14 sm:py-16">

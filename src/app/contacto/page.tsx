@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
 
 export const metadata: Metadata = {
   title: "Contacto — BARITUR PRO",
@@ -34,17 +35,7 @@ const contacts = [
 export default function ContactoPage() {
   return (
     <div className="min-h-screen bg-white">
-      <header className="border-b bg-white sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
-          <Link href="/" className="text-xl font-bold text-primary">BARITUR PRO</Link>
-          <div className="flex gap-2 sm:gap-4 items-center text-sm">
-            <Link href="/precios" className="hidden sm:inline text-gray-600 hover:text-primary">Precios</Link>
-            <Link href="/login?demo=1" className="px-4 py-2 border border-primary text-primary rounded-md hover:bg-primary/5">
-              Probar demo
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main className="max-w-4xl mx-auto px-4 py-12">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Contacto</h1>

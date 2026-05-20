@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
 import { notFound } from "next/navigation";
 import { CCAA_CONTENT, getCCAABySlug } from "@/lib/ccaa-content";
 import {
@@ -96,16 +97,7 @@ export default function CCAAPage({ params }: { params: { ccaa: string } }) {
 
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-4 text-sm">
-              <Link href="/calculadora-isd" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/comparador-isd" className="text-gray-700 hover:text-primary">Comparador</Link>
-              <Link href="/precios" className="text-gray-700 hover:text-primary">Precios</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         {/* Breadcrumb */}
         <nav className="max-w-5xl mx-auto px-4 py-3 text-xs text-gray-500">

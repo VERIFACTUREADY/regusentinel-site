@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
 
 export const metadata: Metadata = {
   title: "Integraciones — BARITUR PRO",
@@ -86,17 +87,7 @@ export default function IntegracionesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-          <nav className="flex gap-3 sm:gap-4 text-sm">
-            <Link href="/integraciones" className="text-primary font-semibold">Integraciones</Link>
-            <Link href="/seguridad" className="text-gray-700 hover:text-primary hidden sm:inline">Seguridad</Link>
-            <Link href="/docs/api" className="text-gray-700 hover:text-primary hidden sm:inline">API</Link>
-            <Link href="/#demo" className="text-primary font-semibold">Probar gratis</Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* Hero */}
       <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
 import { PricingTable } from "./pricing-table";
 
 export const metadata: Metadata = {
@@ -95,22 +96,7 @@ export default function PreciosPage() {
       />
 
       {/* Header */}
-      <header className="border-b bg-white sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-          <Link href="/" className="text-xl font-bold text-primary">BARITUR PRO</Link>
-          <div className="flex gap-2 sm:gap-4 items-center">
-            <Link href="/login" className="hidden sm:inline px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">
-              Iniciar sesion
-            </Link>
-            <Link href="/login?demo=1" className="px-4 py-2 text-sm font-medium border border-primary text-primary rounded-md hover:bg-primary/5">
-              Probar demo
-            </Link>
-            <Link href="/onboarding" className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-md hover:bg-primary/90">
-              Registrarse
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* Hero */}
       <section className="py-16 text-center bg-gradient-to-b from-blue-50 to-white">
