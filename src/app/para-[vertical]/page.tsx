@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { notFound } from "next/navigation";
 import { VERTICAL_CONFIG, ALL_VERTICAL_SLUGS, getVerticalBySlug } from "@/lib/vertical-landings";
 
@@ -225,6 +226,7 @@ export default function VerticalPage({ params }: { params: { vertical: string } 
             })}
           </div>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

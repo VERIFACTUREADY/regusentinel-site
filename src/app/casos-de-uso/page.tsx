@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Casos de uso reales — Cómo gestorías y funerarias usan BARITUR PRO",
@@ -288,6 +289,7 @@ export default function CasosDeUsoPage() {
           Tu caso real puede variar según madurez de procesos previos y adopción del equipo.
         </p>
       </div>
+      <SiteFooter />
     </div>
   );
 }

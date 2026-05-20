@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { notFound } from "next/navigation";
 import {
   CCAA_LABELS,
@@ -326,6 +327,7 @@ export default function PairPage({ params }: { params: { par: string } }) {
             })}
           </div>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

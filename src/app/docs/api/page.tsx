@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "API pública gratuita ISD — BARITUR PRO Developers",
@@ -320,6 +321,7 @@ echo "Cuota: " . $response["result"]["cuotaAPagar"];`}
           </p>
         </section>
       </div>
+      <SiteFooter />
     </div>
   );
 }

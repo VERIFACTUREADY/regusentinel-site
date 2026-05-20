@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { notFound } from "next/navigation";
 import { CCAA_CONTENT, getCCAABySlug } from "@/lib/ccaa-content";
 import {
@@ -308,6 +309,7 @@ export default function CCAAPage({ params }: { params: { ccaa: string } }) {
             </p>
           </section>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

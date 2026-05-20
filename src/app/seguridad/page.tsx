@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Seguridad y privacidad — BARITUR PRO",
@@ -280,6 +281,7 @@ export default function SeguridadPage() {
             y en nuestra <Link href="/legal/privacidad" className="text-primary hover:underline">Política de Privacidad</Link>.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

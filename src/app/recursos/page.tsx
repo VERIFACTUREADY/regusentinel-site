@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { BLOG_POSTS } from "@/lib/blog-posts";
 import { Reveal } from "@/components/reveal";
 import { ProUpsell } from "@/components/pro-upsell";
@@ -225,6 +226,7 @@ export default function RecursosPage() {
         freeToolName="Estos recursos gratuitos"
         freeToolDesc="resuelven consultas puntuales; no gestionan tu cartera de expedientes."
       />
+      <SiteFooter />
     </div>
   );
 }

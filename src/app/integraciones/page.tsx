@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Integraciones — BARITUR PRO",
@@ -235,6 +236,7 @@ curl "https://bariturpro.com/api/public/isd-compare?\\
           </Link>
         </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

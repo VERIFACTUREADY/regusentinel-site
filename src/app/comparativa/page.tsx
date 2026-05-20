@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "BARITUR PRO vs Excel, CRM genérico y software jurídico — Comparativa",
@@ -319,6 +320,7 @@ export default function ComparativaPage() {
           </div>
         </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

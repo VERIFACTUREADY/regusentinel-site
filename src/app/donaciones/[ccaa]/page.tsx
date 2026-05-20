@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { notFound } from "next/navigation";
 import { CCAA_CONTENT, getCCAABySlug } from "@/lib/ccaa-content";
 import { CCAA_LABELS, type ParentescoGroup } from "@/lib/isd-calculator";
@@ -301,6 +302,7 @@ export default function DonacionCCAAPage({ params }: { params: { ccaa: string } 
             jurídico ni fiscal individualizado.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

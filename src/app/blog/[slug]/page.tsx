@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { notFound } from "next/navigation";
 import { BLOG_POSTS, getPostBySlug, getRelatedPosts, type ContentBlock } from "@/lib/blog-posts";
 
@@ -214,6 +215,7 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
             </div>
           </div>
         )}
+        <SiteFooter />
       </div>
     </>
   );

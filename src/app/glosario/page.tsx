@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { GLOSSARY, GLOSSARY_CATEGORIES } from "@/lib/glossary";
 
 export const metadata: Metadata = {
@@ -144,6 +145,7 @@ export default function GlosarioPage() {
             </div>
           </div>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

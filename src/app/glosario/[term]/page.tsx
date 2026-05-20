@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { notFound } from "next/navigation";
 import {
   GLOSSARY,
@@ -184,6 +185,7 @@ export default function GlossaryTermPage({ params }: { params: { term: string } 
             </p>
           </section>
         </div>
+        <SiteFooter />
       </div>
     </>
   );
