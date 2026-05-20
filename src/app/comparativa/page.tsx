@@ -298,10 +298,19 @@ export default function ComparativaPage() {
           <div className="grid md:grid-cols-2 gap-6 items-center">
             <div>
               <h2 className="text-2xl font-bold mb-3">¿Estás migrando desde Excel u otro sistema?</h2>
-              <p className="text-blue-200 text-sm">
-                Setup remoto en 30 minutos, plantillas precargadas, importación CSV de expedientes existentes.
+              <p className="text-blue-200 text-sm mb-3">
+                Plan de migración en 5 días, plantillas precargadas, importación de tu Excel actual.
                 14 días gratis para que pruebes con tu cartera real.
               </p>
+              <Link
+                href="/migrar-de-excel"
+                className="inline-flex items-center gap-1 text-sm font-semibold text-blue-200 hover:text-white transition-all"
+              >
+                Ver el plan de migración detallado
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </Link>
             </div>
             <div className="flex flex-col gap-3 items-stretch">
               <Link
