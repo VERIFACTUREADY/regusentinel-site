@@ -24,6 +24,8 @@ export function SiteFooter() {
           <div>
             <p className="text-sm font-semibold text-white mb-3">Producto</p>
             <ul className="space-y-2 text-sm">
+              <li><Link href="/radar-isd" className="hover:text-white transition">Radar ISD</Link></li>
+              <li><Link href="/portal-familia" className="hover:text-white transition">Portal Familia</Link></li>
               <li><Link href="/precios" className="hover:text-white transition">Precios</Link></li>
               <li><Link href="/comparativa" className="hover:text-white transition">Comparativa</Link></li>
               <li><Link href="/casos-de-uso" className="hover:text-white transition">Casos de uso</Link></li>
