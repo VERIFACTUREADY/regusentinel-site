@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Changelog — BARITUR PRO",
@@ -129,16 +129,7 @@ export default function ChangelogPage() {
         </div>
       </main>
 
-      <footer className="py-8 border-t bg-gray-50">
-        <div className="max-w-3xl mx-auto px-4 text-center text-sm text-gray-500 space-y-2">
-          <p>
-            <Link href="/" className="text-primary hover:underline mr-4">Inicio</Link>
-            <Link href="/precios" className="text-primary hover:underline mr-4">Precios</Link>
-            <Link href="/legal/privacidad" className="text-primary hover:underline mr-4">Privacidad</Link>
-            <Link href="/legal/terminos" className="text-primary hover:underline">Terminos</Link>
-          </p>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

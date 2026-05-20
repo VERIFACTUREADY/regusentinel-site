@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { PricingTable } from "./pricing-table";
 
 export const metadata: Metadata = {
@@ -214,20 +215,13 @@ export default function PreciosPage() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="py-8 border-t bg-gray-50">
-        <div className="max-w-6xl mx-auto px-4 text-center text-sm text-gray-500 space-y-2">
+      {/* Disclaimer */}
+      <section className="py-8 border-t bg-gray-50">
+        <div className="max-w-6xl mx-auto px-4 text-center text-sm text-gray-500">
           <p>Precios sin IVA. Facturación en euros. Domicilio fiscal en España.</p>
-          <p className="font-medium text-gray-700">BARITUR no presta asesoramiento jurídico ni fiscal individual.</p>
-          <p className="mt-4 space-x-4">
-            <Link href="/" className="text-primary hover:underline">Inicio</Link>
-            <Link href="/login" className="text-primary hover:underline">Acceder</Link>
-            <Link href="/legal/privacidad" className="text-primary hover:underline">Privacidad</Link>
-            <Link href="/legal/terminos" className="text-primary hover:underline">Terminos</Link>
-            <Link href="/legal/cookies" className="text-primary hover:underline">Cookies</Link>
-          </p>
         </div>
-      </footer>
+      </section>
+      <SiteFooter />
     </div>
   );
 }

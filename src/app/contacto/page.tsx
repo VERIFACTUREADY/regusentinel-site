@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Contacto — BARITUR PRO",
@@ -87,14 +88,7 @@ export default function ContactoPage() {
         </div>
       </main>
 
-      <footer className="py-8 border-t bg-gray-50">
-        <div className="max-w-4xl mx-auto px-4 text-center text-sm text-gray-500 space-x-4">
-          <Link href="/" className="text-primary hover:underline">Inicio</Link>
-          <Link href="/precios" className="text-primary hover:underline">Precios</Link>
-          <Link href="/legal/privacidad" className="text-primary hover:underline">Privacidad</Link>
-          <Link href="/legal/terminos" className="text-primary hover:underline">Terminos</Link>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

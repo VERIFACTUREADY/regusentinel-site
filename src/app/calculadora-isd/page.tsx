@@ -1,8 +1,8 @@
 import { Metadata } from "next";
-import Link from "next/link";
 import { CalculatorClient } from "./calculator-client";
 import { ProUpsell } from "@/components/pro-upsell";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Calculadora del Impuesto de Sucesiones (ISD) por Comunidad Autónoma | BARITUR PRO",
@@ -175,8 +175,8 @@ export default function CalculadoraISDPage() {
         freeToolDesc="estima la cuota de un caso puntual; hay que reintroducir todos los datos en cada consulta."
       />
 
-      {/* ─── Disclaimer + Footer ──────────────────────────── */}
-      <footer className="border-t bg-white">
+      {/* ─── Disclaimer ──────────────────────────────────── */}
+      <section className="border-t bg-white">
         <div className="mx-auto max-w-6xl px-4 py-8 text-xs text-slate-500">
           <p>
             <strong>Aviso legal:</strong> Esta calculadora es una herramienta
@@ -188,16 +188,9 @@ export default function CalculadoraISDPage() {
             tienen régimen foral propio. BARITUR no presta asesoramiento
             jurídico ni fiscal individual.
           </p>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-            <span>© BARITUR PRO</span>
-            <div className="flex gap-4">
-              <Link href="/legal/terminos" className="hover:text-slate-700">Términos</Link>
-              <Link href="/legal/privacidad" className="hover:text-slate-700">Privacidad</Link>
-              <Link href="/legal/cookies" className="hover:text-slate-700">Cookies</Link>
-            </div>
-          </div>
         </div>
-      </footer>
+      </section>
+      <SiteFooter />
     </main>
   );
 }
