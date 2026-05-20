@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Reveal } from "@/components/reveal";
 
 /**
  * Bloque reutilizable que separa con nitidez la herramienta GRATUITA del
@@ -13,7 +14,8 @@ export function ProUpsell({
   freeToolDesc?: string;
 }) {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900">
+    <Reveal>
+      <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900">
       <div className="absolute -top-20 right-0 w-72 h-72 bg-indigo-500/20 rounded-full blur-3xl" />
       <div className="absolute bottom-0 -left-16 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl" />
 
@@ -97,5 +99,6 @@ export function ProUpsell({
         <p className="mt-3 text-center text-xs text-slate-500">Sin tarjeta · sin permanencia · setup en 30 minutos</p>
       </div>
     </section>
+    </Reveal>
   );
 }
