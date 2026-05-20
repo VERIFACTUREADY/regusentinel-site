@@ -15,8 +15,9 @@ export function SiteHeader({ cta = "Probar gratis" }: { cta?: string }) {
           <span className="text-lg font-bold text-slate-900 tracking-tight">BARITUR PRO</span>
         </Link>
         <nav className="flex gap-1 sm:gap-2 items-center text-sm">
+          <Link href="/asi-funciona" className="hidden md:inline px-3 py-2 font-medium text-slate-600 hover:text-primary transition">Cómo funciona</Link>
           <Link href="/recursos" className="hidden sm:inline px-3 py-2 font-medium text-slate-600 hover:text-primary transition">Recursos</Link>
-          <Link href="/blog" className="hidden md:inline px-3 py-2 font-medium text-slate-600 hover:text-primary transition">Blog</Link>
+          <Link href="/blog" className="hidden lg:inline px-3 py-2 font-medium text-slate-600 hover:text-primary transition">Blog</Link>
           <Link href="/precios" className="hidden sm:inline px-3 py-2 font-medium text-slate-600 hover:text-primary transition">Precios</Link>
           <Link
             href="/#demo"
