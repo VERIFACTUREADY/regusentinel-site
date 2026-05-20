@@ -37,8 +37,8 @@ const FEATURES: FeatureRow[] = [
     baritur: "yes",
   },
   {
-    feature: "Detección automática de plazos críticos",
-    detail: "Avisos de vencimiento del Modelo 650, ventana de prórroga, proximidad a tramos",
+    feature: "Radar ISD — vigilancia de los 17 calendarios autonómicos",
+    detail: "Avisos antes de vencer el Modelo 650, ventana de prórroga, tramos de patrimonio, bonificaciones con caducidad y cambios de residencia",
     excel: "no",
     crm: "no",
     juridico: "partial",
@@ -53,8 +53,8 @@ const FEATURES: FeatureRow[] = [
     baritur: "yes",
   },
   {
-    feature: "Portal familia white-label",
-    detail: "URL única por expediente para que la familia suba documentos y consulte estado",
+    feature: "Portal Familia con tu marca",
+    detail: "URL única por expediente. Cada heredero ve plazos, documentos pendientes y chat con el gestor. Reduce 68% las consultas",
     excel: "no",
     crm: "no",
     juridico: "no",
