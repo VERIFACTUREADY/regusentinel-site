@@ -159,7 +159,7 @@ export default function PortalFamiliaPage() {
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                   </div>
-                  <span className="text-xs text-slate-500 font-mono mx-auto pr-12">portal.bariturpro.com/h/perez-garcia</span>
+                  <span className="text-xs text-slate-500 font-mono mx-auto pr-12">bariturpro.com/portal/h7g3-pkz2-mxnt</span>
                 </div>
 
                 <div className="p-5 sm:p-7">

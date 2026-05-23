@@ -76,7 +76,7 @@ const MIGRATION_PLAN = [
   {
     day: "Día 4",
     title: "Activamos el Portal Familia",
-    body: "Personalizamos el portal con tu logo y dominio (heredamos.tunombre.com). Generamos enlaces para las primeras 3-5 familias activas. La transición del email al portal es inmediata.",
+    body: "Personalizamos el portal con tu logo, tus colores y tu email de soporte. Generamos enlaces para las primeras 3-5 familias activas. La transición del email al portal es inmediata.",
   },
   {
     day: "Día 5",
@@ -296,7 +296,7 @@ export default function MigrarDeExcelPage() {
                     "Tus criterios fiscales y juicio profesional del caso",
                     "Tus tarifas y tu modelo de facturación",
                     "El histórico completo de tus expedientes (importado)",
-                    "Tu marca: el Portal Familia lleva tu logo y tu dominio",
+                    "Tu marca: el Portal Familia lleva tu logo, tus colores y tu email de soporte",
                   ].map((x) => (
                     <li key={x} className="flex gap-2.5">
                       <svg className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">

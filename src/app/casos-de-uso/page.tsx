@@ -157,7 +157,7 @@ const CASES: UseCase[] = [
       "Reseñas y referencias dependen de la memoria del cliente",
     ],
     after: [
-      "Portal con dominio propio (heredamos.funerariaXY.com) y colores de la marca",
+      "Portal personalizado con el logo, los colores y el email de soporte de la funeraria",
       "Cada familia recibe URL única durante 6-12 meses con seguimiento de su expediente",
       "Reviews/recomendaciones triplican gracias al recordatorio constante",
       "Equipo comercial puede demostrar el portal en cada nuevo servicio",
