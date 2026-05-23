@@ -107,7 +107,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     status, notes, isUrgent, legitimationNote, consentAccepted, deceased,
     contact, province, categories, hasDeceasedInsurance, portalEnabled,
     hasUrbanProperty, propertyAcquisitionValue, propertyTransmissionValue,
-    preexistingPatrimony,
+    preexistingPatrimony, recentResidenceChange, previousResidenceProvince,
   } = body;
 
   const numericOrNull = (v: unknown): number | null | undefined => {
@@ -142,6 +142,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }),
       ...(preexistingPatrimony !== undefined && {
         preexistingPatrimony: numericOrNull(preexistingPatrimony),
+      }),
+      ...(recentResidenceChange !== undefined && {
+        recentResidenceChange: Boolean(recentResidenceChange),
+      }),
+      ...(previousResidenceProvince !== undefined && {
+        previousResidenceProvince:
+          typeof previousResidenceProvince === "string" && previousResidenceProvince.trim()
+            ? previousResidenceProvince.trim()
+            : null,
       }),
     },
     include: { deceased: true, contact: true },

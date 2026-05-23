@@ -47,6 +47,8 @@ export async function getOrgRiskOverview(orgId: string, limit = 6): Promise<OrgR
       propertyAcquisitionValue: true,
       propertyTransmissionValue: true,
       preexistingPatrimony: true,
+      recentResidenceChange: true,
+      previousResidenceProvince: true,
       deceased: { select: { fullName: true, deathDate: true } },
     },
   });
@@ -63,6 +65,8 @@ export async function getOrgRiskOverview(orgId: string, limit = 6): Promise<OrgR
       propertyAcquisitionValue: c.propertyAcquisitionValue,
       propertyTransmissionValue: c.propertyTransmissionValue,
       preexistingPatrimony: c.preexistingPatrimony,
+      recentResidenceChange: c.recentResidenceChange,
+      previousResidenceProvince: c.previousResidenceProvince,
     });
     if (risks.length === 0) continue;
 

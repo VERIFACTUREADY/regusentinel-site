@@ -24,6 +24,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       propertyAcquisitionValue: true,
       propertyTransmissionValue: true,
       preexistingPatrimony: true,
+      recentResidenceChange: true,
+      previousResidenceProvince: true,
       deceased: { select: { deathDate: true } },
     },
   });
@@ -39,6 +41,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     propertyAcquisitionValue: c.propertyAcquisitionValue,
     propertyTransmissionValue: c.propertyTransmissionValue,
     preexistingPatrimony: c.preexistingPatrimony,
+    recentResidenceChange: c.recentResidenceChange,
+    previousResidenceProvince: c.previousResidenceProvince,
   });
 
   return NextResponse.json({ risks });

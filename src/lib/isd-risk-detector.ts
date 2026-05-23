@@ -54,6 +54,14 @@ export interface RiskInput {
   propertyAcquisitionValue?: number | null;
   /** Valor declarado en la transmisión mortis causa. */
   propertyTransmissionValue?: number | null;
+  /**
+   * El causante cambió de residencia fiscal en los 5 años previos.
+   * Activa la alerta del art. 28 Ley 22/2009: si la residencia actual no
+   * acredita los 5 años, AEAT puede recalcular en la CCAA previa.
+   */
+  recentResidenceChange?: boolean;
+  /** Provincia/CCAA de residencia previa, opcional, para concretar el mensaje. */
+  previousResidenceProvince?: string | null;
 }
 
 const MS_PER_DAY = 86_400_000;
@@ -174,6 +182,36 @@ export function detectISDRisks(input: RiskInput): ISDRisk[] {
   // ─── Riesgos de plusvalía municipal (IIVTNU) ────────────────────────
   if (input.hasUrbanProperty) {
     risks.push(...detectPlusvaliaRisks(daysUntilISD, daysUntilExtension, input));
+  }
+
+  // ─── Cambio de residencia (art. 28 Ley 22/2009) ─────────────────────
+  if (input.recentResidenceChange) {
+    const ccaa = mapProvinceToCCAA(input.province);
+    const previousCCAA = mapProvinceToCCAA(input.previousResidenceProvince ?? null);
+    const group = input.group ?? "II";
+
+    // Si la CCAA actual bonifica fuerte y la previa bonificaba menos,
+    // AEAT podría querer revisarlo. Es el caso típico de mudanza fiscal.
+    const currentBonif = ccaa ? getCCAABonification(ccaa, group, input.estimatedInheritanceValue ?? 0).pct : 0;
+    const previousBonif = previousCCAA
+      ? getCCAABonification(previousCCAA, group, input.estimatedInheritanceValue ?? 0).pct
+      : 0;
+
+    if (ccaa && currentBonif >= 80) {
+      const prevLabel = previousCCAA ? CCAA_LABELS[previousCCAA] : (input.previousResidenceProvince || "otra CCAA");
+      const advantageSwing = previousCCAA && previousBonif < currentBonif;
+      risks.push({
+        id: "residence_change_5y",
+        severity: advantageSwing ? "warning" : "info",
+        title: advantageSwing
+          ? `Riesgo de revisión por cambio de residencia: ${CCAA_LABELS[ccaa]} vs ${prevLabel}`
+          : "El causante consta con residencia <5 años en la CCAA actual",
+        description: advantageSwing
+          ? `${CCAA_LABELS[ccaa]} bonifica el ${currentBonif}% para grupo ${group}, frente al ${previousBonif}% de ${prevLabel}. Si el cambio de residencia es de los últimos 5 años, AEAT puede aplicar la normativa de ${prevLabel} (art. 28 Ley 22/2009).`
+          : `${CCAA_LABELS[ccaa]} aplica una bonificación alta. Si el cambio de residencia del causante es de los últimos 5 años, AEAT puede aplicar la normativa de la CCAA previa (art. 28 Ley 22/2009).`,
+        action: "Verifica empadronamiento, IRPF y permanencia en la CCAA actual durante 5 años antes del fallecimiento.",
+      });
+    }
   }
 
   return risks;

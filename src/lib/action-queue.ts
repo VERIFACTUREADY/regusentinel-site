@@ -27,6 +27,9 @@ export interface QueueCaseInput {
   propertyTransmissionValue?: number | null;
   /** Patrimonio preexistente del heredero — alimenta tramos del coeficiente. */
   preexistingPatrimony?: number | null;
+  /** El causante cambió de residencia fiscal en los 5 años previos. */
+  recentResidenceChange?: boolean;
+  previousResidenceProvince?: string | null;
 }
 
 export interface ActionQueueItem {
@@ -66,6 +69,8 @@ export function buildActionQueue(cases: QueueCaseInput[], limit = 8): ActionQueu
       propertyAcquisitionValue: c.propertyAcquisitionValue,
       propertyTransmissionValue: c.propertyTransmissionValue,
       preexistingPatrimony: c.preexistingPatrimony,
+      recentResidenceChange: c.recentResidenceChange,
+      previousResidenceProvince: c.previousResidenceProvince,
     });
 
     const action = computeNextAction({
@@ -118,6 +123,8 @@ export async function getOrgActionQueue(orgId: string, limit = 8): Promise<Actio
       propertyAcquisitionValue: true,
       propertyTransmissionValue: true,
       preexistingPatrimony: true,
+      recentResidenceChange: true,
+      previousResidenceProvince: true,
       deceased: { select: { fullName: true, deathDate: true } },
       tasks: {
         select: { id: true, title: true, status: true, deadline: true, dueDate: true, blockReason: true },
@@ -136,6 +143,8 @@ export async function getOrgActionQueue(orgId: string, limit = 8): Promise<Actio
     propertyAcquisitionValue: c.propertyAcquisitionValue,
     propertyTransmissionValue: c.propertyTransmissionValue,
     preexistingPatrimony: c.preexistingPatrimony,
+    recentResidenceChange: c.recentResidenceChange,
+    previousResidenceProvince: c.previousResidenceProvince,
     tasks: c.tasks.map((t) => ({
       id: t.id,
       title: t.title,

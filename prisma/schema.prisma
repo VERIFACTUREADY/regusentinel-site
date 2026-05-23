@@ -173,6 +173,14 @@ model Case {
   /// del art. 22 Ley 29/1987.
   preexistingPatrimony      Float?
 
+  /// El causante cambió de residencia fiscal en los 5 años previos al
+  /// fallecimiento. Activa el aviso del art. 28 Ley 22/2009 (punto
+  /// de conexión por residencia habitual durante los últimos 5 años).
+  recentResidenceChange   Boolean @default(false)
+  /// Provincia/CCAA de residencia fiscal previa, si la conocemos.
+  /// Se usa en el mensaje de la alerta cuando se ha marcado un cambio.
+  previousResidenceProvince String?
+
   deletedAt DateTime?
   closedAt  DateTime?
 

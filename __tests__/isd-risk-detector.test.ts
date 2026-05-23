@@ -280,3 +280,53 @@ describe("detectISDRisks — plusvalía municipal (IIVTNU)", () => {
     expect(risks.find((r) => r.id === "plusvalia_no_incremento")).toBeUndefined();
   });
 });
+
+describe("detectISDRisks — cambio de residencia (art. 28 Ley 22/2009)", () => {
+  it("no flagea si recentResidenceChange es false", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      recentResidenceChange: false,
+    });
+    expect(risks.find((r) => r.id === "residence_change_5y")).toBeUndefined();
+  });
+
+  it("flagea info si la CCAA actual bonifica fuerte sin previa conocida", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      group: "II",
+      recentResidenceChange: true,
+    });
+    const r = risks.find((x) => x.id === "residence_change_5y");
+    expect(r).toBeDefined();
+    expect(r!.severity).toBe("info");
+    expect(r!.description).toMatch(/art\. 28 Ley 22\/2009/);
+  });
+
+  it("escala a warning si la CCAA previa bonifica menos que la actual", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      group: "II",
+      recentResidenceChange: true,
+      previousResidenceProvince: "asturias",
+    });
+    const r = risks.find((x) => x.id === "residence_change_5y");
+    expect(r).toBeDefined();
+    expect(r!.severity).toBe("warning");
+    expect(r!.title).toMatch(/Madrid/);
+    expect(r!.title).toMatch(/Asturias/);
+  });
+
+  it("no flagea si la CCAA actual no bonifica fuerte", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "asturias",
+      group: "II",
+      recentResidenceChange: true,
+      previousResidenceProvince: "madrid",
+    });
+    expect(risks.find((r) => r.id === "residence_change_5y")).toBeUndefined();
+  });
+});

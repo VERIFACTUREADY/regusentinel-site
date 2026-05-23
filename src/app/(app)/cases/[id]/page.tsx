@@ -20,6 +20,8 @@ interface CaseDetail {
   propertyAcquisitionValue: number | null;
   propertyTransmissionValue: number | null;
   preexistingPatrimony: number | null;
+  recentResidenceChange: boolean;
+  previousResidenceProvince: string | null;
   deceased: { fullName: string; deathDate: string | null; dni: string | null } | null;
   contact: { fullName: string; phone: string | null; email: string | null; relationship: string | null } | null;
   tasks: any[]; documents: any[]; approvals: any[]; auditLogs: any[];
@@ -102,6 +104,8 @@ export default function CaseDetailPage() {
     propertyAcquisitionValue: "",
     propertyTransmissionValue: "",
     preexistingPatrimony: "",
+    recentResidenceChange: false,
+    previousResidenceProvince: "",
   });
   const [infoSaving, setInfoSaving] = useState(false);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
@@ -709,6 +713,8 @@ El equipo de gestión`;
         propertyAcquisitionValue: numericOrNull(fiscalForm.propertyAcquisitionValue),
         propertyTransmissionValue: numericOrNull(fiscalForm.propertyTransmissionValue),
         preexistingPatrimony: numericOrNull(fiscalForm.preexistingPatrimony),
+        recentResidenceChange: fiscalForm.recentResidenceChange,
+        previousResidenceProvince: fiscalForm.previousResidenceProvince.trim() || null,
       }),
     });
     setFiscalEditOpen(false);
@@ -1416,6 +1422,8 @@ El equipo de gestión`;
                         caseData.propertyTransmissionValue != null ? String(caseData.propertyTransmissionValue) : "",
                       preexistingPatrimony:
                         caseData.preexistingPatrimony != null ? String(caseData.preexistingPatrimony) : "",
+                      recentResidenceChange: caseData.recentResidenceChange,
+                      previousResidenceProvince: caseData.previousResidenceProvince ?? "",
                     });
                     setFiscalEditOpen(true);
                   }}
@@ -1480,6 +1488,35 @@ El equipo de gestión`;
                     Tramos del art. 22 Ley 29/1987: 402.678 €, 2.007.380 € y 4.020.770 €.
                   </p>
                 </div>
+                <div className="border-t pt-3">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={fiscalForm.recentResidenceChange}
+                      onChange={(e) =>
+                        setFiscalForm((f) => ({ ...f, recentResidenceChange: e.target.checked }))
+                      }
+                    />
+                    Cambio de residencia en los 5 años previos
+                  </label>
+                  {fiscalForm.recentResidenceChange && (
+                    <div className="mt-2 pl-6">
+                      <label className="text-xs text-gray-500">Provincia / CCAA previa (opcional)</label>
+                      <input
+                        className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        placeholder="Barcelona"
+                        value={fiscalForm.previousResidenceProvince}
+                        onChange={(e) =>
+                          setFiscalForm((f) => ({ ...f, previousResidenceProvince: e.target.value }))
+                        }
+                      />
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        Activa la alerta del art. 28 Ley 22/2009 cuando la CCAA actual bonifica
+                        sensiblemente más que la previa.
+                      </p>
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-2 pt-1">
                   <button
                     onClick={saveFiscalInfo}
@@ -1522,6 +1559,13 @@ El equipo de gestión`;
                   {caseData.preexistingPatrimony != null
                     ? `${caseData.preexistingPatrimony.toLocaleString("es-ES")} €`
                     : "—"}
+                </p>
+                <p>
+                  <strong>Cambio residencia &lt;5 años:</strong>{" "}
+                  {caseData.recentResidenceChange ? "Sí" : "No"}
+                  {caseData.recentResidenceChange && caseData.previousResidenceProvince
+                    ? ` (previa: ${caseData.previousResidenceProvince})`
+                    : ""}
                 </p>
               </>
             )}
