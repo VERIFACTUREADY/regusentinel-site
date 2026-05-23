@@ -158,6 +158,21 @@ model Case {
   consentDate      DateTime?
   legitimationNote String?
 
+  /// Si en el caudal hay inmueble urbano. Activa la vigilancia del
+  /// plazo y la posible no-sujeción de la plusvalía municipal en
+  /// el Radar ISD.
+  hasUrbanProperty          Boolean @default(false)
+  /// Valor declarado en la escritura previa del inmueble urbano.
+  /// Junto a propertyTransmissionValue permite detectar la no-sujeción
+  /// a IIVTNU tras RDL 26/2021 cuando no hay incremento de valor.
+  propertyAcquisitionValue  Float?
+  /// Valor declarado en la transmisión mortis causa del inmueble urbano.
+  propertyTransmissionValue Float?
+  /// Patrimonio preexistente del heredero principal (€). Alimenta la
+  /// detección de proximidad a tramos del coeficiente multiplicador
+  /// del art. 22 Ley 29/1987.
+  preexistingPatrimony      Float?
+
   deletedAt DateTime?
   closedAt  DateTime?
 

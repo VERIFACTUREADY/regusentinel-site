@@ -21,6 +21,12 @@ export interface QueueCaseInput {
   province: string | null;
   deathDate: Date | null;
   tasks: NextActionTask[];
+  /** Inmueble urbano declarado en el caudal — alimenta riesgos IIVTNU. */
+  hasUrbanProperty?: boolean;
+  propertyAcquisitionValue?: number | null;
+  propertyTransmissionValue?: number | null;
+  /** Patrimonio preexistente del heredero — alimenta tramos del coeficiente. */
+  preexistingPatrimony?: number | null;
 }
 
 export interface ActionQueueItem {
@@ -56,6 +62,10 @@ export function buildActionQueue(cases: QueueCaseInput[], limit = 8): ActionQueu
     const risks = detectISDRisks({
       deathDate: c.deathDate,
       province: c.province,
+      hasUrbanProperty: c.hasUrbanProperty,
+      propertyAcquisitionValue: c.propertyAcquisitionValue,
+      propertyTransmissionValue: c.propertyTransmissionValue,
+      preexistingPatrimony: c.preexistingPatrimony,
     });
 
     const action = computeNextAction({
@@ -104,6 +114,10 @@ export async function getOrgActionQueue(orgId: string, limit = 8): Promise<Actio
       ref: true,
       status: true,
       province: true,
+      hasUrbanProperty: true,
+      propertyAcquisitionValue: true,
+      propertyTransmissionValue: true,
+      preexistingPatrimony: true,
       deceased: { select: { fullName: true, deathDate: true } },
       tasks: {
         select: { id: true, title: true, status: true, deadline: true, dueDate: true, blockReason: true },
@@ -118,6 +132,10 @@ export async function getOrgActionQueue(orgId: string, limit = 8): Promise<Actio
     caseStatus: c.status,
     province: c.province,
     deathDate: c.deceased?.deathDate ?? null,
+    hasUrbanProperty: c.hasUrbanProperty,
+    propertyAcquisitionValue: c.propertyAcquisitionValue,
+    propertyTransmissionValue: c.propertyTransmissionValue,
+    preexistingPatrimony: c.preexistingPatrimony,
     tasks: c.tasks.map((t) => ({
       id: t.id,
       title: t.title,

@@ -103,7 +103,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!c) return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
 
   const body = await req.json();
-  const { status, notes, isUrgent, legitimationNote, consentAccepted, deceased, contact, province, categories, hasDeceasedInsurance, portalEnabled } = body;
+  const {
+    status, notes, isUrgent, legitimationNote, consentAccepted, deceased,
+    contact, province, categories, hasDeceasedInsurance, portalEnabled,
+    hasUrbanProperty, propertyAcquisitionValue, propertyTransmissionValue,
+    preexistingPatrimony,
+  } = body;
+
+  const numericOrNull = (v: unknown): number | null | undefined => {
+    if (v === undefined) return undefined;
+    if (v === null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
 
   const updated = await prisma.case.update({
     where: { id: params.id },
@@ -121,6 +133,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(Array.isArray(categories) && { categories }),
       ...(hasDeceasedInsurance !== undefined && { hasDeceasedInsurance }),
       ...(portalEnabled !== undefined && { portalEnabled }),
+      ...(hasUrbanProperty !== undefined && { hasUrbanProperty: Boolean(hasUrbanProperty) }),
+      ...(propertyAcquisitionValue !== undefined && {
+        propertyAcquisitionValue: numericOrNull(propertyAcquisitionValue),
+      }),
+      ...(propertyTransmissionValue !== undefined && {
+        propertyTransmissionValue: numericOrNull(propertyTransmissionValue),
+      }),
+      ...(preexistingPatrimony !== undefined && {
+        preexistingPatrimony: numericOrNull(preexistingPatrimony),
+      }),
     },
     include: { deceased: true, contact: true },
   });

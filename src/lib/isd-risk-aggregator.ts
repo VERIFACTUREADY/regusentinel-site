@@ -43,6 +43,10 @@ export async function getOrgRiskOverview(orgId: string, limit = 6): Promise<OrgR
       id: true,
       ref: true,
       province: true,
+      hasUrbanProperty: true,
+      propertyAcquisitionValue: true,
+      propertyTransmissionValue: true,
+      preexistingPatrimony: true,
       deceased: { select: { fullName: true, deathDate: true } },
     },
   });
@@ -55,6 +59,10 @@ export async function getOrgRiskOverview(orgId: string, limit = 6): Promise<OrgR
     const risks = detectISDRisks({
       deathDate: c.deceased?.deathDate ?? null,
       province: c.province,
+      hasUrbanProperty: c.hasUrbanProperty,
+      propertyAcquisitionValue: c.propertyAcquisitionValue,
+      propertyTransmissionValue: c.propertyTransmissionValue,
+      preexistingPatrimony: c.preexistingPatrimony,
     });
     if (risks.length === 0) continue;
 

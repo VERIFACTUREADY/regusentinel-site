@@ -22,6 +22,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     select: {
       status: true,
       province: true,
+      hasUrbanProperty: true,
+      propertyAcquisitionValue: true,
+      propertyTransmissionValue: true,
+      preexistingPatrimony: true,
       deceased: { select: { deathDate: true } },
       tasks: {
         select: { id: true, title: true, status: true, deadline: true, dueDate: true, blockReason: true },
@@ -36,6 +40,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const risks = detectISDRisks({
     deathDate: c.deceased?.deathDate ?? null,
     province: c.province,
+    hasUrbanProperty: c.hasUrbanProperty,
+    propertyAcquisitionValue: c.propertyAcquisitionValue,
+    propertyTransmissionValue: c.propertyTransmissionValue,
+    preexistingPatrimony: c.preexistingPatrimony,
   });
 
   const tasks: NextActionTask[] = c.tasks.map((t) => ({
