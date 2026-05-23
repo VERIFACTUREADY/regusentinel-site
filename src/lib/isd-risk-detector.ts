@@ -34,6 +34,26 @@ export interface RiskInput {
   estimatedInheritanceValue?: number | null;
   /** Grupo de parentesco si se conoce. */
   group?: ParentescoGroup | null;
+  /**
+   * Patrimonio preexistente del heredero (€). Si está cerca de un tramo del
+   * coeficiente multiplicador (art. 22 Ley 29/1987), generamos alerta de
+   * optimización: una donación previa o una distribución distinta del caudal
+   * puede dejarlo bajo el tramo.
+   */
+  preexistingPatrimony?: number | null;
+  /**
+   * Si en el caudal hay inmueble urbano. Habilita la detección de plazos y
+   * optimización de la plusvalía municipal (IIVTNU).
+   */
+  hasUrbanProperty?: boolean;
+  /**
+   * Valor de adquisición declarado en escritura previa. Si está disponible
+   * junto al valor de transmisión y el primero ≥ el segundo, la operación
+   * está no sujeta a IIVTNU.
+   */
+  propertyAcquisitionValue?: number | null;
+  /** Valor declarado en la transmisión mortis causa. */
+  propertyTransmissionValue?: number | null;
 }
 
 const MS_PER_DAY = 86_400_000;
@@ -142,6 +162,122 @@ export function detectISDRisks(input: RiskInput): ISDRisk[] {
     if (input.estimatedInheritanceValue && input.estimatedInheritanceValue > 0) {
       const thresholdRisk = detectThresholdRisk(ccaa, group, input.estimatedInheritanceValue);
       if (thresholdRisk) risks.push(thresholdRisk);
+    }
+  }
+
+  // ─── Riesgos de patrimonio preexistente (coeficiente multiplicador) ──
+  if (typeof input.preexistingPatrimony === "number" && input.preexistingPatrimony >= 0) {
+    const patrimonyRisk = detectPatrimonyThresholdRisk(input.preexistingPatrimony, input.group ?? "II");
+    if (patrimonyRisk) risks.push(patrimonyRisk);
+  }
+
+  // ─── Riesgos de plusvalía municipal (IIVTNU) ────────────────────────
+  if (input.hasUrbanProperty) {
+    risks.push(...detectPlusvaliaRisks(daysUntilISD, daysUntilExtension, input));
+  }
+
+  return risks;
+}
+
+/**
+ * Detecta si el patrimonio preexistente del heredero está cerca de un tramo
+ * del coeficiente multiplicador del art. 22 Ley 29/1987. Los tramos son
+ * idénticos en todas las CCAA del régimen común; el coeficiente concreto
+ * varía por grupo de parentesco.
+ */
+const PATRIMONY_BRACKETS = [402678.11, 2007380.43, 4020770.98];
+
+function detectPatrimonyThresholdRisk(patrimony: number, group: ParentescoGroup): ISDRisk | null {
+  for (const bracket of PATRIMONY_BRACKETS) {
+    const ratio = patrimony / bracket;
+    if (ratio >= 0.9 && ratio <= 1.1) {
+      const justOver = patrimony > bracket;
+      const formatted = bracket.toLocaleString("es-ES", { maximumFractionDigits: 0 });
+      const nextCoefMessage =
+        group === "III"
+          ? "el coeficiente multiplicador sube del 1,5882 al 1,6676"
+          : group === "IV"
+            ? "el coeficiente multiplicador sube del 2,0000 al 2,1000"
+            : "el coeficiente multiplicador sube del 1,0000 al 1,0500";
+      return {
+        id: `patrimony_bracket_${bracket}`,
+        severity: justOver ? "warning" : "info",
+        title: justOver
+          ? `Patrimonio preexistente cruza el tramo de ${formatted} €`
+          : `Patrimonio preexistente cerca del tramo de ${formatted} €`,
+        description: justOver
+          ? `Al superar los ${formatted} € de patrimonio preexistente del heredero, ${nextCoefMessage} (art. 22 Ley 29/1987).`
+          : `Si el patrimonio preexistente del heredero supera ${formatted} €, ${nextCoefMessage}. Una reducción adicional o redistribución puede mantenerlo bajo el tramo.`,
+        action: "Revisa el patrimonio del heredero y considera reducciones aplicables para no cruzar el tramo.",
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Detecta riesgos de la plusvalía municipal (IIVTNU). Asume el plazo
+ * ordinario de 6 meses desde el fallecimiento, igual que el ISD; muchos
+ * municipios admiten prórroga de 6 meses adicionales solicitable en los
+ * primeros 5 meses.
+ */
+function detectPlusvaliaRisks(daysUntilISD: number, daysUntilExtension: number, input: RiskInput): ISDRisk[] {
+  const risks: ISDRisk[] = [];
+
+  if (daysUntilISD < 0) {
+    risks.push({
+      id: "plusvalia_overdue",
+      severity: "critical",
+      title: `Plazo IIVTNU vencido hace ${Math.abs(daysUntilISD)} días`,
+      description:
+        "La plusvalía municipal del inmueble heredado debería haberse liquidado en los 6 meses desde el fallecimiento. La presentación extemporánea conlleva recargos del ayuntamiento e intereses de demora.",
+      action: "Presentar la autoliquidación cuanto antes y valorar el recargo del ayuntamiento competente.",
+    });
+  } else if (daysUntilISD <= 7) {
+    risks.push({
+      id: "plusvalia_critical",
+      severity: "critical",
+      title: `Quedan ${daysUntilISD} días para liquidar la plusvalía municipal`,
+      description:
+        "Plazo crítico para presentar el IIVTNU del inmueble urbano heredado. Si no se solicitó prórroga, ya no hay margen.",
+      action: "Calcular el IIVTNU por los dos métodos (objetivo y real) y presentar el más bajo en la oficina del ayuntamiento.",
+    });
+  } else if (daysUntilISD <= 30) {
+    risks.push({
+      id: "plusvalia_30d",
+      severity: "warning",
+      title: `Quedan ${daysUntilISD} días para liquidar la plusvalía municipal`,
+      description:
+        "La plusvalía municipal (IIVTNU) del inmueble urbano se acerca a su plazo. Verifica el valor catastral del suelo y los años de tenencia del causante.",
+      action: "Preparar el cálculo por método objetivo y real. Elegir el más bajo según los datos de adquisición.",
+    });
+  }
+
+  // Ventana de prórroga IIVTNU (igual que ISD: solo hasta el día 150).
+  if (daysUntilExtension > 0 && daysUntilExtension <= 30 && daysUntilISD > 30) {
+    risks.push({
+      id: "plusvalia_extension_window",
+      severity: "warning",
+      title: `Quedan ${daysUntilExtension} días para solicitar prórroga de la plusvalía municipal`,
+      description:
+        "Muchos ayuntamientos admiten prórroga de 6 meses adicionales si se solicita dentro de los 5 primeros meses tras el fallecimiento. Verifica la ordenanza fiscal del municipio.",
+      action: "Si la documentación no estará lista a tiempo, solicitar la prórroga al ayuntamiento competente.",
+    });
+  }
+
+  // Detección de "no incremento" → operación no sujeta (sentencia TC + reforma 2021).
+  const acq = input.propertyAcquisitionValue;
+  const trans = input.propertyTransmissionValue;
+  if (typeof acq === "number" && typeof trans === "number" && acq > 0 && trans > 0) {
+    if (acq >= trans) {
+      risks.push({
+        id: "plusvalia_no_incremento",
+        severity: "info",
+        title: "Posible no sujeción a la plusvalía municipal",
+        description:
+          `El valor de adquisición declarado (${acq.toLocaleString("es-ES")} €) iguala o supera al de transmisión (${trans.toLocaleString("es-ES")} €). Tras el RDL 26/2021 y la sentencia TC 182/2021, no hay hecho imponible: la operación está no sujeta a IIVTNU.`,
+        action: "Acreditar la inexistencia de incremento con las escrituras de adquisición y de la herencia.",
+      });
     }
   }
 

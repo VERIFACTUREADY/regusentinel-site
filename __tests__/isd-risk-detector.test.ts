@@ -143,3 +143,140 @@ describe("detectISDRisks", () => {
     expect(risks).toEqual([]);
   });
 });
+
+describe("detectISDRisks — patrimonio preexistente", () => {
+  it("flags patrimonio preexistente cerca del primer tramo (402.678 €)", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      group: "II",
+      preexistingPatrimony: 380000,
+    });
+    const r = risks.find((x) => x.id.startsWith("patrimony_bracket_"));
+    expect(r).toBeDefined();
+    expect(r!.severity).toBe("info");
+    expect(r!.title).toMatch(/cerca del tramo/i);
+  });
+
+  it("flags patrimonio preexistente que ya cruzó el primer tramo", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      group: "II",
+      preexistingPatrimony: 420000,
+    });
+    const r = risks.find((x) => x.id.startsWith("patrimony_bracket_"));
+    expect(r).toBeDefined();
+    expect(r!.severity).toBe("warning");
+    expect(r!.title).toMatch(/cruza el tramo/i);
+  });
+
+  it("no flagea si el patrimonio está fuera del corredor ±10%", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      preexistingPatrimony: 150000,
+    });
+    expect(risks.find((r) => r.id.startsWith("patrimony_bracket_"))).toBeUndefined();
+  });
+
+  it("aplica el coeficiente del grupo III en el mensaje", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      group: "III",
+      preexistingPatrimony: 420000,
+    });
+    const r = risks.find((x) => x.id.startsWith("patrimony_bracket_"));
+    expect(r).toBeDefined();
+    expect(r!.description).toContain("1,5882");
+  });
+
+  it("detecta tramo de 2 millones", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      preexistingPatrimony: 1980000,
+    });
+    const r = risks.find((x) => x.id === "patrimony_bracket_2007380.43");
+    expect(r).toBeDefined();
+  });
+});
+
+describe("detectISDRisks — plusvalía municipal (IIVTNU)", () => {
+  it("no flagea plusvalía si no hay inmueble urbano declarado", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(160),
+      province: "madrid",
+    });
+    expect(risks.find((r) => r.id.startsWith("plusvalia"))).toBeUndefined();
+  });
+
+  it("flagea plusvalía crítica (≤7 días) cuando hay inmueble urbano", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(176),
+      province: "madrid",
+      hasUrbanProperty: true,
+    });
+    const r = risks.find((x) => x.id === "plusvalia_critical");
+    expect(r).toBeDefined();
+    expect(r!.severity).toBe("critical");
+  });
+
+  it("flagea plusvalía vencida si el plazo ya pasó", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(220),
+      province: "madrid",
+      hasUrbanProperty: true,
+    });
+    const r = risks.find((x) => x.id === "plusvalia_overdue");
+    expect(r).toBeDefined();
+    expect(r!.severity).toBe("critical");
+  });
+
+  it("flagea plusvalía a 30 días", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(160),
+      province: "madrid",
+      hasUrbanProperty: true,
+    });
+    const r = risks.find((x) => x.id === "plusvalia_30d");
+    expect(r).toBeDefined();
+    expect(r!.severity).toBe("warning");
+  });
+
+  it("flagea ventana de prórroga IIVTNU en el mes 4-5", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(130),
+      province: "madrid",
+      hasUrbanProperty: true,
+    });
+    const r = risks.find((x) => x.id === "plusvalia_extension_window");
+    expect(r).toBeDefined();
+    expect(r!.severity).toBe("warning");
+  });
+
+  it("detecta no sujeción si valor adquisición ≥ valor transmisión", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      hasUrbanProperty: true,
+      propertyAcquisitionValue: 200000,
+      propertyTransmissionValue: 180000,
+    });
+    const r = risks.find((x) => x.id === "plusvalia_no_incremento");
+    expect(r).toBeDefined();
+    expect(r!.description).toMatch(/no sujeta|no sujet/i);
+  });
+
+  it("no detecta no sujeción si la transmisión sube respecto a adquisición", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      hasUrbanProperty: true,
+      propertyAcquisitionValue: 150000,
+      propertyTransmissionValue: 200000,
+    });
+    expect(risks.find((r) => r.id === "plusvalia_no_incremento")).toBeUndefined();
+  });
+});
