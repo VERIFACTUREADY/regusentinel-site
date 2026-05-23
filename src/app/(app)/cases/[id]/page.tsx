@@ -16,6 +16,10 @@ interface CaseDetail {
   categories: string[]; province: string | null; notes: string | null;
   portalToken: string; portalEnabled: boolean;
   consentAccepted: boolean; consentDate: string | null; legitimationNote: string | null;
+  hasUrbanProperty: boolean;
+  propertyAcquisitionValue: number | null;
+  propertyTransmissionValue: number | null;
+  preexistingPatrimony: number | null;
   deceased: { fullName: string; deathDate: string | null; dni: string | null } | null;
   contact: { fullName: string; phone: string | null; email: string | null; relationship: string | null } | null;
   tasks: any[]; documents: any[]; approvals: any[]; auditLogs: any[];
@@ -89,9 +93,16 @@ export default function CaseDetailPage() {
   const [deceasedEditOpen, setDeceasedEditOpen] = useState(false);
   const [contactEditOpen, setContactEditOpen] = useState(false);
   const [detailsEditOpen, setDetailsEditOpen] = useState(false);
+  const [fiscalEditOpen, setFiscalEditOpen] = useState(false);
   const [deceasedForm, setDeceasedForm] = useState({ fullName: "", deathDate: "", dni: "" });
   const [contactForm, setContactForm] = useState({ fullName: "", phone: "", email: "", relationship: "" });
   const [detailsForm, setDetailsForm] = useState({ province: "", categories: [] as string[], hasDeceasedInsurance: false });
+  const [fiscalForm, setFiscalForm] = useState({
+    hasUrbanProperty: false,
+    propertyAcquisitionValue: "",
+    propertyTransmissionValue: "",
+    preexistingPatrimony: "",
+  });
   const [infoSaving, setInfoSaving] = useState(false);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [addTaskForm, setAddTaskForm] = useState({ title: "", category: "OTROS", description: "", deadline: "", assigneeId: "" });
@@ -678,6 +689,29 @@ El equipo de gestión`;
       body: JSON.stringify({ province: detailsForm.province, categories: detailsForm.categories, hasDeceasedInsurance: detailsForm.hasDeceasedInsurance }),
     });
     setDetailsEditOpen(false);
+    setInfoSaving(false);
+    fetchCase();
+  }
+
+  async function saveFiscalInfo() {
+    setInfoSaving(true);
+    const numericOrNull = (v: string) => {
+      const t = v.trim();
+      if (!t) return null;
+      const n = Number(t.replace(/\./g, "").replace(",", "."));
+      return Number.isFinite(n) ? n : null;
+    };
+    await fetch(`/api/cases/${caseId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        hasUrbanProperty: fiscalForm.hasUrbanProperty,
+        propertyAcquisitionValue: numericOrNull(fiscalForm.propertyAcquisitionValue),
+        propertyTransmissionValue: numericOrNull(fiscalForm.propertyTransmissionValue),
+        preexistingPatrimony: numericOrNull(fiscalForm.preexistingPatrimony),
+      }),
+    });
+    setFiscalEditOpen(false);
     setInfoSaving(false);
     fetchCase();
   }
@@ -1365,6 +1399,130 @@ El equipo de gestión`;
                 <p><strong>Categorias:</strong> {caseData.categories.length > 0 ? caseData.categories.map((c) => CATEGORY_LABELS[c] || c).join(", ") : "—"}</p>
                 <p><strong>Seguro decesos:</strong> {caseData.hasDeceasedInsurance ? "Si" : "No"}</p>
                 <p><strong>Creado:</strong> {new Date(caseData.createdAt).toLocaleDateString("es-ES")}</p>
+              </>
+            )}
+          </div>
+          <div className="bg-white p-6 rounded-lg border space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Datos fiscales</h3>
+              {!fiscalEditOpen && (
+                <button
+                  onClick={() => {
+                    setFiscalForm({
+                      hasUrbanProperty: caseData.hasUrbanProperty,
+                      propertyAcquisitionValue:
+                        caseData.propertyAcquisitionValue != null ? String(caseData.propertyAcquisitionValue) : "",
+                      propertyTransmissionValue:
+                        caseData.propertyTransmissionValue != null ? String(caseData.propertyTransmissionValue) : "",
+                      preexistingPatrimony:
+                        caseData.preexistingPatrimony != null ? String(caseData.preexistingPatrimony) : "",
+                    });
+                    setFiscalEditOpen(true);
+                  }}
+                  className="text-xs text-gray-400 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50"
+                >
+                  Editar
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Estos datos alimentan el Radar ISD: tramos del coeficiente multiplicador,
+              plazo y no-sujeción de la plusvalía municipal (IIVTNU).
+            </p>
+            {fiscalEditOpen ? (
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={fiscalForm.hasUrbanProperty}
+                    onChange={(e) => setFiscalForm((f) => ({ ...f, hasUrbanProperty: e.target.checked }))}
+                  />
+                  Inmueble urbano en el caudal
+                </label>
+                {fiscalForm.hasUrbanProperty && (
+                  <div className="grid grid-cols-2 gap-2 pl-6">
+                    <div>
+                      <label className="text-xs text-gray-500">Valor adquisición (€)</label>
+                      <input
+                        className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        inputMode="decimal"
+                        placeholder="180000"
+                        value={fiscalForm.propertyAcquisitionValue}
+                        onChange={(e) =>
+                          setFiscalForm((f) => ({ ...f, propertyAcquisitionValue: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500">Valor transmisión (€)</label>
+                      <input
+                        className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        inputMode="decimal"
+                        placeholder="240000"
+                        value={fiscalForm.propertyTransmissionValue}
+                        onChange={(e) =>
+                          setFiscalForm((f) => ({ ...f, propertyTransmissionValue: e.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <label className="text-xs text-gray-500">Patrimonio preexistente del heredero (€)</label>
+                  <input
+                    className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    inputMode="decimal"
+                    placeholder="402678"
+                    value={fiscalForm.preexistingPatrimony}
+                    onChange={(e) => setFiscalForm((f) => ({ ...f, preexistingPatrimony: e.target.value }))}
+                  />
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    Tramos del art. 22 Ley 29/1987: 402.678 €, 2.007.380 € y 4.020.770 €.
+                  </p>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={saveFiscalInfo}
+                    disabled={infoSaving}
+                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {infoSaving ? "Guardando…" : "Guardar"}
+                  </button>
+                  <button
+                    onClick={() => setFiscalEditOpen(false)}
+                    className="px-3 py-1 text-xs border rounded hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p>
+                  <strong>Inmueble urbano:</strong> {caseData.hasUrbanProperty ? "Sí" : "No declarado"}
+                </p>
+                {caseData.hasUrbanProperty && (
+                  <>
+                    <p>
+                      <strong>Valor adquisición:</strong>{" "}
+                      {caseData.propertyAcquisitionValue != null
+                        ? `${caseData.propertyAcquisitionValue.toLocaleString("es-ES")} €`
+                        : "—"}
+                    </p>
+                    <p>
+                      <strong>Valor transmisión:</strong>{" "}
+                      {caseData.propertyTransmissionValue != null
+                        ? `${caseData.propertyTransmissionValue.toLocaleString("es-ES")} €`
+                        : "—"}
+                    </p>
+                  </>
+                )}
+                <p>
+                  <strong>Patrimonio preexistente:</strong>{" "}
+                  {caseData.preexistingPatrimony != null
+                    ? `${caseData.preexistingPatrimony.toLocaleString("es-ES")} €`
+                    : "—"}
+                </p>
               </>
             )}
           </div>
