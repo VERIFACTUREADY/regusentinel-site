@@ -206,7 +206,7 @@ export default function PreciosPage() {
                   ["Reporting operativo (lead time, bloqueos)", "—", "✓", "✓"],
                   ["Export PDF/ZIP expediente completo", "✓", "✓", "✓"],
                   ["Audit trail inmutable", "✓", "✓", "✓"],
-                  ["Roles y permisos avanzados (SSO)", "—", "—", "✓"],
+                  ["SSO con Google Workspace + roles avanzados", "—", "—", "✓"],
                   ["API / webhooks", "—", "—", "✓"],
                   ["DPA extendido + auditorías", "—", "—", "✓"],
                   ["Onboarding asistido + formación", "—", "—", "✓"],

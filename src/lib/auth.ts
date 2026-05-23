@@ -1,9 +1,19 @@
 import { type NextAuthOptions } from "next-auth";
 import { type JWT } from "next-auth/jwt";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 import type { Role } from "@prisma/client";
+
+/**
+ * Google SSO opcional. Sólo se activa si GOOGLE_CLIENT_ID y
+ * GOOGLE_CLIENT_SECRET están en el entorno. Permite a clientes con
+ * Google Workspace iniciar sesión sin contraseña — alineado con la
+ * promesa de "SSO" del plan Firma en /precios.
+ */
+export const ssoEnabled =
+  Boolean(process.env.GOOGLE_CLIENT_ID) && Boolean(process.env.GOOGLE_CLIENT_SECRET);
 
 declare module "next-auth" {
   interface Session {
@@ -30,6 +40,22 @@ if (process.env.VERCEL_URL && !process.env.NEXTAUTH_URL) {
   process.env.NEXTAUTH_URL = `https://${process.env.VERCEL_URL}`;
 }
 
+const baseProviders: NextAuthOptions["providers"] = [];
+
+if (ssoEnabled) {
+  baseProviders.push(
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      // Restricción opcional por dominio del Workspace del cliente
+      // (e.g. "tugestoria.es"). Si no se configura, acepta cualquier cuenta.
+      authorization: process.env.GOOGLE_WORKSPACE_HD
+        ? { params: { hd: process.env.GOOGLE_WORKSPACE_HD } }
+        : undefined,
+    }),
+  );
+}
+
 export const authOptions: NextAuthOptions = {
   // No PrismaAdapter: we use JWT sessions + CredentialsProvider.
   // PrismaAdapter requires Account/Session/VerificationToken tables that are
@@ -44,6 +70,7 @@ export const authOptions: NextAuthOptions = {
     error: "/login",
   },
   providers: [
+    ...baseProviders,
     CredentialsProvider({
       id: "credentials",
       name: "Email & Password",
@@ -116,6 +143,38 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
+    /**
+     * Sign-in callback. Para Google: persistimos al usuario en nuestra DB
+     * (upsert por email) y reescribimos `user.id` a nuestro CUID para que
+     * los callbacks posteriores (jwt) tengan el id correcto. Si el email
+     * no llega del proveedor, bloqueamos el inicio.
+     */
+    async signIn({ user, account, profile }) {
+      if (account?.provider === "google") {
+        const email = (profile?.email || user?.email || "").toLowerCase().trim();
+        if (!email) return false;
+
+        const dbUser = await prisma.user.upsert({
+          where: { email },
+          create: {
+            email,
+            name: profile?.name || user?.name || email,
+          },
+          update: {
+            // Sólo actualiza name si Google nos da uno y el actual está vacío.
+            ...(((profile?.name || user?.name) && !user?.name) && {
+              name: profile?.name || user?.name || undefined,
+            }),
+          },
+        });
+        // Reescribimos el id para el resto del flujo (jwt callback usa user.id).
+        user.id = dbUser.id;
+        user.email = dbUser.email;
+        user.name = dbUser.name;
+      }
+      return true;
+    },
+
     async jwt({ token, user }): Promise<JWT> {
       if (user) {
         token.userId = user.id;

@@ -7,14 +7,16 @@ import Link from "next/link";
 
 interface Props {
   demoEnabled: boolean;
+  ssoEnabled?: boolean;
 }
 
-export function LoginForm({ demoEnabled }: Props) {
+export function LoginForm({ demoEnabled, ssoEnabled = false }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
+  const [ssoLoading, setSsoLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const demoAutoTriggered = useRef(false);
@@ -88,6 +90,33 @@ export function LoginForm({ demoEnabled }: Props) {
             <p className="text-sm text-slate-500 mt-1">Accede a tus expedientes y al Radar ISD.</p>
           </div>
 
+          {ssoEnabled && (
+            <>
+              <button
+                type="button"
+                onClick={async () => {
+                  setSsoLoading(true);
+                  const { signIn: ssoSignIn } = await import("next-auth/react");
+                  await ssoSignIn("google", { callbackUrl: "/dashboard" });
+                }}
+                disabled={loading || demoLoading || ssoLoading}
+                className="w-full mb-5 py-2.5 border border-slate-300 rounded-lg text-sm font-semibold text-slate-700 hover:border-slate-400 hover:bg-slate-50 transition disabled:opacity-50 inline-flex items-center justify-center gap-2.5"
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
+                  <path fill="#EA4335" d="M12 10.2v3.96h5.49c-.24 1.4-1.74 4.1-5.49 4.1-3.3 0-6-2.73-6-6.1s2.7-6.1 6-6.1c1.88 0 3.14.8 3.86 1.49l2.63-2.54C16.84 3.4 14.6 2.4 12 2.4 6.7 2.4 2.4 6.7 2.4 12s4.3 9.6 9.6 9.6c5.54 0 9.21-3.9 9.21-9.38 0-.63-.07-1.11-.16-1.59H12z" />
+                  <path fill="#4285F4" d="M21.4 12.22c0-.63-.07-1.11-.16-1.59H12v3.96h5.49c-.21 1.27-.95 2.34-2.02 3.07l3.27 2.54c1.92-1.78 3.03-4.4 3.03-7.51-.07-.16-.16-.32-.21-.47z" />
+                </svg>
+                {ssoLoading ? "Redirigiendo…" : "Continuar con Google"}
+              </button>
+              <div className="relative my-5">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div>
+                <div className="relative flex justify-center text-xs">
+                  <span className="bg-white px-3 text-slate-400 uppercase tracking-wider font-semibold">o con email</span>
+                </div>
+              </div>
+            </>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">Email</label>
@@ -126,7 +155,7 @@ export function LoginForm({ demoEnabled }: Props) {
 
             <button
               type="submit"
-              disabled={loading || demoLoading}
+              disabled={loading || demoLoading || ssoLoading}
               className="w-full py-2.5 bg-primary text-white font-semibold rounded-lg hover:-translate-y-0.5 transition-all shadow-lg shadow-primary/25 disabled:opacity-50 disabled:translate-y-0"
             >
               {loading ? "Accediendo…" : "Iniciar sesión"}
@@ -146,7 +175,7 @@ export function LoginForm({ demoEnabled }: Props) {
               <button
                 type="button"
                 onClick={handleDemo}
-                disabled={loading || demoLoading}
+                disabled={loading || demoLoading || ssoLoading}
                 className="w-full py-2.5 border border-slate-300 text-slate-700 font-semibold rounded-lg hover:border-primary hover:text-primary transition disabled:opacity-50"
               >
                 {demoLoading ? "Entrando…" : "Probar la demo sin registro"}
