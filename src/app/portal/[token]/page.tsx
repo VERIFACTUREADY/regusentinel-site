@@ -184,6 +184,7 @@ export default function PortalPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const [msgAuthor, setMsgAuthor] = useState("");
   const [msgContent, setMsgContent] = useState("");
   const [msgSending, setMsgSending] = useState(false);
@@ -245,9 +246,7 @@ export default function PortalPage() {
     }
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function uploadFile(file: File) {
     setUploading(true);
     const formData = new FormData();
     formData.append("file", file);
@@ -257,7 +256,21 @@ export default function PortalPage() {
       fetchData();
     }
     setUploading(false);
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await uploadFile(file);
     e.target.value = "";
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file || uploading) return;
+    void uploadFile(file);
   }
 
   if (loading) return (
@@ -453,16 +466,53 @@ export default function PortalPage() {
         <div className="bg-white p-6 rounded-lg border">
           <h3 className="font-semibold mb-3">Subir documentos</h3>
           <p className="text-sm text-gray-500 mb-4">
-            Suba aqui la documentacion solicitada. Nombre el archivo segun la gestion correspondiente para vincularlo automaticamente (ej: &quot;certificado_defuncion.pdf&quot;).
+            Arrastra aquí tus documentos o haz clic en el botón. Nombra el archivo según la gestión correspondiente para vincularlo automáticamente (ej: &quot;certificado_defuncion.pdf&quot;).
           </p>
-          <label className={`inline-block px-4 py-2 rounded-md text-sm cursor-pointer font-medium ${
-            uploading ? "bg-gray-200 text-gray-500" : "text-white"
-          }`}
-            style={!uploading ? { backgroundColor: primary } : undefined}
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!uploading) setDragOver(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+            }}
+            onDrop={handleDrop}
+            className={`relative border-2 border-dashed rounded-lg px-6 py-8 text-center transition ${
+              dragOver
+                ? "bg-blue-50/70"
+                : uploading
+                  ? "bg-slate-50 border-slate-200"
+                  : "bg-slate-50/40 border-slate-200 hover:border-slate-300"
+            }`}
+            style={dragOver ? { borderColor: primary } : undefined}
           >
-            {uploading ? "Subiendo..." : "Subir documento"}
-            <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
-          </label>
+            <svg
+              className="w-8 h-8 mx-auto text-slate-400 mb-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M7 16a4 4 0 01-.88-7.9A5 5 0 0118 7.06 4.5 4.5 0 0117 16h-1m-7 4l3-3m0 0l3 3m-3-3v8" />
+            </svg>
+            <p className="text-sm text-slate-600 mb-3">
+              {uploading
+                ? "Subiendo…"
+                : dragOver
+                  ? "Suelta el archivo aquí"
+                  : "Arrastra el documento o pulsa para elegirlo"}
+            </p>
+            <label
+              className={`inline-block px-4 py-2 rounded-md text-sm cursor-pointer font-medium ${
+                uploading ? "bg-gray-200 text-gray-500" : "text-white"
+              }`}
+              style={!uploading ? { backgroundColor: primary } : undefined}
+            >
+              {uploading ? "Subiendo…" : "Seleccionar archivo"}
+              <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+            </label>
+          </div>
 
           {docs.length > 0 && (
             <div className="mt-4 divide-y">
