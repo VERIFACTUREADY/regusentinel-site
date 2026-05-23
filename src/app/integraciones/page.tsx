@@ -22,11 +22,11 @@ const INTEGRATIONS: Integration[] = [
   // Active
   { name: "Stripe Billing", category: "Pagos", desc: "Cobros recurrentes mensuales y anuales, gestión de upgrades/downgrades, dunning automático.", status: "active" },
   { name: "AWS S3 (eu-central-1)", category: "Almacenamiento", desc: "Documentos del expediente (DNIs, escrituras, certificados) en bucket privado UE con SSE-S3.", status: "active" },
-  { name: "Resend", category: "Email", desc: "Emails transaccionales: bienvenida, recordatorios de plazo ISD, notificaciones del portal familia.", status: "active" },
+  { name: "Email transaccional (SMTP)", category: "Email", desc: "Emails transaccionales vía SMTP: bienvenida, recordatorios de plazo ISD, notificaciones del portal familia. Compatible con Resend, SES, SendGrid y servidores propios.", status: "active" },
   { name: "Anthropic Claude API", category: "IA", desc: "Análisis automático de expedientes, generación de resúmenes y chat asistido sobre normativa ISD.", status: "active" },
   { name: "NextAuth + bcrypt", category: "Autenticación", desc: "Email/password con hash bcrypt 12 rounds. Sesiones JWT con rotación. Login por enlace mágico opcional.", status: "active" },
   { name: "Sede del Catastro", category: "Datos públicos", desc: "Lookup del Valor de Referencia de un inmueble vía referencia catastral (consulta automática durante el cálculo del 650).", status: "soon" },
-  { name: "Webhook API", category: "Eventos", desc: "Recibe eventos en tiempo real: case.created, task.completed, deadline.upcoming. Configurable desde Ajustes.", status: "soon" },
+  { name: "Webhook genérico", category: "Eventos", desc: "Recibe eventos del Radar ISD en JSON POST con firma HMAC-SHA256. Configurable y testeable desde Ajustes → Integraciones (plan Firma).", status: "active", href: "/settings/integrations" },
   { name: "Plantillas de documentos", category: "Workflow", desc: "6 modelos de carta (banco, prórroga, aseguradora, comunidad, suministros, tasación) generables en PDF.", status: "active", href: "/plantillas-documentos" },
   { name: "Exportación CSV / ZIP", category: "Workflow", desc: "Exporta todos los expedientes, tareas y documentos en cualquier momento. Sin lock-in.", status: "active" },
   { name: "API pública v1", category: "Plataforma", desc: "Endpoints REST para cálculo ISD, comparación CCAA, detección de riesgos y generación de borradores PDF.", status: "active", href: "/docs/api" },
@@ -35,7 +35,7 @@ const INTEGRATIONS: Integration[] = [
   { name: "Google Drive", category: "Almacenamiento", desc: "Sincronización bidireccional con carpetas de Google Drive. Los documentos del portal familia se replican a tu Drive del despacho.", status: "soon" },
   { name: "Microsoft OneDrive", category: "Almacenamiento", desc: "Equivalente a Google Drive para despachos en ecosistema Microsoft.", status: "soon" },
   { name: "Calendar (Google + Outlook)", category: "Productividad", desc: "Los plazos del Modelo 650 y tareas con fecha aparecen automáticamente en tu agenda profesional.", status: "soon" },
-  { name: "Slack", category: "Notificaciones", desc: "Notificaciones de eventos críticos (plazo en 7 días, nuevo mensaje del portal, expediente bloqueado) en canal Slack.", status: "soon" },
+  { name: "Slack", category: "Notificaciones", desc: "Las alertas del Radar ISD (plazo a 60/30/7/1 día y vencido) llegan a un canal de Slack vía incoming webhook. Plan Firma.", status: "active", href: "/settings/integrations" },
   { name: "Microsoft Teams", category: "Notificaciones", desc: "Equivalente a Slack para despachos que trabajan con Microsoft Teams.", status: "soon" },
   { name: "WhatsApp Business (deep link)", category: "Comunicación", desc: "Botón \"Enviar mensaje por WhatsApp\" en cada contacto del expediente, con el texto pre-rellenado.", status: "soon" },
 
