@@ -6,65 +6,11 @@ import { hasPermission } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { getChecklistForCategories } from "@/lib/checklist-rules";
 import { calculateTaskDeadlines } from "@/lib/deadline-engine";
-import { TaskCategory } from "@prisma/client";
+import { csvToRows, xlsxToRows, parseSpreadsheet } from "@/lib/case-import";
 
-const VALID_CATEGORIES = new Set(Object.values(TaskCategory));
 const MAX_ROWS = 200;
-
-interface ParsedRow {
-  row: number;
-  deceasedName: string;
-  contactName: string;
-  contactEmail: string;
-  contactPhone: string;
-  province: string;
-  categories: TaskCategory[];
-  deathDate: string;
-  deceasedDni: string;
-  contactRelationship: string;
-  isUrgent: boolean;
-  notes: string;
-}
-
-interface RowError {
-  row: number;
-  field: string;
-  message: string;
-}
-
-function parseCSVLine(line: string): string[] {
-  const fields: string[] = [];
-  let current = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (inQuotes) {
-      if (ch === '"' && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else if (ch === '"') {
-        inQuotes = false;
-      } else {
-        current += ch;
-      }
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === "," || ch === ";") {
-      fields.push(current.trim());
-      current = "";
-    } else {
-      current += ch;
-    }
-  }
-  fields.push(current.trim());
-  return fields;
-}
-
-const EXPECTED_HEADERS = [
-  "fallecido", "contacto", "email_contacto", "telefono_contacto",
-  "provincia", "categorias", "fecha_fallecimiento", "dni_fallecido",
-  "parentesco", "urgente", "notas",
-];
+const MAX_CSV_SIZE = 1_000_000;       // 1 MB raw text
+const MAX_XLSX_SIZE_BASE64 = 4_000_000; // ~3 MB binary
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -76,114 +22,51 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const csv = body.csv as string;
-  if (!csv || typeof csv !== "string") {
-    return NextResponse.json({ error: "CSV vacio" }, { status: 400 });
-  }
-  if (csv.length > 1_000_000) {
-    return NextResponse.json({ error: "CSV demasiado grande (max 1 MB)" }, { status: 400 });
-  }
+  const csv = typeof body.csv === "string" ? body.csv : null;
+  const xlsx = typeof body.xlsx === "string" ? body.xlsx : null;
 
-  const lines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length < 2) {
-    return NextResponse.json({ error: "El CSV debe tener al menos una cabecera y una fila de datos" }, { status: 400 });
+  if (!csv && !xlsx) {
+    return NextResponse.json({ error: "Envía 'csv' o 'xlsx'" }, { status: 400 });
   }
-
-  const headerLine = parseCSVLine(lines[0]).map((h) =>
-    h.toLowerCase().replace(/[^a-z_]/g, "")
-  );
-
-  const colIndex: Record<string, number> = {};
-  for (const expected of EXPECTED_HEADERS) {
-    const idx = headerLine.indexOf(expected);
-    if (idx !== -1) colIndex[expected] = idx;
+  if (csv && csv.length > MAX_CSV_SIZE) {
+    return NextResponse.json({ error: "CSV demasiado grande (máx 1 MB)" }, { status: 400 });
+  }
+  if (xlsx && xlsx.length > MAX_XLSX_SIZE_BASE64) {
+    return NextResponse.json({ error: "Excel demasiado grande (máx ~3 MB)" }, { status: 400 });
   }
 
-  if (colIndex["fallecido"] === undefined || colIndex["contacto"] === undefined) {
+  let rows: string[][];
+  try {
+    rows = xlsx ? xlsxToRows(xlsx) : csvToRows(csv!);
+  } catch {
+    return NextResponse.json(
+      { error: xlsx ? "El archivo Excel no es válido" : "No se pudo leer el CSV" },
+      { status: 400 },
+    );
+  }
+
+  const result = parseSpreadsheet(rows);
+  if (result.headerIssue) {
+    return NextResponse.json({ error: result.headerIssue }, { status: 400 });
+  }
+  if (result.total > MAX_ROWS) {
     return NextResponse.json({
-      error: "Cabeceras obligatorias no encontradas: 'fallecido' y 'contacto'. Cabeceras esperadas: " + EXPECTED_HEADERS.join(", "),
+      error: `Máximo ${MAX_ROWS} filas por importación. El archivo tiene ${result.total}.`,
     }, { status: 400 });
   }
 
-  const dataLines = lines.slice(1);
-  if (dataLines.length > MAX_ROWS) {
-    return NextResponse.json({
-      error: `Maximo ${MAX_ROWS} filas por importacion. El archivo tiene ${dataLines.length}.`,
-    }, { status: 400 });
-  }
-
-  const parsed: ParsedRow[] = [];
-  const errors: RowError[] = [];
-
-  for (let i = 0; i < dataLines.length; i++) {
-    const rowNum = i + 2;
-    const fields = parseCSVLine(dataLines[i]);
-    const get = (key: string) => (colIndex[key] !== undefined ? fields[colIndex[key]] || "" : "");
-
-    const deceasedName = get("fallecido");
-    const contactName = get("contacto");
-    const contactEmail = get("email_contacto");
-    const contactPhone = get("telefono_contacto");
-
-    if (!deceasedName) errors.push({ row: rowNum, field: "fallecido", message: "Nombre del fallecido obligatorio" });
-    if (!contactName) errors.push({ row: rowNum, field: "contacto", message: "Nombre del contacto obligatorio" });
-    if (!contactEmail && !contactPhone) {
-      errors.push({ row: rowNum, field: "email_contacto", message: "Se requiere al menos email o telefono" });
-    }
-
-    const rawCategories = get("categorias");
-    const categories: TaskCategory[] = [];
-    if (rawCategories) {
-      for (const cat of rawCategories.split(/[,;|]+/).map((c) => c.trim().toUpperCase())) {
-        if (VALID_CATEGORIES.has(cat as TaskCategory)) {
-          categories.push(cat as TaskCategory);
-        } else if (cat) {
-          errors.push({ row: rowNum, field: "categorias", message: `Categoria invalida: "${cat}". Validas: ${Array.from(VALID_CATEGORIES).join(", ")}` });
-        }
-      }
-    }
-    if (categories.length === 0) categories.push(TaskCategory.OTROS);
-
-    const deathDate = get("fecha_fallecimiento");
-    if (deathDate && isNaN(Date.parse(deathDate))) {
-      errors.push({ row: rowNum, field: "fecha_fallecimiento", message: "Formato de fecha invalido" });
-    }
-
-    const urgentRaw = get("urgente").toLowerCase();
-    const isUrgent = urgentRaw === "true" || urgentRaw === "si" || urgentRaw === "sí" || urgentRaw === "1";
-
-    if (errors.filter((e) => e.row === rowNum).length === 0) {
-      parsed.push({
-        row: rowNum,
-        deceasedName,
-        contactName,
-        contactEmail,
-        contactPhone,
-        province: get("provincia"),
-        categories,
-        deathDate,
-        deceasedDni: get("dni_fallecido"),
-        contactRelationship: get("parentesco"),
-        isUrgent,
-        notes: get("notas"),
-      });
-    }
-  }
+  const { parsed, errors, total } = result;
 
   if (body.validate) {
-    return NextResponse.json({
-      valid: parsed.length,
-      errors,
-      total: dataLines.length,
-    });
+    return NextResponse.json({ valid: parsed.length, errors, total });
   }
 
   if (errors.length > 0) {
     return NextResponse.json({
-      error: "Errores de validacion",
+      error: "Errores de validación",
       valid: parsed.length,
       errors,
-      total: dataLines.length,
+      total,
     }, { status: 400 });
   }
 
@@ -261,11 +144,8 @@ export async function POST(req: NextRequest) {
     orgId,
     userId: session.user.id,
     action: "cases.imported",
-    details: `${created.length} expedientes importados por CSV`,
+    details: `${created.length} expedientes importados (${xlsx ? "Excel" : "CSV"})`,
   });
 
-  return NextResponse.json({
-    created: created.length,
-    refs: created,
-  }, { status: 201 });
+  return NextResponse.json({ created: created.length, refs: created }, { status: 201 });
 }
