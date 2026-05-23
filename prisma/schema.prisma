@@ -97,6 +97,14 @@ model Organization {
   brandSupportEmail String?
   brandFooterText   String?
 
+  // Integraciones de notificación outbound (Plan Firma).
+  // - slackWebhookUrl: incoming webhook de Slack (https://hooks.slack.com/...)
+  // - customWebhookUrl: endpoint del cliente que recibe los eventos en JSON
+  // - customWebhookSecret: secreto HMAC-SHA256 que firma el payload en X-BARITUR-Signature
+  slackWebhookUrl     String?
+  customWebhookUrl    String?
+  customWebhookSecret String?
+
   // Onboarding guiado. Se oculta al marcarse dismiss o al completar los 5 pasos.
   onboardingDismissedAt DateTime?
 }
@@ -430,6 +438,8 @@ enum NotificationKind {
 enum NotificationChannel {
   EMAIL_INTERNAL
   EMAIL_FAMILY
+  SLACK
+  WEBHOOK
 }
 
 model NotificationLog {

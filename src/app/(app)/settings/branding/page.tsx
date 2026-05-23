@@ -80,6 +80,7 @@ export default function BrandingPage() {
     { href: "/settings/branding", label: "Marca" },
     { href: "/settings/users", label: "Usuarios" },
     { href: "/settings/notifications", label: "Notificaciones" },
+    { href: "/settings/integrations", label: "Integraciones" },
   ];
 
   return (

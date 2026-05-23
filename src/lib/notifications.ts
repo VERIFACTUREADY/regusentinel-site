@@ -10,6 +10,12 @@
 import { prisma } from "./prisma";
 import { addMonths, daysUntil } from "./deadline-engine";
 import { sendIsdDeadlineAlert, sendDocumentReminder } from "./email";
+import {
+  sendSlackNotification,
+  sendCustomWebhook,
+  eventNameForKind,
+  type OutboundEvent,
+} from "./outbound-integrations";
 import type { NotificationKind } from "@prisma/client";
 
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
@@ -45,6 +51,8 @@ async function internalRecipientsFor(orgId: string): Promise<string[]> {
 export interface NotificationRunResult {
   isdAlertsSent: number;
   familyRemindersSent: number;
+  slackAlertsSent: number;
+  webhookAlertsSent: number;
   errors: Array<{ caseId: string; kind: string; error: string }>;
 }
 
@@ -55,6 +63,8 @@ export async function runDeadlineNotifications(): Promise<NotificationRunResult>
   const result: NotificationRunResult = {
     isdAlertsSent: 0,
     familyRemindersSent: 0,
+    slackAlertsSent: 0,
+    webhookAlertsSent: 0,
     errors: [],
   };
 
@@ -130,6 +140,63 @@ async function scanIsdDeadlines(result: NotificationRunResult): Promise<void> {
           },
         });
         result.errors.push({ caseId: c.id, kind: bucket, error: String(err?.message ?? err) });
+      }
+    }
+
+    // ── Notificaciones outbound (Slack + webhook, plan Firma) ──
+    const event: OutboundEvent = {
+      event: eventNameForKind(bucket),
+      orgId: c.orgId,
+      caseId: c.id,
+      caseRef: c.ref,
+      caseUrl,
+      deceasedName: c.deceased.fullName,
+      daysRemaining: remaining,
+      deadline: deadline.toISOString(),
+      emittedAt: new Date().toISOString(),
+    };
+
+    if (c.org.slackWebhookUrl) {
+      const dispatch = await sendSlackNotification(c.org.slackWebhookUrl, event);
+      await prisma.notificationLog.create({
+        data: {
+          orgId: c.orgId,
+          caseId: c.id,
+          kind: bucket,
+          channel: "SLACK",
+          recipient: "slack",
+          status: dispatch.ok ? "sent" : "failed",
+          error: dispatch.ok ? null : (dispatch.error ?? "unknown").slice(0, 500),
+        },
+      });
+      if (dispatch.ok) {
+        result.slackAlertsSent++;
+      } else {
+        result.errors.push({ caseId: c.id, kind: `${bucket}/SLACK`, error: dispatch.error ?? "fail" });
+      }
+    }
+
+    if (c.org.customWebhookUrl) {
+      const dispatch = await sendCustomWebhook(
+        c.org.customWebhookUrl,
+        c.org.customWebhookSecret,
+        event,
+      );
+      await prisma.notificationLog.create({
+        data: {
+          orgId: c.orgId,
+          caseId: c.id,
+          kind: bucket,
+          channel: "WEBHOOK",
+          recipient: c.org.customWebhookUrl.slice(0, 100),
+          status: dispatch.ok ? "sent" : "failed",
+          error: dispatch.ok ? null : (dispatch.error ?? "unknown").slice(0, 500),
+        },
+      });
+      if (dispatch.ok) {
+        result.webhookAlertsSent++;
+      } else {
+        result.errors.push({ caseId: c.id, kind: `${bucket}/WEBHOOK`, error: dispatch.error ?? "fail" });
       }
     }
   }
