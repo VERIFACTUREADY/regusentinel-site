@@ -108,7 +108,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     contact, province, categories, hasDeceasedInsurance, portalEnabled,
     hasUrbanProperty, propertyAcquisitionValue, propertyTransmissionValue,
     preexistingPatrimony, recentResidenceChange, previousResidenceProvince,
-    appliedReductions,
+    appliedReductions, referenciaCatastral,
   } = body;
 
   const numericOrNull = (v: unknown): number | null | undefined => {
@@ -157,6 +157,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         // Validamos en el detector con parseAppliedReductions; aquí
         // sólo aseguramos que sea array o null para no romper la columna JSON.
         appliedReductions: Array.isArray(appliedReductions) ? appliedReductions : null,
+      }),
+      ...(referenciaCatastral !== undefined && {
+        // Sólo guardamos lo que parezca una RC plausible (20 caracteres
+        // alfanuméricos), normalizada a mayúsculas y sin separadores.
+        referenciaCatastral: (() => {
+          if (typeof referenciaCatastral !== "string") return null;
+          const cleaned = referenciaCatastral.toUpperCase().replace(/[\s\-]/g, "").trim();
+          return /^[0-9A-Z]{20}$/.test(cleaned) ? cleaned : null;
+        })(),
       }),
     },
     include: { deceased: true, contact: true },

@@ -6,6 +6,7 @@ import { generateBankPack } from "@/lib/bank-pack";
 import { CASE_STATUS_COLORS, TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/constants";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import { buildGoogleCalendarUrl, buildIcsDataUrl } from "@/lib/calendar-export";
+import { buildCatastroConsultaUrl, buildCatastroMapaUrl } from "@/lib/catastro";
 
 type AppliedReductionUi = {
   type: "VIVIENDA_HABITUAL" | "EMPRESA_FAMILIAR" | "EXPLOTACION_AGRARIA" | "DISCAPACIDAD" | "OTRA";
@@ -42,6 +43,7 @@ interface CaseDetail {
   portalToken: string; portalEnabled: boolean;
   consentAccepted: boolean; consentDate: string | null; legitimationNote: string | null;
   hasUrbanProperty: boolean;
+  referenciaCatastral: string | null;
   propertyAcquisitionValue: number | null;
   propertyTransmissionValue: number | null;
   preexistingPatrimony: number | null;
@@ -127,6 +129,7 @@ export default function CaseDetailPage() {
   const [detailsForm, setDetailsForm] = useState({ province: "", categories: [] as string[], hasDeceasedInsurance: false });
   const [fiscalForm, setFiscalForm] = useState({
     hasUrbanProperty: false,
+    referenciaCatastral: "",
     propertyAcquisitionValue: "",
     propertyTransmissionValue: "",
     preexistingPatrimony: "",
@@ -737,6 +740,7 @@ El equipo de gestión`;
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         hasUrbanProperty: fiscalForm.hasUrbanProperty,
+        referenciaCatastral: fiscalForm.referenciaCatastral.trim() || null,
         propertyAcquisitionValue: numericOrNull(fiscalForm.propertyAcquisitionValue),
         propertyTransmissionValue: numericOrNull(fiscalForm.propertyTransmissionValue),
         preexistingPatrimony: numericOrNull(fiscalForm.preexistingPatrimony),
@@ -1468,6 +1472,7 @@ El equipo de gestión`;
                   onClick={() => {
                     setFiscalForm({
                       hasUrbanProperty: caseData.hasUrbanProperty,
+                      referenciaCatastral: caseData.referenciaCatastral ?? "",
                       propertyAcquisitionValue:
                         caseData.propertyAcquisitionValue != null ? String(caseData.propertyAcquisitionValue) : "",
                       propertyTransmissionValue:
@@ -1501,30 +1506,43 @@ El equipo de gestión`;
                   Inmueble urbano en el caudal
                 </label>
                 {fiscalForm.hasUrbanProperty && (
-                  <div className="grid grid-cols-2 gap-2 pl-6">
+                  <div className="space-y-2 pl-6">
                     <div>
-                      <label className="text-xs text-gray-500">Valor adquisición (€)</label>
+                      <label className="text-xs text-gray-500">Referencia catastral (20 dígitos)</label>
                       <input
-                        className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
-                        inputMode="decimal"
-                        placeholder="180000"
-                        value={fiscalForm.propertyAcquisitionValue}
+                        className="mt-0.5 w-full px-2 py-1 text-sm border rounded font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        placeholder="9872023VH5797S0001WX"
+                        value={fiscalForm.referenciaCatastral}
                         onChange={(e) =>
-                          setFiscalForm((f) => ({ ...f, propertyAcquisitionValue: e.target.value }))
+                          setFiscalForm((f) => ({ ...f, referenciaCatastral: e.target.value.toUpperCase() }))
                         }
                       />
                     </div>
-                    <div>
-                      <label className="text-xs text-gray-500">Valor transmisión (€)</label>
-                      <input
-                        className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
-                        inputMode="decimal"
-                        placeholder="240000"
-                        value={fiscalForm.propertyTransmissionValue}
-                        onChange={(e) =>
-                          setFiscalForm((f) => ({ ...f, propertyTransmissionValue: e.target.value }))
-                        }
-                      />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-gray-500">Valor adquisición (€)</label>
+                        <input
+                          className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          inputMode="decimal"
+                          placeholder="180000"
+                          value={fiscalForm.propertyAcquisitionValue}
+                          onChange={(e) =>
+                            setFiscalForm((f) => ({ ...f, propertyAcquisitionValue: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Valor transmisión (€)</label>
+                        <input
+                          className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          inputMode="decimal"
+                          placeholder="240000"
+                          value={fiscalForm.propertyTransmissionValue}
+                          onChange={(e) =>
+                            setFiscalForm((f) => ({ ...f, propertyTransmissionValue: e.target.value }))
+                          }
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1694,6 +1712,40 @@ El equipo de gestión`;
                 </p>
                 {caseData.hasUrbanProperty && (
                   <>
+                    {caseData.referenciaCatastral && (() => {
+                      const consultaUrl = buildCatastroConsultaUrl(caseData.referenciaCatastral);
+                      const mapaUrl = buildCatastroMapaUrl(caseData.referenciaCatastral);
+                      return (
+                        <p className="flex flex-wrap items-center gap-2">
+                          <span>
+                            <strong>Referencia catastral:</strong>{" "}
+                            <span className="font-mono text-xs">{caseData.referenciaCatastral}</span>
+                          </span>
+                          {consultaUrl && (
+                            <a
+                              href={consultaUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] px-1.5 py-0.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50"
+                              title="Abrir ficha en la Sede del Catastro"
+                            >
+                              Ficha Catastro ↗
+                            </a>
+                          )}
+                          {mapaUrl && (
+                            <a
+                              href={mapaUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                              title="Abrir visor cartográfico"
+                            >
+                              Mapa ↗
+                            </a>
+                          )}
+                        </p>
+                      );
+                    })()}
                     <p>
                       <strong>Valor adquisición:</strong>{" "}
                       {caseData.propertyAcquisitionValue != null

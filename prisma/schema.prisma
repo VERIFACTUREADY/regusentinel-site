@@ -171,6 +171,10 @@ model Case {
   /// plazo y la posible no-sujeción de la plusvalía municipal en
   /// el Radar ISD.
   hasUrbanProperty          Boolean @default(false)
+  /// Referencia catastral del inmueble principal del caudal (20 caracteres).
+  /// El detalle del expediente ofrece deep links a la Sede del Catastro
+  /// (consulta ficha y visor cartográfico) cuando está informada.
+  referenciaCatastral       String?
   /// Valor declarado en la escritura previa del inmueble urbano.
   /// Junto a propertyTransmissionValue permite detectar la no-sujeción
   /// a IIVTNU tras RDL 26/2021 cuando no hay incremento de valor.
