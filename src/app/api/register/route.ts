@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { sendWelcomeEmail, sendEmail } from "@/lib/email";
 import { seedDefaultCaseTemplates } from "@/lib/default-case-templates";
+import { seedSampleCase } from "@/lib/sample-case-seeder";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -65,6 +66,11 @@ export async function POST(req: NextRequest) {
       });
 
       await seedDefaultCaseTemplates(tx, org.id);
+
+      // Expediente de muestra pre-calibrado: el trial ve el Radar
+      // activo con 6 alertas desde el primer login en vez de un
+      // dashboard vacío. Idempotente — no duplica si ya existe.
+      await seedSampleCase(tx, org.id);
 
       return { org, user };
     });

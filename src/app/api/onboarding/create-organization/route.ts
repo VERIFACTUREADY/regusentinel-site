@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { seedDefaultCaseTemplates } from "@/lib/default-case-templates";
+import { seedSampleCase } from "@/lib/sample-case-seeder";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
         },
       });
       await seedDefaultCaseTemplates(tx, created.id);
+      await seedSampleCase(tx, created.id);
       return created;
     });
 
