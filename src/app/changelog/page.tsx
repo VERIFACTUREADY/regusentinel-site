@@ -10,6 +10,26 @@ export const metadata: Metadata = {
 
 const entries = [
   {
+    date: "2026-05-24",
+    version: "1.5",
+    title: "Radar ISD completo + integraciones outbound (plan Firma)",
+    changes: [
+      "Radar ISD: 6/6 alertas del mockup operativas — plazo Modelo 650, ventana de prórroga, plusvalía municipal (IIVTNU) con detección de no-sujeción (RDL 26/2021), tramos del coeficiente multiplicador del art. 22, cambio de residencia <5 años (art. 28 Ley 22/2009) y mantenimiento de reducciones del art. 20 con aniversarios",
+      "Importación nativa de Excel (.xlsx) en el endpoint /api/cases/import. SheetJS lee la primera hoja, soporta hasta 200 filas, mantiene la validación CSV existente",
+      "Slack notifications (plan Firma) — mensaje en bloques con urgencia coloreada y botón al expediente",
+      "Microsoft Teams (plan Firma) — MessageCard con themeColor por urgencia y OpenUri al expediente",
+      "Webhook genérico (plan Firma) — POST JSON con firma HMAC-SHA256 en X-BARITUR-Signature. Helper verifyWebhookSignature para clientes",
+      "Google Workspace SSO (plan Firma) — provider NextAuth opt-in via env. Restricción opcional por dominio Workspace (hd)",
+      "Calendar deep links — botones \"+ Google\" y \"+ Outlook / .ics\" en cada plazo del expediente",
+      "WhatsApp deep link en el contacto del expediente con texto pre-rellenado (ref + causante)",
+      "Sede del Catastro — campo Referencia Catastral + deep links a la ficha y al visor cartográfico",
+      "Drag-and-drop real en la subida de documentos del Portal Familia",
+      "Enforcement de maxUsers por plan al invitar miembros (Inicia 2 · Despacho 5 · Firma 20)",
+      "Trial seeded con datos fiscales que disparan 6 alertas Radar desde el día 1 — el moat se ve sin esperar 2 semanas",
+    ],
+    tag: "nuevo",
+  },
+  {
     date: "2026-04-17",
     version: "1.4",
     title: "Gestion de trials y paginas legales",
