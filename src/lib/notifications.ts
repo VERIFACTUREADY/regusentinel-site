@@ -12,6 +12,7 @@ import { addMonths, daysUntil } from "./deadline-engine";
 import { sendIsdDeadlineAlert, sendDocumentReminder } from "./email";
 import {
   sendSlackNotification,
+  sendTeamsNotification,
   sendCustomWebhook,
   eventNameForKind,
   type OutboundEvent,
@@ -52,6 +53,7 @@ export interface NotificationRunResult {
   isdAlertsSent: number;
   familyRemindersSent: number;
   slackAlertsSent: number;
+  teamsAlertsSent: number;
   webhookAlertsSent: number;
   errors: Array<{ caseId: string; kind: string; error: string }>;
 }
@@ -64,6 +66,7 @@ export async function runDeadlineNotifications(): Promise<NotificationRunResult>
     isdAlertsSent: 0,
     familyRemindersSent: 0,
     slackAlertsSent: 0,
+    teamsAlertsSent: 0,
     webhookAlertsSent: 0,
     errors: [],
   };
@@ -173,6 +176,26 @@ async function scanIsdDeadlines(result: NotificationRunResult): Promise<void> {
         result.slackAlertsSent++;
       } else {
         result.errors.push({ caseId: c.id, kind: `${bucket}/SLACK`, error: dispatch.error ?? "fail" });
+      }
+    }
+
+    if (c.org.teamsWebhookUrl) {
+      const dispatch = await sendTeamsNotification(c.org.teamsWebhookUrl, event);
+      await prisma.notificationLog.create({
+        data: {
+          orgId: c.orgId,
+          caseId: c.id,
+          kind: bucket,
+          channel: "TEAMS",
+          recipient: "teams",
+          status: dispatch.ok ? "sent" : "failed",
+          error: dispatch.ok ? null : (dispatch.error ?? "unknown").slice(0, 500),
+        },
+      });
+      if (dispatch.ok) {
+        result.teamsAlertsSent++;
+      } else {
+        result.errors.push({ caseId: c.id, kind: `${bucket}/TEAMS`, error: dispatch.error ?? "fail" });
       }
     }
 

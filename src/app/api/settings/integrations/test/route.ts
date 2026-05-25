@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import {
   sendSlackNotification,
+  sendTeamsNotification,
   sendCustomWebhook,
   type OutboundEvent,
 } from "@/lib/outbound-integrations";
@@ -24,12 +25,16 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const target = body.target === "slack" || body.target === "webhook" ? body.target : "all";
+  const target =
+    body.target === "slack" || body.target === "teams" || body.target === "webhook"
+      ? body.target
+      : "all";
 
   const org = await prisma.organization.findUnique({
     where: { id: session.user.orgId },
     select: {
       slackWebhookUrl: true,
+      teamsWebhookUrl: true,
       customWebhookUrl: true,
       customWebhookSecret: true,
     },
@@ -51,12 +56,18 @@ export async function POST(req: NextRequest) {
     emittedAt: new Date().toISOString(),
   };
 
-  const results: { slack?: unknown; webhook?: unknown } = {};
+  const results: { slack?: unknown; teams?: unknown; webhook?: unknown } = {};
 
   if ((target === "all" || target === "slack") && org.slackWebhookUrl) {
     results.slack = await sendSlackNotification(org.slackWebhookUrl, event);
   } else if (target === "slack" && !org.slackWebhookUrl) {
     results.slack = { ok: false, error: "Slack webhook URL no configurado" };
+  }
+
+  if ((target === "all" || target === "teams") && org.teamsWebhookUrl) {
+    results.teams = await sendTeamsNotification(org.teamsWebhookUrl, event);
+  } else if (target === "teams" && !org.teamsWebhookUrl) {
+    results.teams = { ok: false, error: "Teams webhook URL no configurado" };
   }
 
   if ((target === "all" || target === "webhook") && org.customWebhookUrl) {

@@ -15,6 +15,13 @@ const integrationsSchema = z.object({
     .startsWith("https://hooks.slack.com/", "Debe ser un incoming webhook de Slack")
     .optional()
     .or(z.literal("").transform(() => undefined)),
+  teamsWebhookUrl: z
+    .string()
+    .trim()
+    .url("URL de Teams inválida")
+    .max(500)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
   customWebhookUrl: z
     .string()
     .trim()
@@ -44,6 +51,7 @@ export async function GET() {
     where: { id: session.user.orgId },
     select: {
       slackWebhookUrl: true,
+      teamsWebhookUrl: true,
       customWebhookUrl: true,
       customWebhookSecret: true,
       subscription: { select: { plan: true } },
@@ -56,6 +64,7 @@ export async function GET() {
 
   return NextResponse.json({
     slackWebhookUrl: org.slackWebhookUrl,
+    teamsWebhookUrl: org.teamsWebhookUrl,
     customWebhookUrl: org.customWebhookUrl,
     // Devolver sólo si está configurado (no el secreto en claro).
     customWebhookSecretConfigured: Boolean(org.customWebhookSecret),
@@ -98,6 +107,7 @@ export async function PATCH(req: NextRequest) {
     where: { id: session.user.orgId },
     data: {
       slackWebhookUrl: parsed.data.slackWebhookUrl ?? null,
+      teamsWebhookUrl: parsed.data.teamsWebhookUrl ?? null,
       customWebhookUrl: parsed.data.customWebhookUrl ?? null,
       // Si el cliente envía un secreto, lo guardamos; si manda undefined, no tocamos.
       ...(parsed.data.customWebhookSecret !== undefined && {
@@ -106,6 +116,7 @@ export async function PATCH(req: NextRequest) {
     },
     select: {
       slackWebhookUrl: true,
+      teamsWebhookUrl: true,
       customWebhookUrl: true,
       customWebhookSecret: true,
     },
@@ -115,11 +126,12 @@ export async function PATCH(req: NextRequest) {
     orgId: session.user.orgId,
     userId: session.user.id,
     action: "org.integrations.update",
-    details: `Slack: ${updated.slackWebhookUrl ? "set" : "cleared"}, Webhook: ${updated.customWebhookUrl ? "set" : "cleared"}`,
+    details: `Slack: ${updated.slackWebhookUrl ? "set" : "cleared"}, Teams: ${updated.teamsWebhookUrl ? "set" : "cleared"}, Webhook: ${updated.customWebhookUrl ? "set" : "cleared"}`,
   });
 
   return NextResponse.json({
     slackWebhookUrl: updated.slackWebhookUrl,
+    teamsWebhookUrl: updated.teamsWebhookUrl,
     customWebhookUrl: updated.customWebhookUrl,
     customWebhookSecretConfigured: Boolean(updated.customWebhookSecret),
   });

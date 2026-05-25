@@ -102,6 +102,7 @@ model Organization {
   // - customWebhookUrl: endpoint del cliente que recibe los eventos en JSON
   // - customWebhookSecret: secreto HMAC-SHA256 que firma el payload en X-BARITUR-Signature
   slackWebhookUrl     String?
+  teamsWebhookUrl     String?
   customWebhookUrl    String?
   customWebhookSecret String?
 
@@ -439,6 +440,7 @@ enum NotificationChannel {
   EMAIL_INTERNAL
   EMAIL_FAMILY
   SLACK
+  TEAMS
   WEBHOOK
 }
 

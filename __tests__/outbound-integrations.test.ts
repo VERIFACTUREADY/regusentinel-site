@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildSlackMessage,
+  buildTeamsMessage,
   sendSlackNotification,
+  sendTeamsNotification,
   signWebhookPayload,
   verifyWebhookSignature,
   sendCustomWebhook,
@@ -117,6 +119,52 @@ describe("sendSlackNotification", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const res = await sendSlackNotification("", sampleEvent);
+    expect(res.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildTeamsMessage", () => {
+  it("usa MessageCard con themeColor según urgencia", () => {
+    const msg = buildTeamsMessage(sampleEvent) as { "@type": string; themeColor: string };
+    expect(msg["@type"]).toBe("MessageCard");
+    // 5 días → CRÍTICO → color naranja/rojo
+    expect(msg.themeColor.toUpperCase()).toBe("F9A825");
+  });
+
+  it("color rojo para evento vencido", () => {
+    const msg = buildTeamsMessage({ ...sampleEvent, daysRemaining: -3 }) as { themeColor: string };
+    expect(msg.themeColor.toUpperCase()).toBe("EE2C2C");
+  });
+
+  it("incluye potentialAction con OpenUri al caseUrl", () => {
+    const msg = buildTeamsMessage(sampleEvent) as { potentialAction: Array<{ targets: Array<{ uri: string }> }> };
+    expect(msg.potentialAction[0].targets[0].uri).toBe(sampleEvent.caseUrl);
+  });
+});
+
+describe("sendTeamsNotification", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("devuelve ok cuando el webhook responde 200", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("1", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await sendTeamsNotification("https://outlook.office.com/webhook/test", sampleEvent);
+    expect(res.ok).toBe(true);
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)["@type"]).toBe("MessageCard");
+  });
+
+  it("rechaza URL vacía sin hacer fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await sendTeamsNotification("", sampleEvent);
     expect(res.ok).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });

@@ -5,6 +5,7 @@ import Link from "next/link";
 
 interface IntegrationsState {
   slackWebhookUrl: string | null;
+  teamsWebhookUrl: string | null;
   customWebhookUrl: string | null;
   customWebhookSecretConfigured: boolean;
   tier: string | null;
@@ -27,14 +28,15 @@ const SETTINGS_NAV = [
 export default function IntegrationsSettingsPage() {
   const [data, setData] = useState<IntegrationsState | null>(null);
   const [slack, setSlack] = useState("");
+  const [teams, setTeams] = useState("");
   const [webhook, setWebhook] = useState("");
   const [secret, setSecret] = useState("");
   const [secretTouched, setSecretTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [testing, setTesting] = useState<"slack" | "webhook" | null>(null);
-  const [testResults, setTestResults] = useState<{ slack?: DispatchResult; webhook?: DispatchResult }>({});
+  const [testing, setTesting] = useState<"slack" | "teams" | "webhook" | null>(null);
+  const [testResults, setTestResults] = useState<{ slack?: DispatchResult; teams?: DispatchResult; webhook?: DispatchResult }>({});
 
   useEffect(() => {
     fetch("/api/settings/integrations")
@@ -42,6 +44,7 @@ export default function IntegrationsSettingsPage() {
       .then((d: IntegrationsState) => {
         setData(d);
         setSlack(d.slackWebhookUrl ?? "");
+        setTeams(d.teamsWebhookUrl ?? "");
         setWebhook(d.customWebhookUrl ?? "");
       })
       .catch(() => setError("No se pudieron cargar las integraciones"));
@@ -54,6 +57,7 @@ export default function IntegrationsSettingsPage() {
     try {
       const body: Record<string, string | null> = {
         slackWebhookUrl: slack.trim() || "",
+        teamsWebhookUrl: teams.trim() || "",
         customWebhookUrl: webhook.trim() || "",
       };
       if (secretTouched) body.customWebhookSecret = secret.trim();
@@ -77,7 +81,7 @@ export default function IntegrationsSettingsPage() {
     }
   }
 
-  async function runTest(target: "slack" | "webhook") {
+  async function runTest(target: "slack" | "teams" | "webhook") {
     setTesting(target);
     setError(null);
     try {
@@ -180,6 +184,49 @@ export default function IntegrationsSettingsPage() {
                 {testing === "slack" ? "Enviando…" : "Enviar evento de prueba"}
               </button>
               {testResults.slack && <DispatchPill result={testResults.slack} />}
+            </div>
+          </div>
+
+          {/* Microsoft Teams */}
+          <div className="bg-white rounded-lg border p-6 space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold">Microsoft Teams</h2>
+              <p className="text-sm text-gray-500">
+                Pega un incoming webhook de un canal de Teams. Cada alerta del Radar ISD se publica como una MessageCard formateada.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-1.5">
+                Incoming Webhook URL
+              </label>
+              <input
+                type="text"
+                value={teams}
+                onChange={(e) => setTeams(e.target.value)}
+                placeholder="https://outlook.office.com/webhook/..."
+                className="w-full px-3 py-2 border rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                ¿Cómo obtener uno?{" "}
+                <a
+                  href="https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-indigo-600 hover:underline"
+                >
+                  Microsoft Learn: Incoming Webhooks
+                </a>
+              </p>
+            </div>
+            <div className="flex gap-3 items-center">
+              <button
+                onClick={() => runTest("teams")}
+                disabled={!data.teamsWebhookUrl || testing !== null}
+                className="px-3 py-1.5 text-xs font-medium border rounded-md hover:bg-gray-50 disabled:opacity-50"
+              >
+                {testing === "teams" ? "Enviando…" : "Enviar evento de prueba"}
+              </button>
+              {testResults.teams && <DispatchPill result={testResults.teams} />}
             </div>
           </div>
 

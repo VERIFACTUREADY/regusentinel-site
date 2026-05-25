@@ -85,6 +85,70 @@ export function buildSlackMessage(event: OutboundEvent): unknown {
   };
 }
 
+/**
+ * MessageCard de Office 365 / Microsoft Teams. Formato heredado pero
+ * sigue funcionando en los incoming webhooks de Teams; los Adaptive
+ * Cards modernos requieren Workflows/Power Automate, más complejos.
+ */
+export function buildTeamsMessage(event: OutboundEvent): unknown {
+  const urgency =
+    event.daysRemaining < 0
+      ? { color: "EE2C2C", text: "⚠ VENCIDO" }
+      : event.daysRemaining <= 7
+        ? { color: "F9A825", text: "⚠ CRÍTICO" }
+        : { color: "2563EB", text: "ℹ AVISO" };
+  const subtitle =
+    event.daysRemaining < 0
+      ? `Vencido hace ${Math.abs(event.daysRemaining)} días`
+      : `Quedan ${event.daysRemaining} días`;
+  return {
+    "@type": "MessageCard",
+    "@context": "http://schema.org/extensions",
+    summary: `${urgency.text} ${event.caseRef}`,
+    themeColor: urgency.color,
+    title: `${urgency.text} · ${event.caseRef}`,
+    sections: [
+      {
+        activityTitle: event.deceasedName,
+        activitySubtitle: subtitle,
+        facts: [
+          { name: "Expediente", value: event.caseRef },
+          { name: "Causante", value: event.deceasedName },
+          { name: "Plazo", value: subtitle },
+        ],
+      },
+    ],
+    potentialAction: [
+      {
+        "@type": "OpenUri",
+        name: "Abrir expediente",
+        targets: [{ os: "default", uri: event.caseUrl }],
+      },
+    ],
+  };
+}
+
+export async function sendTeamsNotification(
+  webhookUrl: string,
+  event: OutboundEvent,
+): Promise<DispatchResult> {
+  if (!webhookUrl) return { ok: false, error: "Teams webhook URL not configured" };
+  try {
+    const res = await fetchWithTimeout(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildTeamsMessage(event)),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      return { ok: false, status: res.status, error: text.slice(0, 200) };
+    }
+    return { ok: true, status: res.status };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "fetch failed" };
+  }
+}
+
 export async function sendSlackNotification(
   webhookUrl: string,
   event: OutboundEvent,
