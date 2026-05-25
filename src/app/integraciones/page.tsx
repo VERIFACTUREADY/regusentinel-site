@@ -37,7 +37,7 @@ const INTEGRATIONS: Integration[] = [
   { name: "Calendar (Google + Outlook)", category: "Productividad", desc: "Los plazos del Modelo 650 y tareas con fecha aparecen automáticamente en tu agenda profesional.", status: "soon" },
   { name: "Slack", category: "Notificaciones", desc: "Las alertas del Radar ISD (plazo a 60/30/7/1 día y vencido) llegan a un canal de Slack vía incoming webhook. Plan Firma.", status: "active", href: "/settings/integrations" },
   { name: "Microsoft Teams", category: "Notificaciones", desc: "Equivalente a Slack para despachos que trabajan con Microsoft Teams.", status: "soon" },
-  { name: "WhatsApp Business (deep link)", category: "Comunicación", desc: "Botón \"Enviar mensaje por WhatsApp\" en cada contacto del expediente, con el texto pre-rellenado.", status: "soon" },
+  { name: "WhatsApp Business (deep link)", category: "Comunicación", desc: "Botón \"WhatsApp\" junto al teléfono del contacto en cada expediente. Abre wa.me con el ref del caso pre-rellenado para que el gestor escriba directo sin copiar/pegar.", status: "active" },
 
   // Planned
   { name: "AEAT - Sede electrónica", category: "Hacienda", desc: "Envío directo del Modelo 650/651 a la Sede de la AEAT/CCAA con certificado digital del despacho.", status: "planned" },

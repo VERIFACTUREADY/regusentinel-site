@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { generateBankPack } from "@/lib/bank-pack";
 import { CASE_STATUS_COLORS, TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/constants";
+import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import { IsdRisksBanner } from "@/components/isd-risks-banner";
 import { CaseHealthCard } from "@/components/case-health-card";
 import { CaseDocumentGenerator } from "@/components/case-document-generator";
@@ -1325,9 +1326,31 @@ El equipo de gestión`;
             ) : (
               <>
                 <p><strong>Nombre:</strong> {caseData.contact?.fullName}</p>
-                {caseData.contact?.phone && <p><strong>Telefono:</strong> {caseData.contact.phone}</p>}
+                {caseData.contact?.phone && (
+                  <p className="flex items-center gap-2">
+                    <span><strong>Teléfono:</strong> {caseData.contact.phone}</span>
+                    {(() => {
+                      const waText = `Hola ${caseData.contact?.fullName?.split(",")[1]?.trim() ?? caseData.contact?.fullName ?? ""}, te escribo del expediente ${caseData.ref}${caseData.deceased?.fullName ? ` (${caseData.deceased.fullName})` : ""}.`;
+                      const waUrl = buildWhatsAppUrl({ phone: caseData.contact.phone, text: waText });
+                      return waUrl ? (
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Abrir WhatsApp con el contacto"
+                          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        >
+                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M20.52 3.48A11.94 11.94 0 0012.04 0C5.5 0 .2 5.3.2 11.84c0 2.09.55 4.13 1.6 5.93L0 24l6.4-1.68a11.84 11.84 0 005.64 1.44h.01c6.54 0 11.84-5.3 11.84-11.84a11.78 11.78 0 00-3.37-8.44zM12.04 21.5h-.01a9.66 9.66 0 01-4.93-1.35l-.36-.21-3.8 1 1.02-3.7-.23-.38a9.6 9.6 0 01-1.46-5.02c0-5.31 4.32-9.62 9.62-9.62 2.57 0 4.99 1 6.81 2.82a9.55 9.55 0 012.81 6.8c0 5.32-4.32 9.66-9.47 9.66zm5.27-7.21c-.29-.14-1.71-.84-1.97-.94-.26-.1-.46-.14-.65.15-.19.29-.74.94-.91 1.13-.17.19-.34.22-.62.07-1.71-.86-2.83-1.53-3.96-3.45-.3-.52.3-.49.85-1.6.09-.19.04-.36-.02-.5-.06-.14-.65-1.57-.9-2.15-.23-.55-.47-.48-.65-.49h-.55c-.19 0-.5.07-.76.36-.26.29-1 1-1 2.43s1.02 2.82 1.17 3.01c.14.19 2.01 3.07 4.87 4.31.68.29 1.21.47 1.62.6.68.22 1.3.19 1.79.12.55-.08 1.71-.7 1.95-1.37.24-.67.24-1.25.17-1.37-.07-.12-.27-.2-.55-.34z" />
+                          </svg>
+                          WhatsApp
+                        </a>
+                      ) : null;
+                    })()}
+                  </p>
+                )}
                 {caseData.contact?.email && <p><strong>Email:</strong> {caseData.contact.email}</p>}
-                {caseData.contact?.relationship && <p><strong>Relacion:</strong> {caseData.contact.relationship}</p>}
+                {caseData.contact?.relationship && <p><strong>Relación:</strong> {caseData.contact.relationship}</p>}
               </>
             )}
           </div>
