@@ -6,13 +6,15 @@
  * para que un trial recien creado vea el producto funcionando con datos
  * verosimiles sin tener que rellenar nada.
  *
- * El expediente sembrado:
- *   - Causante con datos completos (DNI, fecha de fallecimiento)
- *   - Heredero con datos de contacto
- *   - Provincia de Madrid (CCAA con bonificacion 99%)
- *   - Fecha de fallecimiento hace 90 dias (asi el plazo ISD esta activo)
- *   - 10 tareas precargadas con deadlines reales
- *   - Categorias y notas que disparan riesgos del Radar ISD
+ * El expediente sembrado dispara DELIBERADAMENTE varias alertas del
+ * Radar ISD para que un prospecto vea el moat funcionando en cuanto
+ * abre la cuenta, no a las 2 semanas:
+ *   - deathDate a -160 días → isd_30d warning (vence en 20 días)
+ *   - hasUrbanProperty + adquisición ≥ transmisión → plusvalia_no_incremento
+ *   - hasUrbanProperty + plazo 20 días → plusvalia_30d warning
+ *   - preexistingPatrimony 410.000 € → patrimony_bracket_402678 warning
+ *   - recentResidenceChange Madrid ← Asturias → residence_change_5y warning
+ *   - appliedReductions con aniversario en 14 días → reduction_maintenance_30d
  *
  * Idempotente: si ya existe un expediente con ref "EXP-EJEMPLO" lo omite.
  */
@@ -99,14 +101,14 @@ const SAMPLE_TASKS: TaskSeed[] = [
     description: "CCAA Madrid (bonificacion 99% grupo II). Pendiente de tasaciones para cerrar caudal.",
     category: "FISCAL",
     status: "BLOCKED",
-    deadlineOffsetDays: 90,
+    deadlineOffsetDays: 14,
   },
   {
     title: "Presentar Modelo 650 antes del plazo legal",
     description: "Plazo limite ordinario: 6 meses desde el fallecimiento.",
     category: "FISCAL",
     status: "PENDING",
-    deadlineOffsetDays: 90,
+    deadlineOffsetDays: 20,
   },
 ];
 
@@ -125,11 +127,19 @@ export async function seedSampleCase(
   }
 
   const now = new Date();
+  // -160 días: el plazo ISD ordinario (6m = 180d) vence en 20 días →
+  // dispara isd_30d y plusvalia_30d.
   const deathDate = new Date(now);
-  deathDate.setDate(deathDate.getDate() - 90);
+  deathDate.setDate(deathDate.getDate() - 160);
 
   const createdAt = new Date(deathDate);
   createdAt.setDate(createdAt.getDate() + 3);
+
+  // Reducción aplicada de modo que el aniversario de mantenimiento
+  // caiga dentro de los próximos 14 días → reduction_maintenance_30d.
+  const reductionAppliedDate = new Date(now);
+  reductionAppliedDate.setFullYear(reductionAppliedDate.getFullYear() - 5);
+  reductionAppliedDate.setDate(reductionAppliedDate.getDate() + 14);
 
   const caseRecord = await tx.case.create({
     data: {
@@ -140,11 +150,28 @@ export async function seedSampleCase(
       hasDeceasedInsurance: true,
       categories: ["BANCOS", "SEGUROS", "FISCAL"],
       province: "madrid",
-      notes: "Expediente de ejemplo precargado por BARITUR PRO. Puedes editarlo o eliminarlo cuando quieras.",
+      notes:
+        "Expediente de ejemplo precargado por BARITUR PRO. Está calibrado para que el Radar ISD dispare varias alertas y veas el producto en acción. Puedes editarlo o eliminarlo cuando quieras.",
       consentAccepted: true,
       consentDate: createdAt,
       createdAt,
       updatedAt: createdAt,
+      // ── Datos fiscales que alimentan el Radar ──────────────
+      hasUrbanProperty: true,
+      referenciaCatastral: "9872023VH5797S0001WX",
+      propertyAcquisitionValue: 180000,
+      propertyTransmissionValue: 170000, // < adquisición → plusvalia_no_incremento
+      preexistingPatrimony: 410000, // cerca del tramo 402.678 → patrimony_bracket warning
+      recentResidenceChange: true,
+      previousResidenceProvince: "asturias", // 0% bonif Asturias vs 99% Madrid → warning
+      appliedReductions: [
+        {
+          type: "VIVIENDA_HABITUAL",
+          appliedDate: reductionAppliedDate.toISOString().slice(0, 10),
+          maintenanceYears: 5,
+          note: "C/ Mayor 1, 3B Madrid — reducción aplicada en la herencia anterior",
+        },
+      ],
       deceased: {
         create: {
           fullName: "Maria Garcia Lopez",
