@@ -6,6 +6,29 @@ import { generateBankPack } from "@/lib/bank-pack";
 import { CASE_STATUS_COLORS, TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/constants";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import { buildGoogleCalendarUrl, buildIcsDataUrl } from "@/lib/calendar-export";
+
+type AppliedReductionUi = {
+  type: "VIVIENDA_HABITUAL" | "EMPRESA_FAMILIAR" | "EXPLOTACION_AGRARIA" | "DISCAPACIDAD" | "OTRA";
+  appliedDate: string;
+  maintenanceYears: number;
+  note?: string;
+};
+
+const REDUCTION_LABELS_UI: Record<AppliedReductionUi["type"], string> = {
+  VIVIENDA_HABITUAL: "Vivienda habitual",
+  EMPRESA_FAMILIAR: "Empresa familiar",
+  EXPLOTACION_AGRARIA: "Explotación agraria",
+  DISCAPACIDAD: "Discapacidad",
+  OTRA: "Otra",
+};
+
+const DEFAULT_MAINTENANCE_YEARS: Record<AppliedReductionUi["type"], number> = {
+  VIVIENDA_HABITUAL: 5,
+  EMPRESA_FAMILIAR: 10,
+  EXPLOTACION_AGRARIA: 5,
+  DISCAPACIDAD: 5,
+  OTRA: 5,
+};
 import { IsdRisksBanner } from "@/components/isd-risks-banner";
 import { CaseHealthCard } from "@/components/case-health-card";
 import { CaseDocumentGenerator } from "@/components/case-document-generator";
@@ -24,6 +47,7 @@ interface CaseDetail {
   preexistingPatrimony: number | null;
   recentResidenceChange: boolean;
   previousResidenceProvince: string | null;
+  appliedReductions: AppliedReductionUi[] | null;
   deceased: { fullName: string; deathDate: string | null; dni: string | null } | null;
   contact: { fullName: string; phone: string | null; email: string | null; relationship: string | null } | null;
   tasks: any[]; documents: any[]; approvals: any[]; auditLogs: any[];
@@ -108,6 +132,7 @@ export default function CaseDetailPage() {
     preexistingPatrimony: "",
     recentResidenceChange: false,
     previousResidenceProvince: "",
+    appliedReductions: [] as AppliedReductionUi[],
   });
   const [infoSaving, setInfoSaving] = useState(false);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
@@ -717,6 +742,9 @@ El equipo de gestión`;
         preexistingPatrimony: numericOrNull(fiscalForm.preexistingPatrimony),
         recentResidenceChange: fiscalForm.recentResidenceChange,
         previousResidenceProvince: fiscalForm.previousResidenceProvince.trim() || null,
+        appliedReductions: fiscalForm.appliedReductions.filter(
+          (r) => r.type && r.appliedDate && r.maintenanceYears > 0,
+        ),
       }),
     });
     setFiscalEditOpen(false);
@@ -1448,6 +1476,7 @@ El equipo de gestión`;
                         caseData.preexistingPatrimony != null ? String(caseData.preexistingPatrimony) : "",
                       recentResidenceChange: caseData.recentResidenceChange,
                       previousResidenceProvince: caseData.previousResidenceProvince ?? "",
+                      appliedReductions: Array.isArray(caseData.appliedReductions) ? caseData.appliedReductions : [],
                     });
                     setFiscalEditOpen(true);
                   }}
@@ -1541,6 +1570,107 @@ El equipo de gestión`;
                     </div>
                   )}
                 </div>
+
+                <div className="border-t pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-gray-700">Reducciones aplicadas (art. 20)</p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFiscalForm((f) => ({
+                          ...f,
+                          appliedReductions: [
+                            ...f.appliedReductions,
+                            {
+                              type: "VIVIENDA_HABITUAL",
+                              appliedDate: new Date().toISOString().slice(0, 10),
+                              maintenanceYears: DEFAULT_MAINTENANCE_YEARS.VIVIENDA_HABITUAL,
+                            },
+                          ],
+                        }))
+                      }
+                      className="text-xs px-2 py-0.5 rounded border border-blue-200 text-blue-700 hover:bg-blue-50"
+                    >
+                      + Añadir
+                    </button>
+                  </div>
+                  {fiscalForm.appliedReductions.length === 0 ? (
+                    <p className="text-[11px] text-gray-400 italic">
+                      Declara aquí las reducciones con periodo de mantenimiento (vivienda habitual,
+                      empresa familiar...). El Radar avisará antes del aniversario.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {fiscalForm.appliedReductions.map((r, idx) => (
+                        <div key={idx} className="grid grid-cols-[1fr_auto_60px_auto] gap-1.5 items-center">
+                          <select
+                            value={r.type}
+                            onChange={(e) => {
+                              const newType = e.target.value as AppliedReductionUi["type"];
+                              setFiscalForm((f) => ({
+                                ...f,
+                                appliedReductions: f.appliedReductions.map((x, i) =>
+                                  i === idx
+                                    ? { ...x, type: newType, maintenanceYears: DEFAULT_MAINTENANCE_YEARS[newType] }
+                                    : x,
+                                ),
+                              }));
+                            }}
+                            className="px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          >
+                            {(Object.keys(REDUCTION_LABELS_UI) as AppliedReductionUi["type"][]).map((t) => (
+                              <option key={t} value={t}>
+                                {REDUCTION_LABELS_UI[t]}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="date"
+                            value={r.appliedDate}
+                            onChange={(e) =>
+                              setFiscalForm((f) => ({
+                                ...f,
+                                appliedReductions: f.appliedReductions.map((x, i) =>
+                                  i === idx ? { ...x, appliedDate: e.target.value } : x,
+                                ),
+                              }))
+                            }
+                            className="px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={r.maintenanceYears}
+                            onChange={(e) =>
+                              setFiscalForm((f) => ({
+                                ...f,
+                                appliedReductions: f.appliedReductions.map((x, i) =>
+                                  i === idx ? { ...x, maintenanceYears: Number(e.target.value) || 5 } : x,
+                                ),
+                              }))
+                            }
+                            className="px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            title="Años de mantenimiento"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFiscalForm((f) => ({
+                                ...f,
+                                appliedReductions: f.appliedReductions.filter((_, i) => i !== idx),
+                              }))
+                            }
+                            className="text-xs text-gray-400 hover:text-red-600 px-1.5"
+                            title="Quitar"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-2 pt-1">
                   <button
                     onClick={saveFiscalInfo}
@@ -1591,6 +1721,20 @@ El equipo de gestión`;
                     ? ` (previa: ${caseData.previousResidenceProvince})`
                     : ""}
                 </p>
+                {Array.isArray(caseData.appliedReductions) && caseData.appliedReductions.length > 0 && (
+                  <div>
+                    <p className="font-medium text-sm text-gray-700 mt-2 mb-1">Reducciones aplicadas:</p>
+                    <ul className="text-xs text-gray-600 space-y-0.5 pl-3">
+                      {caseData.appliedReductions.map((r, i) => (
+                        <li key={i}>
+                          {REDUCTION_LABELS_UI[r.type] ?? r.type} ·{" "}
+                          aplicada el {new Date(r.appliedDate).toLocaleDateString("es-ES")} ·{" "}
+                          mantener {r.maintenanceYears} año{r.maintenanceYears !== 1 ? "s" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </>
             )}
           </div>

@@ -62,6 +62,72 @@ export interface RiskInput {
   recentResidenceChange?: boolean;
   /** Provincia/CCAA de residencia previa, opcional, para concretar el mensaje. */
   previousResidenceProvince?: string | null;
+  /**
+   * Reducciones aplicadas con periodo de mantenimiento. El detector
+   * alerta cuando el aniversario de cierre está próximo (≤30d, ≤7d)
+   * o ya pasado. Pensado para vivienda habitual (5-10 años), empresa
+   * familiar (10 años), etc.
+   */
+  appliedReductions?: AppliedReduction[];
+}
+
+export type AppliedReductionType =
+  | "VIVIENDA_HABITUAL"
+  | "EMPRESA_FAMILIAR"
+  | "EXPLOTACION_AGRARIA"
+  | "DISCAPACIDAD"
+  | "OTRA";
+
+export interface AppliedReduction {
+  type: AppliedReductionType;
+  /** ISO date string (YYYY-MM-DD). */
+  appliedDate: string;
+  /** Años de mantenimiento requeridos según la normativa aplicada. */
+  maintenanceYears: number;
+  note?: string;
+}
+
+const REDUCTION_LABELS: Record<AppliedReductionType, string> = {
+  VIVIENDA_HABITUAL: "Reducción por vivienda habitual",
+  EMPRESA_FAMILIAR: "Reducción por empresa familiar",
+  EXPLOTACION_AGRARIA: "Reducción por explotación agraria",
+  DISCAPACIDAD: "Reducción por discapacidad",
+  OTRA: "Reducción del art. 20",
+};
+
+const VALID_REDUCTION_TYPES: ReadonlySet<AppliedReductionType> = new Set<AppliedReductionType>([
+  "VIVIENDA_HABITUAL",
+  "EMPRESA_FAMILIAR",
+  "EXPLOTACION_AGRARIA",
+  "DISCAPACIDAD",
+  "OTRA",
+]);
+
+/**
+ * Convierte el campo Json de Prisma a un array tipado de AppliedReduction.
+ * Descarta entradas con tipo desconocido, sin fecha o sin años de
+ * mantenimiento. Tolerante a JSON malformado.
+ */
+export function parseAppliedReductions(raw: unknown): AppliedReduction[] {
+  if (!Array.isArray(raw)) return [];
+  const result: AppliedReduction[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const type = obj.type;
+    const appliedDate = obj.appliedDate;
+    const maintenanceYears = obj.maintenanceYears;
+    if (typeof type !== "string" || !VALID_REDUCTION_TYPES.has(type as AppliedReductionType)) continue;
+    if (typeof appliedDate !== "string" || !appliedDate.trim()) continue;
+    if (typeof maintenanceYears !== "number" || maintenanceYears <= 0) continue;
+    result.push({
+      type: type as AppliedReductionType,
+      appliedDate,
+      maintenanceYears,
+      note: typeof obj.note === "string" ? obj.note : undefined,
+    });
+  }
+  return result;
 }
 
 const MS_PER_DAY = 86_400_000;
@@ -182,6 +248,14 @@ export function detectISDRisks(input: RiskInput): ISDRisk[] {
   // ─── Riesgos de plusvalía municipal (IIVTNU) ────────────────────────
   if (input.hasUrbanProperty) {
     risks.push(...detectPlusvaliaRisks(daysUntilISD, daysUntilExtension, input));
+  }
+
+  // ─── Mantenimiento de reducciones aplicadas (art. 20) ──────────────
+  if (Array.isArray(input.appliedReductions)) {
+    for (const r of input.appliedReductions) {
+      const risk = detectReductionMaintenanceRisk(r);
+      if (risk) risks.push(risk);
+    }
   }
 
   // ─── Cambio de residencia (art. 28 Ley 22/2009) ─────────────────────
@@ -320,6 +394,61 @@ function detectPlusvaliaRisks(daysUntilISD: number, daysUntilExtension: number, 
   }
 
   return risks;
+}
+
+/**
+ * Para una reducción aplicada con periodo de mantenimiento, alerta cuando
+ * el aniversario de cierre está próximo o ha pasado. El gestor debe
+ * confirmar que el heredero ha cumplido los requisitos (no haber vendido
+ * la vivienda, etc.).
+ */
+function detectReductionMaintenanceRisk(r: AppliedReduction): ISDRisk | null {
+  if (!r || !r.appliedDate || !r.maintenanceYears) return null;
+  const applied = new Date(r.appliedDate);
+  if (Number.isNaN(applied.getTime())) return null;
+
+  const expiry = new Date(applied);
+  expiry.setFullYear(expiry.getFullYear() + r.maintenanceYears);
+  const daysUntil = Math.ceil((expiry.getTime() - Date.now()) / MS_PER_DAY);
+  const label = REDUCTION_LABELS[r.type] ?? REDUCTION_LABELS.OTRA;
+  const expiryStr = expiry.toLocaleDateString("es-ES");
+
+  if (daysUntil < -30) {
+    // Más de un mes después del aniversario: ya no alertamos, el
+    // periodo se ha cumplido (o se ha incumplido y se ha procesado).
+    return null;
+  }
+
+  if (daysUntil <= 0) {
+    return {
+      id: `reduction_maintenance_passed_${r.type}`,
+      severity: "info",
+      title: `${label}: periodo de mantenimiento cumplido (${expiryStr})`,
+      description: `La reducción del ${label.toLowerCase()} aplicada el ${new Date(r.appliedDate).toLocaleDateString("es-ES")} ha completado sus ${r.maintenanceYears} años de mantenimiento. Documentar el cumplimiento de los requisitos para cerrar el expediente fiscal.`,
+      action: "Marcar la reducción como mantenida y archivar el expediente fiscal.",
+    };
+  }
+
+  if (daysUntil <= 7) {
+    return {
+      id: `reduction_maintenance_7d_${r.type}`,
+      severity: "warning",
+      title: `${label}: el periodo de mantenimiento expira en ${daysUntil} días (${expiryStr})`,
+      description: `Quedan ${daysUntil} días para que se cumplan los ${r.maintenanceYears} años. Si el heredero ha incumplido algún requisito (venta del bien, cese de la actividad...) debe regularizar antes de esta fecha.`,
+      action: "Confirmar con el heredero que sigue cumpliendo los requisitos legales de la reducción.",
+    };
+  }
+
+  if (daysUntil <= 30) {
+    return {
+      id: `reduction_maintenance_30d_${r.type}`,
+      severity: "info",
+      title: `${label}: aniversario crítico en ${daysUntil} días (${expiryStr})`,
+      description: `Quedan ${daysUntil} días para completar el periodo de mantenimiento. Programa un recordatorio para verificar con el heredero que ha cumplido los requisitos durante los ${r.maintenanceYears} años.`,
+    };
+  }
+
+  return null;
 }
 
 function mapProvinceToCCAA(province: string | null | undefined): CCAAKey | null {

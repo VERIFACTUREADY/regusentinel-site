@@ -1,5 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { detectISDRisks } from "../src/lib/isd-risk-detector";
+import { detectISDRisks, parseAppliedReductions } from "../src/lib/isd-risk-detector";
+
+function isoYearsAhead(years: number, extraDays = 0): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + years);
+  d.setDate(d.getDate() + extraDays);
+  return d.toISOString().slice(0, 10);
+}
+
+function isoYearsAgo(years: number, extraDays = 0): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - years);
+  d.setDate(d.getDate() + extraDays);
+  return d.toISOString().slice(0, 10);
+}
 
 function daysAgo(d: number): Date {
   const date = new Date();
@@ -328,5 +342,118 @@ describe("detectISDRisks — cambio de residencia (art. 28 Ley 22/2009)", () => 
       previousResidenceProvince: "madrid",
     });
     expect(risks.find((r) => r.id === "residence_change_5y")).toBeUndefined();
+  });
+});
+
+describe("detectISDRisks — mantenimiento de reducciones art. 20", () => {
+  it("no flagea si no hay reducciones aplicadas", () => {
+    const risks = detectISDRisks({ deathDate: daysAgo(30), province: "madrid" });
+    expect(risks.find((r) => r.id.startsWith("reduction_maintenance"))).toBeUndefined();
+  });
+
+  it("flagea info cuando la reducción está dentro del ±30 días del vencimiento", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      appliedReductions: [
+        // 5 años menos 15 días → vence en 15 días
+        { type: "VIVIENDA_HABITUAL", appliedDate: isoYearsAgo(5, 15), maintenanceYears: 5 },
+      ],
+    });
+    const r = risks.find((x) => x.id === "reduction_maintenance_30d_VIVIENDA_HABITUAL");
+    expect(r).toBeDefined();
+    expect(r!.severity).toBe("info");
+  });
+
+  it("escala a warning cuando quedan ≤7 días", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      appliedReductions: [
+        { type: "EMPRESA_FAMILIAR", appliedDate: isoYearsAgo(10, 5), maintenanceYears: 10 },
+      ],
+    });
+    const r = risks.find((x) => x.id === "reduction_maintenance_7d_EMPRESA_FAMILIAR");
+    expect(r).toBeDefined();
+    expect(r!.severity).toBe("warning");
+  });
+
+  it("flagea cumplimiento cuando el periodo ya pasó (hasta 30 días después)", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      appliedReductions: [
+        { type: "VIVIENDA_HABITUAL", appliedDate: isoYearsAgo(5, -15), maintenanceYears: 5 },
+      ],
+    });
+    const r = risks.find((x) => x.id === "reduction_maintenance_passed_VIVIENDA_HABITUAL");
+    expect(r).toBeDefined();
+    expect(r!.severity).toBe("info");
+    expect(r!.title).toMatch(/cumplido/i);
+  });
+
+  it("no flagea reducciones muy antiguas (>30d después del aniversario)", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      appliedReductions: [
+        { type: "VIVIENDA_HABITUAL", appliedDate: isoYearsAgo(6), maintenanceYears: 5 },
+      ],
+    });
+    expect(risks.find((x) => x.id.startsWith("reduction_maintenance"))).toBeUndefined();
+  });
+
+  it("no flagea reducciones lejos del aniversario", () => {
+    const risks = detectISDRisks({
+      deathDate: daysAgo(30),
+      province: "madrid",
+      appliedReductions: [
+        { type: "VIVIENDA_HABITUAL", appliedDate: isoYearsAgo(2), maintenanceYears: 5 },
+      ],
+    });
+    expect(risks.find((x) => x.id.startsWith("reduction_maintenance"))).toBeUndefined();
+  });
+});
+
+describe("parseAppliedReductions", () => {
+  it("acepta un array bien formado", () => {
+    const parsed = parseAppliedReductions([
+      { type: "VIVIENDA_HABITUAL", appliedDate: "2026-04-15", maintenanceYears: 5 },
+    ]);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].type).toBe("VIVIENDA_HABITUAL");
+  });
+
+  it("descarta entradas con tipo desconocido", () => {
+    const parsed = parseAppliedReductions([
+      { type: "TIPO_INVENTADO", appliedDate: "2026-04-15", maintenanceYears: 5 },
+      { type: "EMPRESA_FAMILIAR", appliedDate: "2026-04-15", maintenanceYears: 10 },
+    ]);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].type).toBe("EMPRESA_FAMILIAR");
+  });
+
+  it("descarta entradas sin fecha o sin años de mantenimiento", () => {
+    const parsed = parseAppliedReductions([
+      { type: "VIVIENDA_HABITUAL", maintenanceYears: 5 },
+      { type: "VIVIENDA_HABITUAL", appliedDate: "2026-04-15" },
+      { type: "VIVIENDA_HABITUAL", appliedDate: "", maintenanceYears: 5 },
+      { type: "VIVIENDA_HABITUAL", appliedDate: "2026-04-15", maintenanceYears: 0 },
+    ]);
+    expect(parsed).toEqual([]);
+  });
+
+  it("devuelve [] para valores no-array", () => {
+    expect(parseAppliedReductions(null)).toEqual([]);
+    expect(parseAppliedReductions(undefined)).toEqual([]);
+    expect(parseAppliedReductions("string")).toEqual([]);
+    expect(parseAppliedReductions(42)).toEqual([]);
+  });
+
+  it("preserva el campo note opcional", () => {
+    const parsed = parseAppliedReductions([
+      { type: "OTRA", appliedDate: "2026-04-15", maintenanceYears: 5, note: "Discapacidad ≥65%" },
+    ]);
+    expect(parsed[0].note).toBe("Discapacidad ≥65%");
   });
 });

@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
-import { detectISDRisks } from "@/lib/isd-risk-detector";
+import { detectISDRisks, parseAppliedReductions } from "@/lib/isd-risk-detector";
 import { computeNextAction, type NextActionTask } from "@/lib/next-action";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +28,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       preexistingPatrimony: true,
       recentResidenceChange: true,
       previousResidenceProvince: true,
+      appliedReductions: true,
       deceased: { select: { deathDate: true } },
       tasks: {
         select: { id: true, title: true, status: true, deadline: true, dueDate: true, blockReason: true },
@@ -48,6 +49,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     preexistingPatrimony: c.preexistingPatrimony,
     recentResidenceChange: c.recentResidenceChange,
     previousResidenceProvince: c.previousResidenceProvince,
+    appliedReductions: parseAppliedReductions(c.appliedReductions),
   });
 
   const tasks: NextActionTask[] = c.tasks.map((t) => ({

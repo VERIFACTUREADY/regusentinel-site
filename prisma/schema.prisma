@@ -190,6 +190,14 @@ model Case {
   /// Se usa en el mensaje de la alerta cuando se ha marcado un cambio.
   previousResidenceProvince String?
 
+  /// Reducciones del art. 20 Ley 29/1987 aplicadas en el expediente
+  /// y que tienen periodo de mantenimiento (vivienda habitual,
+  /// empresa familiar, etc.). Estructura:
+  /// [{ "type": "VIVIENDA_HABITUAL", "appliedDate": "2026-04-15",
+  ///    "maintenanceYears": 5, "note"?: "..." }, ...]
+  /// El Radar ISD las vigila y alerta antes del fin del periodo.
+  appliedReductions       Json?
+
   deletedAt DateTime?
   closedAt  DateTime?
 
