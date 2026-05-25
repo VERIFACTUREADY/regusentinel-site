@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { generateBankPack } from "@/lib/bank-pack";
 import { CASE_STATUS_COLORS, TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/constants";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
+import { buildGoogleCalendarUrl, buildIcsDataUrl } from "@/lib/calendar-export";
 import { IsdRisksBanner } from "@/components/isd-risks-banner";
 import { CaseHealthCard } from "@/components/case-health-card";
 import { CaseDocumentGenerator } from "@/components/case-document-generator";
@@ -1637,9 +1638,18 @@ El equipo de gestión`;
                   { label: "Solicitud prorroga ISD", date: caseData.caseDeadlines.isdExtensionRequestDeadline, desc: "Limite para solicitar prorroga del Modelo 650" },
                   { label: "Plazo ISD (Modelo 650)", date: caseData.caseDeadlines.isdDeadline, desc: "6 meses desde fallecimiento" },
                 ].map((d) => {
-                  const days = Math.ceil((new Date(d.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                  const eventDate = new Date(d.date);
+                  const days = Math.ceil((eventDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
                   const expired = days <= 0;
                   const urgent = days > 0 && days <= 14;
+                  const calEvent = {
+                    title: `${d.label} — ${caseData.ref}`,
+                    description: `${d.desc}\n\nExpediente: ${caseData.ref}${caseData.deceased?.fullName ? `\nCausante: ${caseData.deceased.fullName}` : ""}`,
+                    date: eventDate,
+                  };
+                  const googleUrl = buildGoogleCalendarUrl(calEvent);
+                  const icsUrl = buildIcsDataUrl(calEvent, `${caseData.id}-${d.label.replace(/\s+/g, "-")}@bariturpro.com`);
+                  const icsFilename = `${caseData.ref}-${d.label.replace(/\s+/g, "-").toLowerCase()}.ics`;
                   return (
                     <div key={d.label} className={`p-3 rounded-lg border ${expired ? "bg-red-50 border-red-200" : urgent ? "bg-orange-50 border-orange-200" : "bg-gray-50 border-gray-200"}`}>
                       <p className="text-xs text-gray-500">{d.label}</p>
@@ -1647,9 +1657,28 @@ El equipo de gestión`;
                         {new Date(d.date).toLocaleDateString("es-ES")}
                       </p>
                       <p className={`text-xs mt-1 ${expired ? "text-red-500 font-medium" : urgent ? "text-orange-500" : "text-gray-400"}`}>
-                        {expired ? "VENCIDO" : `${days} dias restantes`}
+                        {expired ? "VENCIDO" : `${days} días restantes`}
                       </p>
                       <p className="text-xs text-gray-400 mt-1">{d.desc}</p>
+                      <div className="mt-2 flex gap-1.5">
+                        <a
+                          href={googleUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Añadir a Google Calendar"
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50"
+                        >
+                          + Google
+                        </a>
+                        <a
+                          href={icsUrl}
+                          download={icsFilename}
+                          title="Descargar .ics (Outlook, Apple Calendar, iCal)"
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                        >
+                          + Outlook / .ics
+                        </a>
+                      </div>
                     </div>
                   );
                 })}

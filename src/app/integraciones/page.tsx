@@ -34,7 +34,7 @@ const INTEGRATIONS: Integration[] = [
   // Soon
   { name: "Google Drive", category: "Almacenamiento", desc: "Sincronización bidireccional con carpetas de Google Drive. Los documentos del portal familia se replican a tu Drive del despacho.", status: "soon" },
   { name: "Microsoft OneDrive", category: "Almacenamiento", desc: "Equivalente a Google Drive para despachos en ecosistema Microsoft.", status: "soon" },
-  { name: "Calendar (Google + Outlook)", category: "Productividad", desc: "Los plazos del Modelo 650 y tareas con fecha aparecen automáticamente en tu agenda profesional.", status: "soon" },
+  { name: "Calendar (Google + Outlook + iCal)", category: "Productividad", desc: "Botones \"+ Google\" y \"+ Outlook / .ics\" en cada plazo del expediente: añaden el evento al calendario con el ref, descripción y plazo legal pre-rellenados. Sin OAuth ni permisos extra.", status: "active" },
   { name: "Slack", category: "Notificaciones", desc: "Las alertas del Radar ISD (plazo a 60/30/7/1 día y vencido) llegan a un canal de Slack vía incoming webhook. Plan Firma.", status: "active", href: "/settings/integrations" },
   { name: "Microsoft Teams", category: "Notificaciones", desc: "Equivalente a Slack para despachos que trabajan con Microsoft Teams.", status: "soon" },
   { name: "WhatsApp Business (deep link)", category: "Comunicación", desc: "Botón \"WhatsApp\" junto al teléfono del contacto en cada expediente. Abre wa.me con el ref del caso pre-rellenado para que el gestor escriba directo sin copiar/pegar.", status: "active" },
