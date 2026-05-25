@@ -37,6 +37,22 @@ interface CaseSpec {
     docTag?: string;
   }>;
   closedDaysAgo?: number;
+  // Datos fiscales opcionales para que algunos casos demo disparen
+  // alertas concretas del Radar ISD (plusvalía, patrimonio,
+  // residencia, reducciones).
+  hasUrbanProperty?: boolean;
+  referenciaCatastral?: string;
+  propertyAcquisitionValue?: number;
+  propertyTransmissionValue?: number;
+  preexistingPatrimony?: number;
+  recentResidenceChange?: boolean;
+  previousResidenceProvince?: string;
+  appliedReductions?: Array<{
+    type: "VIVIENDA_HABITUAL" | "EMPRESA_FAMILIAR" | "EXPLOTACION_AGRARIA" | "DISCAPACIDAD" | "OTRA";
+    appliedDate: string;
+    maintenanceYears: number;
+    note?: string;
+  }>;
 }
 
 function daysAgo(n: number): Date {
@@ -104,6 +120,25 @@ export const DEMO_CASE_SPECS: CaseSpec[] = [
     },
     notes:
       "Dos entidades bancarias y póliza de vida en Mapfre. Pendiente liquidación ISD.",
+    // Caso con reducción a vigilar + cambio de residencia
+    hasUrbanProperty: true,
+    referenciaCatastral: "1234567CS5213N0001ML",
+    appliedReductions: [
+      {
+        type: "EMPRESA_FAMILIAR",
+        appliedDate: (() => {
+          // Aniversario en ~20 días (10 años desde hoy - 20 días)
+          const d = new Date();
+          d.setFullYear(d.getFullYear() - 10);
+          d.setDate(d.getDate() + 20);
+          return d.toISOString().slice(0, 10);
+        })(),
+        maintenanceYears: 10,
+        note: "Participaciones en empresa familiar — vigilar mantenimiento",
+      },
+    ],
+    recentResidenceChange: true,
+    previousResidenceProvince: "asturias",
     tasks: [
       {
         category: TaskCategory.BANCOS,
@@ -207,6 +242,13 @@ export const DEMO_CASE_SPECS: CaseSpec[] = [
     },
     notes:
       "URGENTE: Modelo 650 vence esta semana. Revisión final antes de presentar.",
+    // Caso crítico con varias alertas Radar activas
+    hasUrbanProperty: true,
+    referenciaCatastral: "9872023VH5797S0001WX",
+    propertyAcquisitionValue: 245000,
+    propertyTransmissionValue: 220000, // no-incremento → IIVTNU no sujeta
+    preexistingPatrimony: 410000, // cerca del tramo 402.678
+    recentResidenceChange: false,
     tasks: [
       {
         category: TaskCategory.FISCAL,
@@ -339,6 +381,14 @@ export async function resetDemoCases(
         createdAt,
         updatedAt: createdAt,
         closedAt: spec.closedDaysAgo != null ? daysAgo(spec.closedDaysAgo) : null,
+        hasUrbanProperty: spec.hasUrbanProperty ?? false,
+        referenciaCatastral: spec.referenciaCatastral ?? null,
+        propertyAcquisitionValue: spec.propertyAcquisitionValue ?? null,
+        propertyTransmissionValue: spec.propertyTransmissionValue ?? null,
+        preexistingPatrimony: spec.preexistingPatrimony ?? null,
+        recentResidenceChange: spec.recentResidenceChange ?? false,
+        previousResidenceProvince: spec.previousResidenceProvince ?? null,
+        appliedReductions: spec.appliedReductions ?? undefined,
         deceased: {
           create: { fullName: spec.deceased.fullName, dni: spec.deceased.dni, deathDate },
         },
