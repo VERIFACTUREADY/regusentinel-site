@@ -6,6 +6,7 @@ import { hasPermission } from "@/lib/rbac";
 import { inviteUserSchema } from "@/lib/validations";
 import { sendEmail } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
+import { PLAN_PRICING } from "@/lib/stripe";
 import crypto from "crypto";
 
 export async function GET(_req: NextRequest) {
@@ -37,6 +38,31 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const data = inviteUserSchema.parse(body);
+
+    // Plan-level user cap: la tabla /precios promete "Hasta N usuarios"
+    // por plan. Antes de crear la membership, contamos los activos y
+    // bloqueamos si ya se alcanzó el cap.
+    const sub = await prisma.subscription.findUnique({
+      where: { orgId: session.user.orgId },
+      select: { plan: true },
+    });
+    const plan = sub?.plan ?? "INICIA";
+    const maxUsers = PLAN_PRICING[plan].maxUsers;
+    const currentMembers = await prisma.membership.count({
+      where: { orgId: session.user.orgId },
+    });
+    if (currentMembers >= maxUsers) {
+      const nextPlan = plan === "INICIA" ? "Despacho" : plan === "DESPACHO" ? "Firma" : null;
+      const upgradeHint = nextPlan
+        ? ` Actualiza a ${nextPlan} para añadir más miembros.`
+        : "";
+      return NextResponse.json(
+        {
+          error: `Límite de usuarios alcanzado para el plan ${PLAN_PRICING[plan].label} (${maxUsers} usuarios).${upgradeHint}`,
+        },
+        { status: 403 },
+      );
+    }
 
     // Check if user exists
     let user = await prisma.user.findUnique({ where: { email: data.email } });
