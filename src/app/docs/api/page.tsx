@@ -203,6 +203,87 @@ export default function ApiDocsPage() {
   "meta": { "ccaaCount": 17, "engine": "deterministic" }
 }`}
             />
+
+            {/* /modelo650-preview */}
+            <EndpointCard
+              method="POST"
+              path="/api/public/modelo650-preview"
+              title="Generar borrador Modelo 650 (PDF)"
+              description="Devuelve un PDF de trabajo del Modelo 650 (Impuesto sobre Sucesiones) pre-rellenado con los datos del caudal. No es válido para presentar — sustituye al modelo oficial para revisión interna del despacho. Rate-limit más bajo (8 req/min/IP) por ser generación de PDF."
+              params={[
+                { name: "deceasedName", type: "string", required: true, desc: "Nombre del causante (2-200 caracteres)" },
+                { name: "deceasedDni", type: "string", required: false, desc: "DNI/NIE del causante" },
+                { name: "deathDate", type: "string (ISO 8601)", required: false, desc: "Fecha del fallecimiento. Si está, calcula plazos en el PDF" },
+                { name: "province", type: "string", required: false, desc: "Provincia del causante (slug-friendly)" },
+                { name: "contactName", type: "string", required: false, desc: "Nombre del heredero principal" },
+                { name: "contactRelationship", type: "string", required: false, desc: "Parentesco con el causante" },
+                { name: "estimatedValue", type: "number", required: false, desc: "Caudal estimado en € (calcula cuota orientativa)" },
+                { name: "hasInsurance", type: "boolean", required: false, desc: "Si hay seguro de vida (añade sección)" },
+              ]}
+              example={`curl -X POST ${BASE}/api/public/modelo650-preview \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "deceasedName": "García López, María",
+    "deathDate": "2024-12-15",
+    "province": "madrid",
+    "estimatedValue": 200000
+  }' \\
+  --output borrador-650.pdf`}
+              response={`PDF binario (Content-Type: application/pdf)
+Cabeceras incluyen Content-Disposition: attachment; filename="borrador-modelo-650.pdf"`}
+            />
+
+            {/* /modelo651-preview */}
+            <EndpointCard
+              method="POST"
+              path="/api/public/modelo651-preview"
+              title="Generar borrador Modelo 651 (PDF)"
+              description="Equivalente al endpoint 650 pero para donaciones. Devuelve un PDF de trabajo del Modelo 651 con plazo de 30 días hábiles calculado. Mismo rate-limit (8 req/min/IP)."
+              params={[
+                { name: "donorName", type: "string", required: true, desc: "Nombre del donante (2-200 caracteres)" },
+                { name: "doneeName", type: "string", required: true, desc: "Nombre del donatario (2-200 caracteres)" },
+                { name: "donationDate", type: "string (ISO 8601)", required: false, desc: "Fecha de la donación. Si está, calcula plazo en el PDF" },
+                { name: "province", type: "string", required: false, desc: "Provincia del donatario (determina CCAA)" },
+                { name: "amount", type: "number", required: false, desc: "Importe donado en € (calcula cuota orientativa)" },
+                { name: "group", type: "'I' | 'II' | 'III' | 'IV'", required: false, desc: "Grupo de parentesco (default: II)" },
+              ]}
+              example={`curl -X POST ${BASE}/api/public/modelo651-preview \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "donorName": "García López, María",
+    "doneeName": "García Pérez, Antonio",
+    "donationDate": "2025-03-01",
+    "amount": 80000,
+    "group": "II"
+  }' \\
+  --output borrador-651.pdf`}
+              response={`PDF binario (Content-Type: application/pdf)`}
+            />
+
+            {/* /plantilla-documento */}
+            <EndpointCard
+              method="POST"
+              path="/api/public/plantilla-documento"
+              title="Generar plantilla de documento (PDF)"
+              description="Renderiza una de las plantillas oficiales (carta al banco, solicitud de prórroga, declaración de siniestro, etc.) con los valores que pases. Rate-limit 12 req/min/IP."
+              params={[
+                { name: "slug", type: "string", required: true, desc: "Identificador de la plantilla. Ver /plantillas-documentos para el catálogo (banco-saldo, prorroga-650, aseguradora-siniestro, …)" },
+                { name: "values", type: "object", required: false, desc: "Diccionario campo → valor con los placeholders de la plantilla. Strings limitadas a 1000 chars" },
+              ]}
+              example={`curl -X POST ${BASE}/api/public/plantilla-documento \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "slug": "banco-saldo",
+    "values": {
+      "entidad": "Banco Santander",
+      "iban": "ES12 3456 …",
+      "fechaFallecimiento": "2024-12-15"
+    }
+  }' \\
+  --output carta-banco.pdf`}
+              response={`PDF binario (Content-Type: application/pdf)
+Si el slug no existe → 404 { "error": "Plantilla no encontrada" }`}
+            />
           </div>
         </section>
 
