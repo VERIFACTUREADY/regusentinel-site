@@ -1844,7 +1844,7 @@ El equipo de gestión`;
                     date: eventDate,
                   };
                   const googleUrl = buildGoogleCalendarUrl(calEvent);
-                  const icsUrl = buildIcsDataUrl(calEvent, `${caseData.id}-${d.label.replace(/\s+/g, "-")}@bariturpro.com`);
+                  const icsUrl = buildIcsDataUrl(calEvent, `${caseData.id}-${d.label.replace(/\s+/g, "-")}@heredia.app`);
                   const icsFilename = `${caseData.ref}-${d.label.replace(/\s+/g, "-").toLowerCase()}.ics`;
                   return (
                     <div key={d.label} className={`p-3 rounded-lg border ${expired ? "bg-red-50 border-red-200" : urgent ? "bg-orange-50 border-orange-200" : "bg-gray-50 border-gray-200"}`}>

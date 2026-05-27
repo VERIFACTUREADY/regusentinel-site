@@ -50,7 +50,7 @@ export function NoOrgSetup({ userName }: { userName?: string | null }) {
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-slate-900">
-            {userName ? `Bienvenido/a, ${userName}` : "Bienvenido/a a BARITUR PRO"}
+            {userName ? `Bienvenido/a, ${userName}` : "Bienvenido/a a Heredia"}
           </h1>
           <p className="text-sm text-slate-500 mt-2">
             Solo falta un paso: crea tu organización para empezar a gestionar expedientes.

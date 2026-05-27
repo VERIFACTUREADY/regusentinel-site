@@ -4,10 +4,10 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Casos de uso reales — Cómo gestorías y funerarias usan BARITUR PRO",
+  title: "Casos de uso reales — Cómo gestorías y funerarias usan Heredia",
   description:
     "6 escenarios concretos con cifras: cómo despachos pasaron de 60 a 150 expedientes/año, cómo evitaron recargos del Modelo 650 y cómo cobran servicios post-mortem.",
-  alternates: { canonical: "https://bariturpro.com/casos-de-uso" },
+  alternates: { canonical: "https://heredia.app/casos-de-uso" },
 };
 
 interface UseCase {
@@ -90,7 +90,7 @@ const CASES: UseCase[] = [
     metrics: [
       { label: "Recargos evitados", value: "12.400 €", tone: "positive" },
       { label: "Plazos perdidos", value: "0", tone: "positive" },
-      { label: "Coste BARITUR/año", value: "4.188 €", tone: "neutral" },
+      { label: "Coste Heredia/año", value: "4.188 €", tone: "neutral" },
       { label: "Plan", value: "Despacho", tone: "neutral" },
     ],
     quote: "Lo que costaba el plan se cubrió con un solo recargo evitado. El año entero ha sido beneficio puro.",
@@ -143,7 +143,7 @@ const CASES: UseCase[] = [
       { label: "Tiempo/donación", value: "2,5 h", tone: "neutral" },
       { label: "Plan", value: "Despacho", tone: "neutral" },
     ],
-    quote: "Antes derivábamos las donaciones; con BARITUR PRO ya no hay diferencia entre 650 y 651. Es el mismo flujo y abrimos un vertical entero.",
+    quote: "Antes derivábamos las donaciones; con Heredia ya no hay diferencia entre 650 y 651. Es el mismo flujo y abrimos un vertical entero.",
   },
 
   {
@@ -195,7 +195,7 @@ export default function CasosDeUsoPage() {
         <div className="relative max-w-4xl mx-auto px-4 py-14 sm:py-16">
           <h1 className="text-3xl sm:text-4xl font-bold mb-3">Casos de uso reales con cifras</h1>
           <p className="text-base sm:text-lg text-blue-100 max-w-2xl mb-2">
-            Cómo gestorías, funerarias y despachos de derecho sucesorio usan BARITUR PRO para multiplicar
+            Cómo gestorías, funerarias y despachos de derecho sucesorio usan Heredia para multiplicar
             su capacidad, evitar recargos y monetizar servicios post-mortem.
           </p>
           <p className="text-sm text-blue-300">
@@ -238,7 +238,7 @@ export default function CasosDeUsoPage() {
                 </ul>
               </div>
               <div className="p-6 bg-emerald-50/40">
-                <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-3">Con BARITUR PRO</p>
+                <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-3">Con Heredia</p>
                 <ul className="space-y-2 text-sm text-gray-700">
                   {c.after.map((a, i) => (
                     <li key={i} className="flex gap-2">

@@ -28,7 +28,7 @@ export async function generateMetadata({ params }: { params: { ccaa: string } })
       `donacion vivienda ${label.toLowerCase()}`,
       `bonificacion donaciones ${label.toLowerCase()}`,
     ],
-    alternates: { canonical: `https://bariturpro.com/donaciones/${content.slug}` },
+    alternates: { canonical: `https://heredia.app/donaciones/${content.slug}` },
     openGraph: {
       title: `Donaciones en ${label} 2025`,
       description: `Bonificaciones, plazos y Modelo 651 en ${label}.`,
@@ -283,13 +283,13 @@ export default function DonacionCCAAPage({ params }: { params: { ccaa: string } 
           <div className="max-w-3xl mx-auto px-4 py-14 text-center">
             <h2 className="text-2xl font-bold mb-3">¿Tramitas donaciones para clientes?</h2>
             <p className="text-blue-200 text-sm mb-6">
-              BARITUR PRO automatiza también los expedientes de donación. 14 días gratis, sin tarjeta.
+              Heredia automatiza también los expedientes de donación. 14 días gratis, sin tarjeta.
             </p>
             <Link
               href="/#demo"
               className="inline-block px-7 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-xl text-sm transition"
             >
-              Probar BARITUR PRO →
+              Probar Heredia →
             </Link>
           </div>
         </div>

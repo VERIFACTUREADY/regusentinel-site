@@ -56,7 +56,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     estimatedInheritanceValue: null,
     hasDeceasedInsurance: c.hasDeceasedInsurance,
     categories: c.categories,
-    orgName: org?.name ?? "BARITUR PRO",
+    orgName: org?.name ?? "Heredia",
     generatedAt: new Date(),
   });
 

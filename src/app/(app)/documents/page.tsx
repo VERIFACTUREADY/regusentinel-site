@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { DocumentsClient } from "./documents-client";
 
 export const metadata = {
-  title: "Documentos — BARITUR PRO",
+  title: "Documentos — Heredia",
   robots: { index: false },
 };
 

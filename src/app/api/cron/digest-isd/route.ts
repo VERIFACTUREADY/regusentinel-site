@@ -81,8 +81,8 @@ export async function GET(req: NextRequest) {
       const html = buildHtmlDigest(digestCases, now, org.name);
       const critical = digestCases.filter((c) => c.urgency === "critical").length;
       const subject = critical > 0
-        ? `⚠️ ${critical} expediente${critical !== 1 ? "s" : ""} con ISD urgente — Digest BARITUR PRO`
-        : `📋 Digest semanal de plazos ISD — BARITUR PRO`;
+        ? `⚠️ ${critical} expediente${critical !== 1 ? "s" : ""} con ISD urgente — Digest Heredia`
+        : `📋 Digest semanal de plazos ISD — Heredia`;
 
       if (!dryRun) {
         for (const email of emails) {

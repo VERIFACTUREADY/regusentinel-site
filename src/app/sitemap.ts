@@ -4,7 +4,7 @@ import { BLOG_POSTS } from "@/lib/blog-posts";
 import { ALL_VERTICAL_SLUGS } from "@/lib/vertical-landings";
 import { ALL_GLOSSARY_SLUGS } from "@/lib/glossary";
 
-const BASE_URL = process.env.NEXTAUTH_URL || "https://baritur.pro";
+const BASE_URL = process.env.NEXTAUTH_URL || "https://heredia.app";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const ccaaPages: MetadataRoute.Sitemap = ALL_CCAA_SLUGS.map((slug) => ({

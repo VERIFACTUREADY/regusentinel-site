@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     "donacion pdf",
     "impuesto donaciones plantilla",
   ],
-  alternates: { canonical: "https://bariturpro.com/borrador-modelo651" },
+  alternates: { canonical: "https://heredia.app/borrador-modelo651" },
   openGraph: {
     title: "Borrador del Modelo 651 - PDF gratuito",
     description:
@@ -92,7 +92,7 @@ export default function BorradorM651Page() {
           <div className="bg-gradient-to-br from-slate-900 to-blue-900 rounded-2xl p-8 text-white">
             <h2 className="text-xl font-bold mb-3">Para gestorías que tramitan donaciones</h2>
             <p className="text-blue-200 text-sm mb-5">
-              BARITUR PRO automatiza también los expedientes de donación: portal donatario,
+              Heredia automatiza también los expedientes de donación: portal donatario,
               alertas del plazo de 30 días y dossier para escritura pública.
             </p>
             <Link

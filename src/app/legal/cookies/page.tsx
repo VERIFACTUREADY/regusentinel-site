@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Politica de Cookies — BARITUR PRO",
-  description: "Informacion sobre las cookies utilizadas por BARITUR PRO.",
-  alternates: { canonical: "https://baritur.pro/legal/cookies" },
+  title: "Politica de Cookies — Heredia",
+  description: "Informacion sobre las cookies utilizadas por Heredia.",
+  alternates: { canonical: "https://heredia.app/legal/cookies" },
 };
 
 export default function CookiesPage() {
@@ -48,7 +48,7 @@ export default function CookiesPage() {
 
       <h2>3. Cookies de terceros</h2>
       <p>
-        Actualmente BARITUR PRO <strong>no utiliza cookies de terceros</strong> (analitica,
+        Actualmente Heredia <strong>no utiliza cookies de terceros</strong> (analitica,
         publicidad ni redes sociales). Si en el futuro incorporasemos servicios de terceros
         que instalen cookies, actualizaremos esta politica y solicitaremos tu consentimiento
         previo conforme al RGPD y la LSSI-CE.
@@ -76,7 +76,7 @@ export default function CookiesPage() {
       <h2>6. Contacto</h2>
       <p>
         Para cualquier consulta sobre el uso de cookies, contacta con nuestro DPO en{" "}
-        <strong>dpo@baritur.pro</strong>.
+        <strong>dpo@heredia.app</strong>.
       </p>
     </article>
   );

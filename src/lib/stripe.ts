@@ -366,27 +366,27 @@ async function notifyPaymentFailed(orgId: string) {
 
   await sendEmail({
     to: ownerEmail,
-    subject: `Problema con tu pago — BARITUR PRO`,
+    subject: `Problema con tu pago — Heredia`,
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
         <p style="background:#dc2626;color:white;padding:6px 12px;display:inline-block;border-radius:4px;font-size:12px;font-weight:700;">PAGO FALLIDO</p>
         <h2 style="color:#1a1a2e;margin-top:12px;">Hola ${org?.members[0]?.user.name ?? ""},</h2>
         <p style="font-size:15px;color:#333;">
-          No hemos podido procesar el pago de tu suscripcion de BARITUR PRO para <strong>${org?.name}</strong>.
+          No hemos podido procesar el pago de tu suscripcion de Heredia para <strong>${org?.name}</strong>.
         </p>
         <p style="font-size:15px;color:#333;">
           Actualiza tu metodo de pago desde el panel de facturacion para evitar la suspension del servicio.
           Si el problema persiste tras 7 dias, el acceso se suspendera automaticamente.
         </p>
         <p style="text-align:center;margin:32px 0;">
-          <a href="https://baritur.pro/billing"
+          <a href="https://heredia.app/billing"
              style="background-color:#dc2626;color:white;padding:12px 32px;
                     border-radius:6px;text-decoration:none;font-weight:600;">
             Actualizar metodo de pago
           </a>
         </p>
         <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
-        <p style="color:#999;font-size:12px;">BARITUR PRO — Gestion post-mortem profesional</p>
+        <p style="color:#999;font-size:12px;">Heredia — Gestion post-mortem profesional</p>
       </div>
     `,
   });

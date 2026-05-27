@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const CRON_SECRET = process.env.CRON_SECRET;
-const APP_URL = process.env.NEXTAUTH_URL || "https://app.baritur.pro";
+const APP_URL = process.env.NEXTAUTH_URL || "https://app.heredia.app";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");

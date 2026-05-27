@@ -16,7 +16,7 @@ const sampleEvent: OutboundEvent = {
   orgId: "org_abc",
   caseId: "case_xyz",
   caseRef: "EXP-2026-001",
-  caseUrl: "https://bariturpro.com/cases/case_xyz",
+  caseUrl: "https://heredia.app/cases/case_xyz",
   deceasedName: "García López, María",
   daysRemaining: 5,
   deadline: "2026-06-01T00:00:00.000Z",
@@ -182,13 +182,13 @@ describe("sendCustomWebhook", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const res = await sendCustomWebhook("https://api.cliente.com/baritur", null, sampleEvent);
+    const res = await sendCustomWebhook("https://api.cliente.com/heredia", null, sampleEvent);
     expect(res.ok).toBe(true);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("https://api.cliente.com/baritur");
+    expect(url).toBe("https://api.cliente.com/heredia");
     expect(init.method).toBe("POST");
     const headers = init.headers as Record<string, string>;
-    expect(headers["X-BARITUR-Event"]).toBe("isd.deadline_7d");
+    expect(headers["X-HEREDIA-Event"]).toBe("isd.deadline_7d");
     expect(headers["Content-Type"]).toBe("application/json");
     expect(JSON.parse(init.body as string)).toMatchObject({
       event: "isd.deadline_7d",
@@ -196,13 +196,13 @@ describe("sendCustomWebhook", () => {
     });
   });
 
-  it("incluye X-BARITUR-Signature cuando hay secret", async () => {
+  it("incluye X-HEREDIA-Signature cuando hay secret", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     await sendCustomWebhook("https://api.cliente.com", "miSecreto", sampleEvent);
     const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
-    expect(headers["X-BARITUR-Signature"]).toMatch(/^sha256=[0-9a-f]{64}$/);
+    expect(headers["X-HEREDIA-Signature"]).toMatch(/^sha256=[0-9a-f]{64}$/);
   });
 
   it("omite la firma si no hay secret", async () => {
@@ -211,7 +211,7 @@ describe("sendCustomWebhook", () => {
 
     await sendCustomWebhook("https://api.cliente.com", null, sampleEvent);
     const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
-    expect(headers["X-BARITUR-Signature"]).toBeUndefined();
+    expect(headers["X-HEREDIA-Signature"]).toBeUndefined();
   });
 
   it("la firma incluida es verificable con verifyWebhookSignature", async () => {
@@ -221,6 +221,6 @@ describe("sendCustomWebhook", () => {
     await sendCustomWebhook("https://api.cliente.com", "topsecret", sampleEvent);
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     const headers = init.headers as Record<string, string>;
-    expect(verifyWebhookSignature("topsecret", init.body as string, headers["X-BARITUR-Signature"])).toBe(true);
+    expect(verifyWebhookSignature("topsecret", init.body as string, headers["X-HEREDIA-Signature"])).toBe(true);
   });
 });

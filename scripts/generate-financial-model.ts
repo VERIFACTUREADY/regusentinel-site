@@ -1,10 +1,10 @@
 /**
- * Genera el modelo financiero de BARITUR PRO en formato XLSX descargable.
+ * Genera el modelo financiero de Heredia en formato XLSX descargable.
  *
  * Uso:
  *   npx tsx scripts/generate-financial-model.ts
  *
- * Salida: public/baritur-pro-modelo-financiero.xlsx
+ * Salida: public/heredia-modelo-financiero.xlsx
  *
  * El archivo tiene 6 hojas con formulas reales que recalculan al editar
  * cualquier hipotesis. Los valores precalculados se incluyen como cache
@@ -21,7 +21,7 @@ import {
 } from "../src/lib/financial-model";
 
 const OUT_DIR = join(process.cwd(), "public");
-const OUT_FILE = join(OUT_DIR, "baritur-pro-modelo-financiero.xlsx");
+const OUT_FILE = join(OUT_DIR, "heredia-modelo-financiero.xlsx");
 
 // Helpers ─────────────────────────────────────────────────
 
@@ -60,7 +60,7 @@ const arpu = a.plans.INICIA.price * a.plans.INICIA.mix +
 function buildAssumptionsSheet(): XLSX.WorkSheet {
   const ws: XLSX.WorkSheet = {};
 
-  setCell(ws, "A1", "BARITUR PRO - Modelo financiero");
+  setCell(ws, "A1", "Heredia - Modelo financiero");
   setCell(ws, "A2", "Hipotesis editables. Todas las hojas recalculan automaticamente al cambiar estos valores.");
 
   setCell(ws, "A4", "ADQUISICION (TRAFICO SEO)");
@@ -377,7 +377,7 @@ function buildNotesSheet(): XLSX.WorkSheet {
   const ws: XLSX.WorkSheet = {};
 
   const lines = [
-    "BARITUR PRO - Notas metodologicas",
+    "Heredia - Notas metodologicas",
     "",
     "EMBUDO DE ADQUISICION",
     "Visitas SEO -> Free tool sessions -> Trials -> Paying customers",
@@ -439,8 +439,8 @@ function build() {
   XLSX.utils.book_append_sheet(wb, buildNotesSheet(), "Notas");
 
   wb.Props = {
-    Title: "BARITUR PRO - Modelo financiero",
-    Author: "BARITUR PRO",
+    Title: "Heredia - Modelo financiero",
+    Author: "Heredia",
     CreatedDate: new Date(),
   };
 
@@ -452,9 +452,9 @@ function build() {
   console.log(`OK: archivo generado en ${OUT_FILE}`);
   console.log(`Tamanyo: ${(buf.length / 1024).toFixed(1)} KB`);
   console.log(`\nDescargable en:`);
-  console.log(`  /baritur-pro-modelo-financiero.xlsx`);
+  console.log(`  /heredia-modelo-financiero.xlsx`);
   console.log(`\nUna vez se despliegue Vercel:`);
-  console.log(`  https://[tu-dominio]/baritur-pro-modelo-financiero.xlsx`);
+  console.log(`  https://[tu-dominio]/heredia-modelo-financiero.xlsx`);
 }
 
 build();

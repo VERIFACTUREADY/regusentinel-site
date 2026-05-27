@@ -1,5 +1,5 @@
 /**
- * Modelo de calculo de ROI para gestorias y funerarias que evaluan BARITUR PRO.
+ * Modelo de calculo de ROI para gestorias y funerarias que evaluan Heredia.
  *
  * Premisa: el ahorro nace de tres ejes
  *   1. Tareas administrativas que ya no se hacen a mano (recordatorios, plazos,
@@ -25,7 +25,7 @@ export interface ROIInputs {
 export interface ROIResult {
   /** Coste mensual del plan */
   costePlanMensual: number;
-  /** Horas que BARITUR PRO ahorra por expediente (estimacion conservadora) */
+  /** Horas que Heredia ahorra por expediente (estimacion conservadora) */
   horasAhorradasPorExpediente: number;
   /** Total horas ahorradas al mes */
   horasAhorradasMes: number;
@@ -54,7 +54,7 @@ const PLANES = {
 } as const;
 
 /**
- * Heuristica conservadora: BARITUR PRO ahorra entre 35% y 55% del tiempo
+ * Heuristica conservadora: Heredia ahorra entre 35% y 55% del tiempo
  * dedicado a tareas administrativas repetitivas (recordatorios, plazos,
  * borradores, comunicacion familia, plantillas). Usamos 40% como estimacion
  * conservadora.

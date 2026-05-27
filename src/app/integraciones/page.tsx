@@ -4,10 +4,10 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Integraciones — BARITUR PRO",
+  title: "Integraciones — Heredia",
   description:
-    "Con qué se conecta BARITUR PRO: Stripe, S3, email, autenticación, IA y mucho más. Plus una API pública v1 para tus propias integraciones y un roadmap claro de lo que viene.",
-  alternates: { canonical: "https://bariturpro.com/integraciones" },
+    "Con qué se conecta Heredia: Stripe, S3, email, autenticación, IA y mucho más. Plus una API pública v1 para tus propias integraciones y un roadmap claro de lo que viene.",
+  alternates: { canonical: "https://heredia.app/integraciones" },
 };
 
 interface Integration {
@@ -46,7 +46,7 @@ const INTEGRATIONS: Integration[] = [
   { name: "Registro de la Propiedad", category: "Inmuebles", desc: "Solicitud automática de nota simple desde el expediente.", status: "planned" },
   { name: "Holded / Quaderno", category: "Contabilidad", desc: "Sincronización de facturas y movimientos contables del despacho.", status: "planned" },
   { name: "DocuSign / FirmaProfesional", category: "Firma", desc: "Firma electrónica avanzada de los documentos generados (escrituras, autorizaciones).", status: "planned" },
-  { name: "Zapier / Make", category: "No-code", desc: "Conector universal para que los no-developers puedan conectar BARITUR PRO con cualquier app del ecosistema.", status: "planned" },
+  { name: "Zapier / Make", category: "No-code", desc: "Conector universal para que los no-developers puedan conectar Heredia con cualquier app del ecosistema.", status: "planned" },
 ];
 
 const STATUS_STYLES: Record<Integration["status"], { label: string; bg: string; text: string }> = {
@@ -101,7 +101,7 @@ export default function IntegracionesPage() {
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold mb-3">Integraciones y plataforma</h1>
           <p className="text-base sm:text-lg text-blue-100 max-w-3xl mb-6">
-            Con qué se conecta BARITUR PRO hoy y qué llega en los próximos meses. Más una API pública v1
+            Con qué se conecta Heredia hoy y qué llega en los próximos meses. Más una API pública v1
             para tus propias integraciones — porque tus expedientes deben ser tuyos, no rehén de un proveedor.
           </p>
           <div className="flex flex-wrap gap-3">
@@ -112,7 +112,7 @@ export default function IntegracionesPage() {
               Documentación API →
             </Link>
             <a
-              href="mailto:partners@bariturpro.com"
+              href="mailto:partners@heredia.app"
               className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition"
             >
               Solicitar integración custom
@@ -184,15 +184,15 @@ export default function IntegracionesPage() {
               <h2 className="text-2xl font-bold text-gray-900 mb-3">¿Necesitas algo que no está aquí?</h2>
               <p className="text-sm text-gray-700 mb-4">
                 La API pública v1 cubre cálculo ISD, comparación entre CCAA, detección de riesgos y generación de borradores Modelo 650/651.
-                Suficiente para que cualquier software de gestoría integre BARITUR PRO en su propio flujo.
+                Suficiente para que cualquier software de gestoría integre Heredia en su propio flujo.
               </p>
               <p className="text-sm text-gray-700">
-                Para integraciones empresariales con webhooks bidireccionales, SLA y soporte dedicado, escríbenos a partners@bariturpro.com.
+                Para integraciones empresariales con webhooks bidireccionales, SLA y soporte dedicado, escríbenos a partners@heredia.app.
               </p>
             </div>
             <div className="bg-gray-900 rounded-xl p-5 text-gray-100 font-mono text-xs overflow-x-auto">
               <pre>{`# Calcular ISD para Madrid, grupo II
-curl -X POST https://bariturpro.com/api/public/isd-calc \\
+curl -X POST https://heredia.app/api/public/isd-calc \\
   -H "Content-Type: application/json" \\
   -d '{
     "group": "II",
@@ -201,7 +201,7 @@ curl -X POST https://bariturpro.com/api/public/isd-calc \\
   }'
 
 # Comparar 17 CCAA para una herencia
-curl "https://bariturpro.com/api/public/isd-compare?\\
+curl "https://heredia.app/api/public/isd-compare?\\
   group=II&baseImponible=300000"`}</pre>
             </div>
           </div>
@@ -235,7 +235,7 @@ curl "https://bariturpro.com/api/public/isd-compare?\\
             href="/#demo"
             className="inline-block px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-xl text-sm transition"
           >
-            Probar BARITUR PRO →
+            Probar Heredia →
           </Link>
         </div>
       </div>

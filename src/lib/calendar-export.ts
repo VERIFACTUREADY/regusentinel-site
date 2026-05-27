@@ -18,7 +18,7 @@ export interface CalendarEvent {
   title: string;
   /** Descripción larga, plain text. */
   description?: string;
-  /** Lugar (opcional). En BARITUR PRO normalmente "Sede electrónica" o ciudad. */
+  /** Lugar (opcional). En Heredia normalmente "Sede electrónica" o ciudad. */
   location?: string;
   /** Fecha del evento. Si endDate no se pasa, se asume all-day del mismo día. */
   date: Date;
@@ -86,12 +86,12 @@ export function buildIcsContent(event: CalendarEvent, uid?: string): string {
   const endDate = event.endDate ?? (allDay ? nextDayUTC(event.date) : event.date);
   const end = formatForCalendar(endDate, allDay);
   const dtStamp = formatForCalendar(new Date(), false);
-  const eventUid = uid || `${dtStamp}-${Math.random().toString(36).slice(2, 10)}@bariturpro.com`;
+  const eventUid = uid || `${dtStamp}-${Math.random().toString(36).slice(2, 10)}@heredia.app`;
 
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//BARITUR PRO//Plazos ISD//ES",
+    "PRODID:-//Heredia//Plazos ISD//ES",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",

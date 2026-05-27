@@ -303,7 +303,7 @@ export default function NewCasePage() {
 
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
               <p className="font-medium mb-2">Aviso importante:</p>
-              <p>BARITUR no presta asesoramiento juridico ni fiscal individual.</p>
+              <p>Heredia no presta asesoramiento juridico ni fiscal individual.</p>
               <p>El autopiloto prepara acciones; el envio/ejecucion requiere aprobacion profesional.</p>
             </div>
 
@@ -322,7 +322,7 @@ export default function NewCasePage() {
                 onChange={(e) => update("termsAccepted", e.target.checked)}
                 className="rounded mt-1" />
               <span className="text-sm">
-                Acepto los terminos de uso y la politica de privacidad de BARITUR PRO.
+                Acepto los terminos de uso y la politica de privacidad de Heredia.
               </span>
             </label>
 

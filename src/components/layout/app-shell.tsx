@@ -65,7 +65,7 @@ export function AppShell({
     <>
       <div className="p-4 border-b flex items-center justify-between">
         <Link href="/dashboard" className="text-xl font-bold text-primary" onClick={() => setSidebarOpen(false)}>
-          BARITUR PRO
+          Heredia
         </Link>
         <button
           onClick={() => setSidebarOpen(false)}
@@ -147,7 +147,7 @@ export function AppShell({
         )}
       </nav>
       <div className="p-4 border-t text-xs text-gray-400">
-        <p>BARITUR no presta asesoramiento juridico ni fiscal individual.</p>
+        <p>Heredia no presta asesoramiento juridico ni fiscal individual.</p>
       </div>
     </>
   );
@@ -255,7 +255,7 @@ function TrialBanner({ plan, daysLeft }: { plan: string; daysLeft: number }) {
 function DemoBanner() {
   return (
     <div className="bg-amber-500 text-amber-950 px-4 py-2 text-sm flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-      <span className="font-semibold">Estas en la demo de BARITUR PRO.</span>
+      <span className="font-semibold">Estas en la demo de Heredia.</span>
       <span className="text-amber-900/80 hidden sm:inline">Datos ficticios. Se reinician cada noche.</span>
       <Link
         href="/?source=demo_banner#demo"

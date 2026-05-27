@@ -50,7 +50,7 @@ describe("generateModelo650PDF", () => {
       estimatedInheritanceValue: null,
       hasDeceasedInsurance: false,
       categories: [],
-      orgName: "BARITUR PRO",
+      orgName: "Heredia",
       generatedAt: new Date(),
     });
     expect(bytes.length).toBeGreaterThan(1000);

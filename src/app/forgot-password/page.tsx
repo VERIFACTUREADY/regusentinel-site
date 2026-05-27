@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { HerediaMark } from "@/components/heredia-mark";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -40,10 +41,8 @@ export default function ForgotPasswordPage() {
 
       <div className="relative w-full max-w-md">
         <Link href="/" className="flex items-center justify-center gap-2.5 mb-8">
-          <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-indigo-500 flex items-center justify-center shadow-lg shadow-primary/40">
-            <span className="text-white font-bold text-lg">B</span>
-          </span>
-          <span className="text-xl font-bold text-white tracking-tight">BARITUR PRO</span>
+          <HerediaMark className="w-10 h-10" />
+          <span className="text-xl font-semibold text-white tracking-tight">Heredia</span>
         </Link>
 
         <div className="bg-white p-7 sm:p-8 rounded-2xl shadow-2xl shadow-black/30 border border-white/10">

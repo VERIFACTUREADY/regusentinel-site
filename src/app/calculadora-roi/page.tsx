@@ -5,12 +5,12 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Calculadora ROI: cuánto ahorra tu gestoría con BARITUR PRO",
+  title: "Calculadora ROI: cuánto ahorra tu gestoría con Heredia",
   description:
     "Calcula en 30 segundos cuánto ahorra tu despacho automatizando la gestión de herencias y el ISD. Estimación basada en horas, errores evitados y capacidad recuperada.",
-  alternates: { canonical: "https://bariturpro.com/calculadora-roi" },
+  alternates: { canonical: "https://heredia.app/calculadora-roi" },
   openGraph: {
-    title: "Calculadora ROI BARITUR PRO",
+    title: "Calculadora ROI Heredia",
     description: "Cuánto ahorra tu gestoría automatizando expedientes de herencia",
     type: "website",
   },
@@ -31,7 +31,7 @@ export default function ROIPage() {
             Estimación instantánea · Sin registro
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold mb-3">
-            Cuánto ahorra tu gestoría con BARITUR PRO
+            Cuánto ahorra tu gestoría con Heredia
           </h1>
           <p className="text-base text-blue-100 max-w-2xl">
             Introduce tus datos reales y estima en segundos las horas, los errores y los recargos
@@ -89,7 +89,7 @@ export default function ROIPage() {
             href="/#demo"
             className="inline-block px-7 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-xl text-sm transition"
           >
-            Probar BARITUR PRO →
+            Probar Heredia →
           </Link>
         </section>
       </div>

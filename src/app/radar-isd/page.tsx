@@ -5,7 +5,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { Reveal } from "@/components/reveal";
 
 export const metadata: Metadata = {
-  title: "Radar ISD — Cero presentaciones tardías del Modelo 650 | BARITUR PRO",
+  title: "Radar ISD — Cero presentaciones tardías del Modelo 650 | Heredia",
   description:
     "Radar ISD vigila los 17 calendarios autonómicos del Impuesto de Sucesiones por ti. Alertas antes de cada plazo, ventana de prórroga, umbral de patrimonio o cambio de residencia. Cero recargos del 5-20%.",
   keywords: [
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     "prorroga modelo 650",
     "vigilancia plazos herencia",
   ],
-  alternates: { canonical: "https://bariturpro.com/radar-isd" },
+  alternates: { canonical: "https://heredia.app/radar-isd" },
   openGraph: {
     title: "Radar ISD — Cero presentaciones tardías",
     description:
@@ -309,7 +309,7 @@ export default function RadarISDPage() {
               </div>
 
               <div className="p-6 sm:p-8 bg-gradient-to-br from-indigo-50/50 to-blue-50/50">
-                <p className="text-xs font-bold uppercase tracking-wider text-primary mb-2">El método de BARITUR PRO</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-primary mb-2">El método de Heredia</p>
                 <h3 className="text-lg font-bold text-gray-900 mb-4">Radar ISD activo 24/7</h3>
                 <ul className="space-y-3 text-sm text-gray-700">
                   {[
@@ -353,7 +353,7 @@ export default function RadarISDPage() {
                     <p className="text-xs text-rose-600 mt-1">en recargos absorbidos por la gestoría o cobrados al cliente</p>
                   </div>
                   <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-5">
-                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 mb-2">Con Radar (BARITUR PRO Despacho)</p>
+                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 mb-2">Con Radar (Heredia Despacho)</p>
                     <p className="text-sm text-gray-700 mb-3">
                       Coste anual del plan: 349 € × 12 = <strong>4.188 €</strong>. Incluye
                       Radar, portal familia, borrador automático del Modelo 650 y equipo
@@ -364,7 +364,7 @@ export default function RadarISDPage() {
                   </div>
                 </div>
                 <p className="mt-6 text-sm text-gray-600 leading-relaxed">
-                  El plan se paga sólo con evitar un único recargo grave al año — y BARITUR
+                  El plan se paga sólo con evitar un único recargo grave al año — y Heredia
                   PRO además te devuelve horas administrativas, te trae el portal familia y
                   el borrador automático. <Link href="/calculadora-roi" className="text-primary font-semibold hover:underline">Calcula tu caso →</Link>
                 </p>
@@ -464,7 +464,7 @@ export default function RadarISDPage() {
                     href="/#demo"
                     className="px-6 py-3 bg-white text-primary font-bold rounded-xl shadow-xl hover:-translate-y-0.5 transition-all text-sm"
                   >
-                    Probar BARITUR PRO →
+                    Probar Heredia →
                   </Link>
                   <Link
                     href="/contacto"

@@ -7,7 +7,7 @@ import Link from "next/link";
 import { CATEGORY_LABELS } from "@/lib/constants";
 
 export const metadata = {
-  title: "Informes — BARITUR PRO",
+  title: "Informes — Heredia",
   robots: { index: false },
 };
 

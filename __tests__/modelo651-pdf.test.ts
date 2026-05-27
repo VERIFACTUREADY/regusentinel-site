@@ -38,7 +38,7 @@ describe("generateModelo651PDF", () => {
       reduccion: "ninguna",
       ccaa: null,
       group: null,
-      orgName: "BARITUR PRO",
+      orgName: "Heredia",
       generatedAt: new Date(),
     });
     expect(bytes.length).toBeGreaterThan(1000);

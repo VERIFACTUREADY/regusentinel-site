@@ -73,8 +73,8 @@ describe("buildIcsContent", () => {
   });
 
   it("incluye UID estable cuando se pasa", () => {
-    const ics = buildIcsContent({ title: "X", date: isoDate("2026-06-14") }, "case-87@bariturpro.com");
-    expect(ics).toContain("UID:case-87@bariturpro.com");
+    const ics = buildIcsContent({ title: "X", date: isoDate("2026-06-14") }, "case-87@heredia.app");
+    expect(ics).toContain("UID:case-87@heredia.app");
   });
 
   it("usa CRLF como separador de líneas (RFC-5545)", () => {

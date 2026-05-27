@@ -115,7 +115,7 @@ export default function BrandingPage() {
       {!canHide && (
         <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
           Tu plan actual (<strong>{plan}</strong>) permite personalizar logo, colores y textos. El pie
-          &quot;Powered by BARITUR PRO&quot; seguira apareciendo en el portal hasta que actives el plan
+          &quot;Powered by Heredia&quot; seguira apareciendo en el portal hasta que actives el plan
           <strong> Despacho</strong> o <strong>Firma</strong>.
         </div>
       )}
@@ -262,7 +262,7 @@ export default function BrandingPage() {
                     </a>
                   </p>
                 )}
-                {!canHide && <p className="text-gray-400">Powered by BARITUR PRO</p>}
+                {!canHide && <p className="text-gray-400">Powered by Heredia</p>}
               </div>
             </div>
           </div>

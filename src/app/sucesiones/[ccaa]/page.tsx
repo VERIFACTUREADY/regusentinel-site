@@ -30,7 +30,7 @@ export async function generateMetadata({ params }: { params: { ccaa: string } })
       `plazo herencia ${label.toLowerCase()}`,
     ],
     alternates: {
-      canonical: `https://bariturpro.com/sucesiones/${content.slug}`,
+      canonical: `https://heredia.app/sucesiones/${content.slug}`,
     },
     openGraph: {
       title: `Impuesto de Sucesiones en ${label} 2025`,
@@ -292,7 +292,7 @@ export default function CCAAPage({ params }: { params: { ccaa: string } }) {
           <section className="bg-gradient-to-br from-slate-900 to-blue-900 rounded-2xl p-8 text-white text-center">
             <h2 className="text-xl font-bold mb-3">Gestoría o funeraria que tramita herencias</h2>
             <p className="text-blue-200 mb-5 text-sm max-w-md mx-auto">
-              BARITUR PRO automatiza el seguimiento de plazos del Modelo 650, genera borradores y centraliza toda la documentación de cada expediente.
+              Heredia automatiza el seguimiento de plazos del Modelo 650, genera borradores y centraliza toda la documentación de cada expediente.
             </p>
             <Link
               href="/#demo"

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Politica de Privacidad — BARITUR PRO",
-  description: "Politica de privacidad y proteccion de datos de BARITUR PRO. Cumplimiento RGPD y LOPDGDD.",
-  alternates: { canonical: "https://baritur.pro/legal/privacidad" },
+  title: "Politica de Privacidad — Heredia",
+  description: "Politica de privacidad y proteccion de datos de Heredia. Cumplimiento RGPD y LOPDGDD.",
+  alternates: { canonical: "https://heredia.app/legal/privacidad" },
 };
 
 export default function PrivacidadPage() {
@@ -14,11 +14,11 @@ export default function PrivacidadPage() {
 
       <h2>1. Responsable del tratamiento</h2>
       <p>
-        BARITUR TECHNOLOGIES S.L. (en adelante, &quot;BARITUR&quot;), con domicilio social en Espana,
+        HEREDIA TECHNOLOGIES S.L. (en adelante, &quot;Heredia&quot;), con domicilio social en Espana,
         es el responsable del tratamiento de los datos personales recogidos a traves de la
-        plataforma BARITUR PRO (&quot;la Plataforma&quot;).
+        plataforma Heredia (&quot;la Plataforma&quot;).
       </p>
-      <p>Contacto del Delegado de Proteccion de Datos: <strong>dpo@baritur.pro</strong></p>
+      <p>Contacto del Delegado de Proteccion de Datos: <strong>dpo@heredia.app</strong></p>
 
       <h2>2. Datos que tratamos</h2>
       <h3>2.1 Datos de usuarios profesionales</h3>
@@ -38,7 +38,7 @@ export default function PrivacidadPage() {
       <p>
         Los datos de los familiares o contactos del expediente (nombre, email, telefono,
         parentesco) se tratan bajo la base juridica del interes legitimo del responsable
-        del expediente (la gestoria o funeraria cliente de BARITUR).
+        del expediente (la gestoria o funeraria cliente de Heredia).
       </p>
 
       <h3>2.3 Datos del portal familia</h3>
@@ -62,7 +62,7 @@ export default function PrivacidadPage() {
       </table>
 
       <h2>4. Encargados del tratamiento</h2>
-      <p>BARITUR actua como encargado del tratamiento respecto a los datos de expedientes
+      <p>Heredia actua como encargado del tratamiento respecto a los datos de expedientes
         gestionados por las organizaciones cliente. El contrato de encargo de tratamiento
         (DPA) se firma con cada cliente antes del inicio del servicio.</p>
       <p>Subencargados principales:</p>
@@ -91,7 +91,7 @@ export default function PrivacidadPage() {
 
       <h2>7. Derechos de los interesados</h2>
       <p>Puedes ejercer tus derechos de acceso, rectificacion, supresion, limitacion,
-        portabilidad y oposicion enviando un email a <strong>dpo@baritur.pro</strong>.</p>
+        portabilidad y oposicion enviando un email a <strong>dpo@heredia.app</strong>.</p>
       <p>
         Tambien puedes presentar una reclamacion ante la Agencia Espanola de Proteccion
         de Datos (<a href="https://www.aepd.es" target="_blank" rel="noopener noreferrer">www.aepd.es</a>).
@@ -109,7 +109,7 @@ export default function PrivacidadPage() {
 
       <h2>9. Modificaciones</h2>
       <p>
-        BARITUR se reserva el derecho de modificar esta politica. Cualquier cambio
+        Heredia se reserva el derecho de modificar esta politica. Cualquier cambio
         sustancial sera notificado a los usuarios registrados con un minimo de 30 dias
         de antelacion.
       </p>

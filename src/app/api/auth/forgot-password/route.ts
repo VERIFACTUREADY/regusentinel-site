@@ -24,16 +24,16 @@ export async function POST(req: NextRequest) {
         data: { magicToken: token, magicTokenExp: expires },
       });
 
-      const baseUrl = process.env.NEXTAUTH_URL || "https://baritur.pro";
+      const baseUrl = process.env.NEXTAUTH_URL || "https://heredia.app";
       const resetUrl = `${baseUrl}/reset-password?token=${token}`;
 
       await sendEmail({
         to: email,
-        subject: "Restablecer contrasena — BARITUR PRO",
+        subject: "Restablecer contrasena — Heredia",
         html: `
           <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
             <div style="background:#1e40af;padding:24px;border-radius:8px 8px 0 0;text-align:center;">
-              <h1 style="color:white;margin:0;font-size:24px;">BARITUR PRO</h1>
+              <h1 style="color:white;margin:0;font-size:24px;">Heredia</h1>
             </div>
             <div style="padding:32px 24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
               <h2 style="color:#1a1a2e;margin-top:0;">Restablecer contrasena</h2>
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
                 Este enlace expira en 1 hora. Si no solicitaste este cambio, puedes ignorar este email.
               </p>
               <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
-              <p style="color:#999;font-size:12px;">BARITUR PRO — Gestion post-mortem profesional</p>
+              <p style="color:#999;font-size:12px;">Heredia — Gestion post-mortem profesional</p>
             </div>
           </div>
         `,

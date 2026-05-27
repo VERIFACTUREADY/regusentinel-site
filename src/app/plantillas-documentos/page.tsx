@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     "carta comunidad propietarios fallecimiento",
     "documentos herencia plantilla",
   ],
-  alternates: { canonical: "https://bariturpro.com/plantillas-documentos" },
+  alternates: { canonical: "https://heredia.app/plantillas-documentos" },
   openGraph: {
     title: "Plantillas gratuitas para tramites de herencia",
     description: "6 modelos profesionales de carta y solicitud, auto-rellenados y descargables en PDF.",

@@ -6,7 +6,7 @@ import { redirect, notFound } from "next/navigation";
 import { TemplateEditor } from "./template-editor";
 
 export const metadata = {
-  title: "Editar plantilla — BARITUR PRO",
+  title: "Editar plantilla — Heredia",
   robots: { index: false },
 };
 

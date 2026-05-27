@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     type: "website",
   },
   alternates: {
-    canonical: "https://bariturpro.com/comparador-isd",
+    canonical: "https://heredia.app/comparador-isd",
   },
 };
 
@@ -163,7 +163,7 @@ export default function ComparadorISDPage() {
                   href="/#demo"
                   className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition"
                 >
-                  Ver BARITUR PRO gratis
+                  Ver Heredia gratis
                 </Link>
               </div>
             </div>
@@ -303,7 +303,7 @@ export default function ComparadorISDPage() {
           <div className="bg-gradient-to-br from-slate-900 to-blue-900 rounded-2xl p-8 text-white text-center">
             <h2 className="text-2xl font-bold mb-3">¿Gestorías y funerarias?</h2>
             <p className="text-blue-200 mb-6 max-w-lg mx-auto">
-              BARITUR PRO automatiza el seguimiento de plazos, genera borradores del Modelo 650 y
+              Heredia automatiza el seguimiento de plazos, genera borradores del Modelo 650 y
               centraliza toda la documentación de cada expediente.
             </p>
             <Link

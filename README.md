@@ -1,4 +1,4 @@
-# BARITUR PRO - MVP
+# Heredia - MVP
 
 Software SaaS B2B (multi-tenant) para gestorias administrativas y funerarias que automatiza y orquesta la gestion administrativa post-fallecimiento.
 
@@ -53,7 +53,7 @@ Audit logs en todas las acciones clave. Consentimiento por expediente.
 
 ```bash
 git clone <repo-url>
-cd baritur-pro
+cd heredia
 
 # Copiar variables de entorno
 cp .env.example .env
@@ -86,13 +86,13 @@ npx tsx prisma/seed.ts
 
 ### 5. Configurar MinIO (bucket)
 
-Accede a http://localhost:9001 (minioadmin / minioadmin123) y crea un bucket llamado `baritur-docs`.
+Accede a http://localhost:9001 (minioadmin / minioadmin123) y crea un bucket llamado `heredia-docs`.
 
 O via CLI:
 ```bash
 # Si tienes mc (MinIO Client)
 mc alias set local http://localhost:9000 minioadmin minioadmin123
-mc mb local/baritur-docs
+mc mb local/heredia-docs
 ```
 
 ### 6. Arrancar la aplicacion
@@ -105,7 +105,7 @@ Accede a http://localhost:3000
 
 ### 7. Credenciales de demo
 
-- **Email**: admin@baritur.com
+- **Email**: admin@heredia.app
 - **Password**: admin123
 - **Org**: Gestoria Demo
 

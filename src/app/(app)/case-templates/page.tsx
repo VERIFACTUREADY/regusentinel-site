@@ -5,7 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac";
 import { CaseTemplatesClient } from "./CaseTemplatesClient";
 
-export const metadata: Metadata = { title: "Plantillas de expediente — BARITUR PRO" };
+export const metadata: Metadata = { title: "Plantillas de expediente — Heredia" };
 
 export default async function CaseTemplatesPage() {
   const session = await getServerSession(authOptions);

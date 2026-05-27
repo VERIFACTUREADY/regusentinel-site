@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 
 const DEMO_ORG_SLUG = "gestoria-demo";
-const DEMO_OWNER_EMAIL = "admin@baritur.com";
-const DEMO_OPERATOR_EMAIL = "operador@baritur.com";
-const DEMO_VIEWER_EMAIL = "viewer@baritur.com";
+const DEMO_OWNER_EMAIL = "admin@heredia.app";
+const DEMO_OPERATOR_EMAIL = "operador@heredia.app";
+const DEMO_VIEWER_EMAIL = "viewer@heredia.app";
 const DEMO_PASSWORD = "admin123";
 
 const VALID_STATUSES = ["INTAKE", "VALIDATION", "IN_PROGRESS", "PENDING_DOCS", "READY_TO_SEND", "SENT", "FOLLOW_UP", "CLOSED", "ARCHIVED"];

@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: { params: { term: string } })
   const t = getTermBySlug(params.term);
   if (!t) return {};
   return {
-    title: `${t.term} — Glosario ISD | BARITUR PRO`,
+    title: `${t.term} — Glosario ISD | Heredia`,
     description: t.definition,
     keywords: [
       t.term.toLowerCase(),
@@ -26,7 +26,7 @@ export async function generateMetadata({ params }: { params: { term: string } })
       `${t.term.toLowerCase()} modelo 650`,
       ...(t.synonyms ?? []),
     ],
-    alternates: { canonical: `https://bariturpro.com/glosario/${t.slug}` },
+    alternates: { canonical: `https://heredia.app/glosario/${t.slug}` },
     openGraph: {
       title: `${t.term} - Glosario ISD`,
       description: t.definition,
@@ -56,8 +56,8 @@ export default function GlossaryTermPage({ params }: { params: { term: string } 
     "@type": "DefinedTerm",
     name: t.term,
     description: t.definition,
-    inDefinedTermSet: "https://bariturpro.com/glosario",
-    url: `https://bariturpro.com/glosario/${t.slug}`,
+    inDefinedTermSet: "https://heredia.app/glosario",
+    url: `https://heredia.app/glosario/${t.slug}`,
   };
 
   return (
@@ -171,7 +171,7 @@ export default function GlossaryTermPage({ params }: { params: { term: string } 
                 href="/#demo"
                 className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition"
               >
-                Probar BARITUR PRO
+                Probar Heredia
               </Link>
             </div>
           </section>

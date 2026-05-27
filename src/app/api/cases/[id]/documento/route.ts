@@ -121,7 +121,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     remitentePhone: values.remitentePhone || "",
     recipientLabel: template.destinatario,
     place: typeof body.place === "string" ? body.place.slice(0, 80) : undefined,
-    generatedBy: org?.name ?? "BARITUR PRO",
+    generatedBy: org?.name ?? "Heredia",
     generatedAt: new Date(),
   });
 

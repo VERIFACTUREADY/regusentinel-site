@@ -6,7 +6,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 
 export const metadata = {
-  title: "Pipeline SLA — BARITUR PRO",
+  title: "Pipeline SLA — Heredia",
   robots: { index: false },
 };
 

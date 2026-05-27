@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HerediaMark } from "./heredia-mark";
 
 /**
  * Pie de página público compartido — replica el dark footer premium de la
@@ -11,10 +12,8 @@ export function SiteFooter() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-8">
           <div className="lg:col-span-2">
             <div className="flex items-center gap-2.5 mb-4">
-              <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-indigo-500 flex items-center justify-center">
-                <span className="text-white font-bold">B</span>
-              </span>
-              <span className="text-lg font-bold text-white">BARITUR PRO</span>
+              <HerediaMark className="w-8 h-8" variant="white" />
+              <span className="text-lg font-semibold text-white">Heredia</span>
             </div>
             <p className="text-sm leading-relaxed max-w-xs">
               Software B2B que orquesta la gestión post-fallecimiento para gestorías, funerarias y despachos en España.
@@ -64,14 +63,14 @@ export function SiteFooter() {
         </div>
 
         <div className="mt-12 pt-8 border-t border-slate-800 text-xs space-y-2">
-          <p>BARITUR no presta asesoramiento jurídico ni fiscal. Orquestamos y documentamos; la decisión profesional es del gestor.</p>
+          <p>Heredia no presta asesoramiento jurídico ni fiscal. Orquestamos y documentamos; la decisión profesional es del gestor.</p>
           <p>Tratamiento de datos conforme al RGPD y la LOPDGDD (LO 3/2018). Marco post-mortem: art. 3.</p>
           <div className="flex flex-wrap items-center gap-4 pt-3">
             <Link href="/legal/privacidad" className="hover:text-white transition">Privacidad</Link>
             <Link href="/legal/terminos" className="hover:text-white transition">Términos</Link>
             <Link href="/legal/cookies" className="hover:text-white transition">Cookies</Link>
             <Link href="/changelog" className="hover:text-white transition">Changelog</Link>
-            <span className="ml-auto text-slate-500">&copy; {new Date().getFullYear()} BARITUR PRO. Todos los derechos reservados.</span>
+            <span className="ml-auto text-slate-500">&copy; {new Date().getFullYear()} Heredia. Todos los derechos reservados.</span>
           </div>
         </div>
       </div>

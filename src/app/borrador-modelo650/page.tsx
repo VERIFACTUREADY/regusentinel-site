@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     "impuesto sucesiones pdf",
   ],
   alternates: {
-    canonical: "https://bariturpro.com/borrador-modelo650",
+    canonical: "https://heredia.app/borrador-modelo650",
   },
   openGraph: {
     title: "Borrador del Modelo 650 — PDF gratuito",
@@ -155,7 +155,7 @@ export default function BorradorModelo650Page() {
               <div>
                 <h2 className="text-2xl font-bold mb-3">Para gestorías y funerarias profesionales</h2>
                 <p className="text-blue-200 text-sm mb-4">
-                  Esta es la versión gratuita. La versión Pro de BARITUR PRO añade:
+                  Esta es la versión gratuita. La versión Pro de Heredia añade:
                 </p>
                 <ul className="space-y-2 text-sm text-blue-100">
                   <li className="flex gap-2">

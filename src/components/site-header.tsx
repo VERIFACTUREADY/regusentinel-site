@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HerediaMark } from "./heredia-mark";
 
 /**
  * Cabecera pública compartida — aspecto premium y consistente en todas
@@ -9,10 +10,8 @@ export function SiteHeader({ cta = "Probar gratis" }: { cta?: string }) {
     <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/80 backdrop-blur-md">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5">
-          <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-indigo-500 flex items-center justify-center shadow-lg shadow-primary/25">
-            <span className="text-white font-bold text-lg">B</span>
-          </span>
-          <span className="text-lg font-bold text-slate-900 tracking-tight">BARITUR PRO</span>
+          <HerediaMark className="w-9 h-9" />
+          <span className="text-lg font-semibold text-slate-900 tracking-tight">Heredia</span>
         </Link>
         <nav className="flex gap-1 sm:gap-2 items-center text-sm">
           <Link href="/asi-funciona" className="hidden md:inline px-3 py-2 font-medium text-slate-600 hover:text-primary transition">Cómo funciona</Link>

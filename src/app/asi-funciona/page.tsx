@@ -5,19 +5,19 @@ import { SiteFooter } from "@/components/site-footer";
 import { Reveal } from "@/components/reveal";
 
 export const metadata: Metadata = {
-  title: "Así funciona BARITUR PRO — Las 4 pantallas que usarás a diario",
+  title: "Así funciona Heredia — Las 4 pantallas que usarás a diario",
   description:
-    "Mira lo que verás cuando entres a BARITUR PRO: cola de acciones, expediente con Radar, borrador del Modelo 650 y Portal Familia. Sin signup, sin pedir demo.",
+    "Mira lo que verás cuando entres a Heredia: cola de acciones, expediente con Radar, borrador del Modelo 650 y Portal Familia. Sin signup, sin pedir demo.",
   keywords: [
-    "como funciona bariturpro",
-    "demo bariturpro",
-    "ver producto bariturpro",
-    "tour bariturpro",
+    "como funciona heredia",
+    "demo heredia",
+    "ver producto heredia",
+    "tour heredia",
     "software herencias demo",
   ],
-  alternates: { canonical: "https://bariturpro.com/asi-funciona" },
+  alternates: { canonical: "https://heredia.app/asi-funciona" },
   openGraph: {
-    title: "Así funciona BARITUR PRO — sin signup",
+    title: "Así funciona Heredia — sin signup",
     description:
       "Las 4 pantallas que verás todos los días: cola de acciones, expediente con Radar, borrador y portal familia.",
     type: "article",
@@ -28,7 +28,7 @@ export default function AsiFuncionaPage() {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    name: "BARITUR PRO",
+    name: "Heredia",
     description:
       "Software B2B de gestión de herencias y post-mortem para gestorías, funerarias y despachos. Cola de acciones, Radar ISD, Borrador automático del Modelo 650 y Portal Familia.",
     applicationCategory: "BusinessApplication",
@@ -56,7 +56,7 @@ export default function AsiFuncionaPage() {
             <h1 className="text-3xl sm:text-5xl font-bold mb-4 leading-tight tracking-tight">
               Esto es lo que verás
               <br className="hidden sm:block" />
-              <span className="text-blue-300"> cuando entres a BARITUR PRO</span>
+              <span className="text-blue-300"> cuando entres a Heredia</span>
             </h1>
             <p className="text-lg sm:text-xl text-blue-100 max-w-3xl">
               Sin pedir reunión, sin signup, sin email comercial. Te enseñamos las
@@ -100,7 +100,7 @@ export default function AsiFuncionaPage() {
               </div>
 
               <div className="lg:col-span-3 order-1 lg:order-2">
-                <BrowserMock url="bariturpro.com/today">
+                <BrowserMock url="heredia.app/today">
                   <div className="p-5 sm:p-6">
                     <div className="flex items-center justify-between mb-5">
                       <div>
@@ -143,7 +143,7 @@ export default function AsiFuncionaPage() {
             <div className="max-w-6xl mx-auto px-4 py-16">
               <div className="grid lg:grid-cols-5 gap-10 items-center">
                 <div className="lg:col-span-3">
-                  <BrowserMock url="bariturpro.com/cases/exp-2025-087">
+                  <BrowserMock url="heredia.app/cases/exp-2025-087">
                     <div className="p-5 sm:p-6">
                       <div className="flex items-start justify-between mb-5 pb-4 border-b">
                         <div>

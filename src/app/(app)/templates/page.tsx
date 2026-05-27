@@ -7,7 +7,7 @@ import { TEMPLATE_TYPE_LABELS, CATEGORY_LABELS } from "@/lib/constants";
 import { TemplateList } from "./template-list";
 
 export const metadata = {
-  title: "Plantillas — BARITUR PRO",
+  title: "Plantillas — Heredia",
   robots: { index: false },
 };
 

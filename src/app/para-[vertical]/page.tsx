@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: { params: { vertical: string 
   return {
     title: v.title,
     description: v.description,
-    alternates: { canonical: `https://bariturpro.com/para-${v.slug}` },
+    alternates: { canonical: `https://heredia.app/para-${v.slug}` },
     openGraph: {
       title: v.title,
       description: v.description,
@@ -98,7 +98,7 @@ export default function VerticalPage({ params }: { params: { vertical: string } 
 
         {/* Benefits grid */}
         <div className="max-w-5xl mx-auto px-4 mb-14">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Cómo te ayuda BARITUR PRO</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Cómo te ayuda Heredia</h2>
           <p className="text-sm text-gray-600 text-center mb-8">Diseñado específicamente para tu segmento.</p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {v.benefits.map((b, i) => (
@@ -137,7 +137,7 @@ export default function VerticalPage({ params }: { params: { vertical: string } 
         {/* Scenarios */}
         <div className="max-w-5xl mx-auto px-4 py-14">
           <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Casos reales</h2>
-          <p className="text-sm text-gray-600 text-center mb-8">Cómo BARITUR PRO resuelve problemas concretos.</p>
+          <p className="text-sm text-gray-600 text-center mb-8">Cómo Heredia resuelve problemas concretos.</p>
           <div className="space-y-5">
             {v.scenarios.map((s, i) => (
               <div key={i} className="bg-white rounded-xl border overflow-hidden">
@@ -146,11 +146,11 @@ export default function VerticalPage({ params }: { params: { vertical: string } 
                 </div>
                 <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x">
                   <div className="p-6">
-                    <p className="text-xs font-semibold text-rose-600 uppercase tracking-wider mb-2">Sin BARITUR</p>
+                    <p className="text-xs font-semibold text-rose-600 uppercase tracking-wider mb-2">Sin Heredia</p>
                     <p className="text-sm text-gray-700">{s.problem}</p>
                   </div>
                   <div className="p-6 bg-emerald-50/40">
-                    <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-2">Con BARITUR</p>
+                    <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-2">Con Heredia</p>
                     <p className="text-sm text-gray-700">{s.solution}</p>
                   </div>
                 </div>

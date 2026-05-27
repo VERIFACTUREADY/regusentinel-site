@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     "impuestos herencia total",
     "gastos notaria herencia",
   ],
-  alternates: { canonical: "https://bariturpro.com/coste-herencia" },
+  alternates: { canonical: "https://heredia.app/coste-herencia" },
   openGraph: {
     title: "Cuánto cuesta heredar — Calculadora del coste total",
     description: "ISD + plusvalía + notaría + registro en un solo desglose.",

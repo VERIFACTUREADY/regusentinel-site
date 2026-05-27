@@ -9,11 +9,11 @@ export const metadata: Metadata = {
   description:
     "Planes desde 149 EUR/mes. Software B2B para gestorías y funerarias: motor de plazos ISD, portal familia, pack banco y cumplimiento RGPD. Prueba la demo gratis.",
   openGraph: {
-    title: "Precios BARITUR PRO — Gestión post-mortem para profesionales",
+    title: "Precios Heredia — Gestión post-mortem para profesionales",
     description:
       "Tres planes para gestorías y funerarias. Sin permanencia. Ahorra 2 meses con prepago anual. Incluye onboarding y soporte en español.",
   },
-  alternates: { canonical: "https://baritur.pro/precios" },
+  alternates: { canonical: "https://heredia.app/precios" },
 };
 
 const faqItems = [
@@ -30,8 +30,8 @@ const faqItems = [
     a: "Cada expediente adicional se factura al final del mes según la tarifa overage de tu plan. Puedes ver el consumo en tiempo real desde el panel de facturación.",
   },
   {
-    q: "¿BARITUR PRO presta asesoramiento fiscal o jurídico?",
-    a: "No. BARITUR PRO es una herramienta de orquestación y documentación. Las decisiones profesionales (fiscales, jurídicas) las toma el gestor o asesor responsable del expediente.",
+    q: "¿Heredia presta asesoramiento fiscal o jurídico?",
+    a: "No. Heredia es una herramienta de orquestación y documentación. Las decisiones profesionales (fiscales, jurídicas) las toma el gestor o asesor responsable del expediente.",
   },
   {
     q: "¿Cómo funciona el portal familia?",
@@ -49,7 +49,7 @@ export default function PreciosPage() {
     "@graph": [
       {
         "@type": "SoftwareApplication",
-        name: "BARITUR PRO",
+        name: "Heredia",
         applicationCategory: "BusinessApplication",
         offers: [
           {

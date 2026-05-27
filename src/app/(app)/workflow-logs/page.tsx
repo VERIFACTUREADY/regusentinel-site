@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { WorkflowLogsClient } from "./workflow-logs-client";
 
 export const metadata = {
-  title: "Registro de automatizaciones — BARITUR PRO",
+  title: "Registro de automatizaciones — Heredia",
   robots: { index: false },
 };
 

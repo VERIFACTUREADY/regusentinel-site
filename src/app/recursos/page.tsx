@@ -7,10 +7,10 @@ import { Reveal } from "@/components/reveal";
 import { ProUpsell } from "@/components/pro-upsell";
 
 export const metadata: Metadata = {
-  title: "Recursos gratuitos sobre el Impuesto de Sucesiones — BARITUR PRO",
+  title: "Recursos gratuitos sobre el Impuesto de Sucesiones — Heredia",
   description:
     "Calculadora ISD, generador de borrador del Modelo 650, comparador entre CCAA, widget para tu web, API pública y guías. Todo gratuito y sin registro.",
-  alternates: { canonical: "https://bariturpro.com/recursos" },
+  alternates: { canonical: "https://heredia.app/recursos" },
 };
 
 interface Resource {

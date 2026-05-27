@@ -151,7 +151,7 @@ export async function seedSampleCase(
       categories: ["BANCOS", "SEGUROS", "FISCAL"],
       province: "madrid",
       notes:
-        "Expediente de ejemplo precargado por BARITUR PRO. Está calibrado para que el Radar ISD dispare varias alertas y veas el producto en acción. Puedes editarlo o eliminarlo cuando quieras.",
+        "Expediente de ejemplo precargado por Heredia. Está calibrado para que el Radar ISD dispare varias alertas y veas el producto en acción. Puedes editarlo o eliminarlo cuando quieras.",
       consentAccepted: true,
       consentDate: createdAt,
       createdAt,

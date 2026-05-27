@@ -208,7 +208,7 @@ export function CalendarClient() {
         <div className="flex items-center gap-3">
           <a
             href="/api/tasks/ical?scope=me"
-            download="plazos-baritur.ics"
+            download="plazos-heredia.ics"
             className="inline-flex items-center gap-1.5 text-sm text-gray-600 border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 transition"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

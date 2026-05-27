@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { WorkflowRulesClient } from "./workflow-rules-client";
 
 export const metadata = {
-  title: "Automatizaciones — BARITUR PRO",
+  title: "Automatizaciones — Heredia",
   robots: { index: false },
 };
 

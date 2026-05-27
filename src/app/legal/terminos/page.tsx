@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Terminos de Servicio — BARITUR PRO",
-  description: "Condiciones generales de uso de la plataforma BARITUR PRO para gestorias y funerarias.",
-  alternates: { canonical: "https://baritur.pro/legal/terminos" },
+  title: "Terminos de Servicio — Heredia",
+  description: "Condiciones generales de uso de la plataforma Heredia para gestorias y funerarias.",
+  alternates: { canonical: "https://heredia.app/legal/terminos" },
 };
 
 export default function TerminosPage() {
@@ -14,7 +14,7 @@ export default function TerminosPage() {
 
       <h2>1. Objeto</h2>
       <p>
-        Estos terminos regulan el acceso y uso de la plataforma BARITUR PRO
+        Estos terminos regulan el acceso y uso de la plataforma Heredia
         (&quot;el Servicio&quot;), una herramienta SaaS de gestion administrativa
         post-mortem dirigida a gestorías, asesorías y funerarias profesionales
         (&quot;el Cliente&quot;).
@@ -22,8 +22,8 @@ export default function TerminosPage() {
 
       <h2>2. Naturaleza del servicio</h2>
       <p>
-        BARITUR PRO es una herramienta de orquestacion y documentacion.
-        <strong> BARITUR no presta asesoramiento juridico, fiscal ni contable.</strong>{" "}
+        Heredia es una herramienta de orquestacion y documentacion.
+        <strong> Heredia no presta asesoramiento juridico, fiscal ni contable.</strong>{" "}
         Las decisiones profesionales derivadas del uso de la Plataforma son
         responsabilidad exclusiva del Cliente.
       </p>
@@ -39,7 +39,7 @@ export default function TerminosPage() {
       <h2>4. Planes y precios</h2>
       <p>
         Los planes vigentes y sus precios estan publicados en{" "}
-        <a href="/precios">baritur.pro/precios</a>. Todos los precios son en EUR sin IVA.
+        <a href="/precios">heredia.app/precios</a>. Todos los precios son en EUR sin IVA.
       </p>
       <ul>
         <li><strong>Inicia:</strong> 149 EUR/mes. Sin cuota de setup.</li>
@@ -50,7 +50,7 @@ export default function TerminosPage() {
 
       <h2>5. Periodo de prueba</h2>
       <p>
-        BARITUR puede ofrecer un periodo de prueba gratuito (&quot;trial&quot;) a su discrecion.
+        Heredia puede ofrecer un periodo de prueba gratuito (&quot;trial&quot;) a su discrecion.
         Durante el trial el Cliente tiene acceso completo a las funcionalidades del plan asignado.
         Al finalizar el periodo de prueba, el acceso se suspende hasta que el Cliente active
         una suscripcion de pago.
@@ -59,7 +59,7 @@ export default function TerminosPage() {
       <h2>6. Facturacion y pago</h2>
       <ul>
         <li>La facturacion se realiza por anticipado (mensual o anual segun el plan elegido).</li>
-        <li>Los pagos se procesan a traves de Stripe. BARITUR no almacena datos de tarjeta.</li>
+        <li>Los pagos se procesan a traves de Stripe. Heredia no almacena datos de tarjeta.</li>
         <li>En caso de impago, el acceso se suspende tras 7 dias naturales.</li>
         <li>Los expedientes adicionales sobre el limite del plan se facturan al final del mes.</li>
         <li>El prepago anual no es reembolsable.</li>
@@ -76,7 +76,7 @@ export default function TerminosPage() {
       <h2>8. Propiedad de los datos</h2>
       <p>
         Los datos introducidos por el Cliente en la Plataforma son propiedad del Cliente.
-        BARITUR actua como encargado del tratamiento y no reclama ningun derecho sobre dichos datos.
+        Heredia actua como encargado del tratamiento y no reclama ningun derecho sobre dichos datos.
         El Cliente puede solicitar una exportacion completa en formato PDF/ZIP en cualquier momento.
       </p>
 
@@ -89,8 +89,8 @@ export default function TerminosPage() {
 
       <h2>10. Limitacion de responsabilidad</h2>
       <p>
-        BARITUR no sera responsable de danos indirectos, lucro cesante ni sanciones derivadas
-        del uso o imposibilidad de uso de la Plataforma. La responsabilidad total de BARITUR
+        Heredia no sera responsable de danos indirectos, lucro cesante ni sanciones derivadas
+        del uso o imposibilidad de uso de la Plataforma. La responsabilidad total de Heredia
         se limita al importe abonado por el Cliente en los 12 meses anteriores al evento.
       </p>
 
@@ -104,13 +104,13 @@ export default function TerminosPage() {
       <h2>12. Propiedad intelectual</h2>
       <p>
         Todos los derechos de propiedad intelectual sobre la Plataforma (codigo, diseno,
-        marca, documentacion) pertenecen a BARITUR TECHNOLOGIES S.L. El Cliente obtiene
+        marca, documentacion) pertenecen a HEREDIA TECHNOLOGIES S.L. El Cliente obtiene
         una licencia de uso no exclusiva, no transferible, limitada al periodo de suscripcion.
       </p>
 
       <h2>13. Modificaciones</h2>
       <p>
-        BARITUR puede modificar estos terminos con un preaviso de 30 dias. Si el Cliente
+        Heredia puede modificar estos terminos con un preaviso de 30 dias. Si el Cliente
         no acepta los nuevos terminos, puede cancelar su suscripcion antes de la fecha
         de entrada en vigor.
       </p>

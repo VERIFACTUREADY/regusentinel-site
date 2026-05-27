@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Fire-and-forget: don't block the response if email delivery fails.
-    const baseUrl = process.env.NEXTAUTH_URL || "https://baritur.pro";
+    const baseUrl = process.env.NEXTAUTH_URL || "https://heredia.app";
     sendNewLeadNotification({
       name: data.name,
       email: data.email,

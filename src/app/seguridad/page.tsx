@@ -4,12 +4,12 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Seguridad y privacidad — BARITUR PRO",
+  title: "Seguridad y privacidad — Heredia",
   description:
-    "Cómo BARITUR PRO protege los datos de tus expedientes: cifrado en tránsito y reposo, hosting en UE, RGPD compliant, audit trail inmutable y retención configurable.",
-  alternates: { canonical: "https://bariturpro.com/seguridad" },
+    "Cómo Heredia protege los datos de tus expedientes: cifrado en tránsito y reposo, hosting en UE, RGPD compliant, audit trail inmutable y retención configurable.",
+  alternates: { canonical: "https://heredia.app/seguridad" },
   openGraph: {
-    title: "Seguridad y privacidad - BARITUR PRO",
+    title: "Seguridad y privacidad - Heredia",
     description: "Cifrado, RGPD, hosting UE, audit trail. Cómo protegemos los datos de tus expedientes.",
     type: "website",
   },
@@ -71,8 +71,8 @@ interface RGPDPoint {
 
 const RGPD_POINTS: RGPDPoint[] = [
   {
-    q: "¿BARITUR PRO actúa como Encargado del tratamiento?",
-    a: "Sí. Tu organización es Responsable del tratamiento de los datos de los expedientes (causantes, herederos, contactos). BARITUR PRO actúa como Encargado del tratamiento conforme al art. 28 RGPD. Te firmamos un Contrato de Encargo (DPA) en la activación.",
+    q: "¿Heredia actúa como Encargado del tratamiento?",
+    a: "Sí. Tu organización es Responsable del tratamiento de los datos de los expedientes (causantes, herederos, contactos). Heredia actúa como Encargado del tratamiento conforme al art. 28 RGPD. Te firmamos un Contrato de Encargo (DPA) en la activación.",
   },
   {
     q: "¿Cómo se tratan los datos de personas fallecidas?",
@@ -96,7 +96,7 @@ const RGPD_POINTS: RGPDPoint[] = [
   },
   {
     q: "¿Qué medidas habéis tomado tras el incidente X o ante Y vulnerabilidad?",
-    a: "Política de divulgación responsable: cualquier vulnerabilidad reportada a security@bariturpro.com se tritra en 48h. Si afecta a tus datos, te notificamos en menos de 72h conforme exige el art. 33 RGPD.",
+    a: "Política de divulgación responsable: cualquier vulnerabilidad reportada a security@heredia.app se tritra en 48h. Si afecta a tus datos, te notificamos en menos de 72h conforme exige el art. 33 RGPD.",
   },
   {
     q: "¿Cumplís con ENS (Esquema Nacional de Seguridad)?",
@@ -134,7 +134,7 @@ export default function SeguridadPage() {
             <h1 className="text-3xl sm:text-4xl font-bold mb-3">Seguridad y privacidad</h1>
             <p className="text-base sm:text-lg text-blue-100 max-w-3xl">
               Tus expedientes contienen información sensible (datos médicos, patrimoniales, familiares).
-              BARITUR PRO se construyó con privacidad por diseño y seguridad por defecto.
+              Heredia se construyó con privacidad por diseño y seguridad por defecto.
             </p>
           </div>
         </div>
@@ -266,10 +266,10 @@ export default function SeguridadPage() {
               Para ejercer derechos, reportar un incidente de seguridad o solicitar el DPA firmado, contacta directamente con nuestro DPO.
             </p>
             <div className="flex flex-wrap gap-3">
-              <a href="mailto:dpo@bariturpro.com" className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition">
-                dpo@bariturpro.com
+              <a href="mailto:dpo@heredia.app" className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition">
+                dpo@heredia.app
               </a>
-              <a href="mailto:security@bariturpro.com" className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-lg text-sm transition">
+              <a href="mailto:security@heredia.app" className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-lg text-sm transition">
                 Reportar vulnerabilidad
               </a>
             </div>

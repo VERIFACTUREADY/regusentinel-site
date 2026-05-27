@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 
 export const metadata = {
-  title: "Rendimiento del equipo — BARITUR PRO",
+  title: "Rendimiento del equipo — Heredia",
   robots: { index: false },
 };
 

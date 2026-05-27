@@ -5,9 +5,9 @@ import { SiteFooter } from "@/components/site-footer";
 import { Reveal } from "@/components/reveal";
 
 export const metadata: Metadata = {
-  title: "Migrar de Excel a BARITUR PRO — Plan de 5 días sin perder un expediente",
+  title: "Migrar de Excel a Heredia — Plan de 5 días sin perder un expediente",
   description:
-    "Tu Excel de control de herencias funciona, hasta que un día te falla. Cómo migrar la cartera a BARITUR PRO en 5 días: las 5 grietas del Excel, el plan de migración y qué conservas del proceso.",
+    "Tu Excel de control de herencias funciona, hasta que un día te falla. Cómo migrar la cartera a Heredia en 5 días: las 5 grietas del Excel, el plan de migración y qué conservas del proceso.",
   keywords: [
     "alternativa excel gestoria",
     "migrar de excel software herencias",
@@ -15,9 +15,9 @@ export const metadata: Metadata = {
     "control expedientes herencia software",
     "sustituir excel gestoria",
   ],
-  alternates: { canonical: "https://bariturpro.com/migrar-de-excel" },
+  alternates: { canonical: "https://heredia.app/migrar-de-excel" },
   openGraph: {
-    title: "Migrar de Excel a BARITUR PRO en 5 días",
+    title: "Migrar de Excel a Heredia en 5 días",
     description:
       "Las 5 grietas que se abren bajo el Excel y cómo migrar tu cartera sin perder un expediente.",
     type: "article",
@@ -61,7 +61,7 @@ const MIGRATION_PLAN = [
   {
     day: "Día 1",
     title: "Importamos tu Excel",
-    body: "Nos envías el Excel actual (o nos lo enseñas en una llamada de 30 min). Mapeamos columnas a campos de BARITUR PRO. Si tu Excel tiene 200 expedientes, los tienes cargados al día siguiente.",
+    body: "Nos envías el Excel actual (o nos lo enseñas en una llamada de 30 min). Mapeamos columnas a campos de Heredia. Si tu Excel tiene 200 expedientes, los tienes cargados al día siguiente.",
   },
   {
     day: "Día 2",
@@ -81,7 +81,7 @@ const MIGRATION_PLAN = [
   {
     day: "Día 5",
     title: "Excel pasa a histórico",
-    body: "Tu Excel se archiva como respaldo de los últimos 6 meses. Todo nuevo entra a BARITUR. El equipo deja de tocar el Excel sin notarlo. Una semana después nadie lo echa de menos.",
+    body: "Tu Excel se archiva como respaldo de los últimos 6 meses. Todo nuevo entra a Heredia. El equipo deja de tocar el Excel sin notarlo. Una semana después nadie lo echa de menos.",
   },
 ];
 
@@ -89,7 +89,7 @@ export default function MigrarDeExcelPage() {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "HowTo",
-    name: "Migrar de Excel a BARITUR PRO en 5 días",
+    name: "Migrar de Excel a Heredia en 5 días",
     description:
       "Plan de migración para gestorías que llevan herencias en Excel: importación, configuración de plazos, onboarding de equipo, activación del portal familia y archivado del Excel.",
     step: MIGRATION_PLAN.map((s, i) => ({
@@ -187,7 +187,7 @@ export default function MigrarDeExcelPage() {
                   El mismo expediente, dos sistemas
                 </p>
                 <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
-                  Excel vs BARITUR PRO en una herencia real
+                  Excel vs Heredia en una herencia real
                 </h2>
               </div>
             </Reveal>
@@ -214,7 +214,7 @@ export default function MigrarDeExcelPage() {
               </div>
 
               <div className="bg-gradient-to-br from-indigo-50/40 to-emerald-50/30 border border-indigo-200 rounded-2xl p-6">
-                <p className="text-xs font-bold uppercase tracking-wider text-primary mb-3">El método nuevo · BARITUR PRO</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-primary mb-3">El método nuevo · Heredia</p>
                 <ul className="space-y-3 text-sm text-gray-700">
                   {[
                     "Un expediente = una página con todo: causante, herederos, bienes, plazos, alertas",
@@ -245,7 +245,7 @@ export default function MigrarDeExcelPage() {
                 El plan de migración
               </p>
               <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
-                5 días desde el Excel a BARITUR PRO operativo
+                5 días desde el Excel a Heredia operativo
               </h2>
               <p className="mt-3 text-gray-600 max-w-2xl mx-auto text-sm sm:text-base">
                 No es una migración técnica: es un cambio de método. Te acompañamos
@@ -338,7 +338,7 @@ export default function MigrarDeExcelPage() {
               <div className="absolute bottom-0 -left-16 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl" />
               <div className="relative max-w-2xl">
                 <h2 className="text-2xl sm:text-3xl font-bold mb-3 tracking-tight">
-                  Envíanos tu Excel. Te lo devolvemos en BARITUR PRO el lunes.
+                  Envíanos tu Excel. Te lo devolvemos en Heredia el lunes.
                 </h2>
                 <p className="text-slate-300 text-sm sm:text-base mb-6">
                   Sin compromiso. Vemos tu Excel actual en una llamada de 30 minutos

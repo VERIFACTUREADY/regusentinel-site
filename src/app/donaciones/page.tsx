@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     "isd donacion",
     "bonificacion donacion ccaa",
   ],
-  alternates: { canonical: "https://bariturpro.com/donaciones" },
+  alternates: { canonical: "https://heredia.app/donaciones" },
   openGraph: {
     title: "Impuesto sobre Donaciones — Guía CCAA 2025",
     description: "Cuánto se paga por una donación según CCAA y parentesco. Cifras reales para 4 grupos.",
@@ -264,13 +264,13 @@ export default function DonacionesPage() {
           <div className="max-w-3xl mx-auto px-4 py-14 text-center">
             <h2 className="text-2xl font-bold mb-3">¿Tramitas donaciones para clientes?</h2>
             <p className="text-blue-200 text-sm mb-6">
-              BARITUR PRO automatiza también los expedientes de donación. 14 días gratis.
+              Heredia automatiza también los expedientes de donación. 14 días gratis.
             </p>
             <Link
               href="/#demo"
               className="inline-block px-7 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-xl text-sm transition"
             >
-              Probar BARITUR PRO →
+              Probar Heredia →
             </Link>
           </div>
         </div>

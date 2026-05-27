@@ -68,7 +68,7 @@ export async function getOnboardingState(orgId: string): Promise<OnboardingState
       id: "first_case",
       title: "Crea tu primer expediente",
       description:
-        "Registra el expediente de herencia. BARITUR genera automaticamente tareas, plazos y checklist.",
+        "Registra el expediente de herencia. Heredia genera automaticamente tareas, plazos y checklist.",
       cta: caseCount > 0 ? "Ver expediente" : "Crear expediente",
       ctaHref: caseCount > 0 ? caseHref : "/cases/new",
       done: caseCount > 0,

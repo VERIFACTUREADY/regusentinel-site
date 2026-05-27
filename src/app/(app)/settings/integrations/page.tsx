@@ -122,7 +122,7 @@ export default function IntegrationsSettingsPage() {
       <h1 className="text-2xl font-bold mb-2">Integraciones</h1>
       <p className="text-sm text-gray-500 mb-6">
         Conecta Radar ISD a tu Slack o a un webhook para recibir los plazos críticos del
-        Modelo 650 fuera de BARITUR PRO.
+        Modelo 650 fuera de Heredia.
       </p>
 
       {!data ? (
@@ -236,7 +236,7 @@ export default function IntegrationsSettingsPage() {
               <h2 className="text-lg font-semibold">Webhook genérico</h2>
               <p className="text-sm text-gray-500">
                 POST JSON con el evento serializado al endpoint que indiques. Si añades un secreto,
-                firmamos cada request con HMAC-SHA256 en <code className="text-xs font-mono">X-BARITUR-Signature</code>.
+                firmamos cada request con HMAC-SHA256 en <code className="text-xs font-mono">X-HEREDIA-Signature</code>.
               </p>
             </div>
             <div>
@@ -247,7 +247,7 @@ export default function IntegrationsSettingsPage() {
                 type="text"
                 value={webhook}
                 onChange={(e) => setWebhook(e.target.value)}
-                placeholder="https://api.tuempresa.es/baritur/eventos"
+                placeholder="https://api.tuempresa.es/heredia/eventos"
                 className="w-full px-3 py-2 border rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
             </div>

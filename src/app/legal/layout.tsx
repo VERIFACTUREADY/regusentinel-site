@@ -5,7 +5,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-white">
       <header className="border-b bg-white sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
-          <Link href="/" className="text-xl font-bold text-primary">BARITUR PRO</Link>
+          <Link href="/" className="text-xl font-bold text-primary">Heredia</Link>
           <div className="flex gap-4 items-center text-sm">
             <Link href="/legal/privacidad" className="text-gray-600 hover:text-primary">Privacidad</Link>
             <Link href="/legal/terminos" className="text-gray-600 hover:text-primary">Terminos</Link>
@@ -18,7 +18,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
       </main>
       <footer className="py-8 border-t bg-gray-50">
         <div className="max-w-4xl mx-auto px-4 text-center text-sm text-gray-500 space-y-2">
-          <p>BARITUR no presta asesoramiento juridico ni fiscal individual.</p>
+          <p>Heredia no presta asesoramiento juridico ni fiscal individual.</p>
           <p>
             <Link href="/" className="text-primary hover:underline mr-4">Inicio</Link>
             <Link href="/precios" className="text-primary hover:underline mr-4">Precios</Link>

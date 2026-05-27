@@ -91,7 +91,7 @@ export function LeadsTable({ initialLeads }: { initialLeads: Lead[] }) {
                 <td className="px-5 py-3">
                   <p className="font-medium text-gray-900">{lead.name}</p>
                   <a
-                    href={`mailto:${lead.email}?subject=Re: Demo BARITUR PRO`}
+                    href={`mailto:${lead.email}?subject=Re: Demo Heredia`}
                     className="text-primary hover:underline text-xs"
                   >
                     {lead.email}

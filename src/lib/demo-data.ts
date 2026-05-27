@@ -12,9 +12,9 @@ import { CaseStatus, TaskCategory, TaskStatus } from "@prisma/client";
 import { calculateTaskDeadlines } from "./deadline-engine";
 
 export const DEMO_ORG_SLUG = "gestoria-demo";
-export const DEMO_OWNER_EMAIL = "admin@baritur.com";
-export const DEMO_OPERATOR_EMAIL = "operador@baritur.com";
-export const DEMO_VIEWER_EMAIL = "viewer@baritur.com";
+export const DEMO_OWNER_EMAIL = "admin@heredia.app";
+export const DEMO_OPERATOR_EMAIL = "operador@heredia.app";
+export const DEMO_VIEWER_EMAIL = "viewer@heredia.app";
 export const DEMO_PASSWORD = "admin123";
 
 interface CaseSpec {

@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     "que hacer tras un fallecimiento",
     "tramites herencia paso a paso",
   ],
-  alternates: { canonical: "https://bariturpro.com/guia-fallecimiento" },
+  alternates: { canonical: "https://heredia.app/guia-fallecimiento" },
   openGraph: {
     title: "Guía de trámites tras un fallecimiento",
     description: "Plan personalizado de trámites con plazos tras la muerte de un familiar.",
@@ -129,14 +129,14 @@ export default function GuiaFallecimientoPage() {
           <div className="bg-gradient-to-br from-slate-900 to-blue-900 rounded-2xl p-8 text-white text-center">
             <h2 className="text-xl font-bold mb-2">¿Eres gestoría o funeraria?</h2>
             <p className="text-blue-200 text-sm mb-5">
-              BARITUR PRO automatiza todos estos trámites para tu cartera de expedientes: plazos,
+              Heredia automatiza todos estos trámites para tu cartera de expedientes: plazos,
               documentación, portal familia y borradores del Modelo 650.
             </p>
             <Link
               href="/#demo"
               className="inline-block px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-lg text-sm transition"
             >
-              Ver BARITUR PRO →
+              Ver Heredia →
             </Link>
           </div>
         </div>

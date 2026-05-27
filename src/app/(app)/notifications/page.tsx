@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { NotificationLogViewer } from "./notification-log-viewer";
 
 export const metadata = {
-  title: "Notificaciones — BARITUR PRO",
+  title: "Notificaciones — Heredia",
   robots: { index: false },
 };
 

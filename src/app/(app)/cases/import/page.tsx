@@ -148,7 +148,7 @@ export default function ImportCasesPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "plantilla-importacion-baritur.csv";
+    a.download = "plantilla-importacion-heredia.csv";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 500);
   }

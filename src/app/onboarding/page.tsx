@@ -4,6 +4,7 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { HerediaMark } from "@/components/heredia-mark";
 
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
@@ -58,10 +59,8 @@ export default function OnboardingPage() {
 
         <div className="relative">
           <Link href="/" className="inline-flex items-center gap-2.5 mb-12">
-            <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-indigo-500 flex items-center justify-center shadow-lg shadow-primary/25">
-              <span className="text-white font-bold text-lg">B</span>
-            </span>
-            <span className="text-xl font-bold text-white tracking-tight">BARITUR PRO</span>
+            <HerediaMark className="w-10 h-10" variant="white" />
+            <span className="text-xl font-semibold text-white tracking-tight">Heredia</span>
           </Link>
 
           <p className="text-xs font-bold uppercase tracking-wider text-blue-300 mb-3">
@@ -115,10 +114,8 @@ export default function OnboardingPage() {
       <main className="flex items-center justify-center bg-gradient-to-b from-slate-50 to-white px-4 py-12 sm:py-16">
         <div className="w-full max-w-md">
           <Link href="/" className="lg:hidden inline-flex items-center gap-2 mb-8">
-            <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-indigo-500 flex items-center justify-center shadow-lg shadow-primary/25">
-              <span className="text-white font-bold text-sm">B</span>
-            </span>
-            <span className="text-base font-bold text-slate-900 tracking-tight">BARITUR PRO</span>
+            <HerediaMark className="w-8 h-8" />
+            <span className="text-base font-semibold text-slate-900 tracking-tight">Heredia</span>
           </Link>
 
           {/* Step indicator */}

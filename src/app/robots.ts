@@ -17,6 +17,6 @@ export default function robots(): MetadataRoute.Robots {
         ],
       },
     ],
-    sitemap: "https://baritur.pro/sitemap.xml",
+    sitemap: "https://heredia.app/sitemap.xml",
   };
 }

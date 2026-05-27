@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     "isd donacion",
   ],
   alternates: {
-    canonical: "https://bariturpro.com/calculadora-donaciones",
+    canonical: "https://heredia.app/calculadora-donaciones",
   },
   openGraph: {
     title: "Calculadora Modelo 651 — Donaciones por CCAA",

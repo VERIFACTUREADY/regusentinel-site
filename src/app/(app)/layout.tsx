@@ -107,7 +107,7 @@ function SuspendedView({ isOwner }: { isOwner: boolean }) {
           <h1 className="text-xl font-bold text-gray-900 mb-2">Cuenta suspendida</h1>
           <p className="text-gray-600 text-sm mb-6">
             Tu periodo de prueba ha finalizado o tu suscripcion esta inactiva.
-            Para seguir usando BARITUR PRO, activa un plan de pago.
+            Para seguir usando Heredia, activa un plan de pago.
           </p>
           {isOwner ? (
             <Link

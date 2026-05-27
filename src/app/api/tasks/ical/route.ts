@@ -70,18 +70,18 @@ export async function GET(req: NextRequest) {
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    `PRODID:-//BARITUR PRO//Plazos ${org?.name ?? ""}//ES`,
+    `PRODID:-//Heredia//Plazos ${org?.name ?? ""}//ES`,
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    `X-WR-CALNAME:${icalEscape(`Plazos BARITUR${org?.name ? " – " + org.name : ""}`)}`,
+    `X-WR-CALNAME:${icalEscape(`Plazos Heredia${org?.name ? " – " + org.name : ""}`)}`,
     "X-WR-TIMEZONE:Europe/Madrid",
-    "X-WR-CALDESC:Plazos de tareas exportados desde BARITUR PRO",
+    "X-WR-CALDESC:Plazos de tareas exportados desde Heredia",
   ];
 
   for (const task of tasks) {
     if (!task.deadline) continue;
     const deadline = new Date(task.deadline);
-    const uid = `task-${task.id}@baritur.pro`;
+    const uid = `task-${task.id}@heredia.app`;
     const summary = `[${task.case.ref}] ${task.title}`;
     const deceasedName = task.case.deceased?.fullName;
     const description = [
@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
 
     if (isdDeadline < new Date(now.getTime() - 90 * 86400000)) continue;
 
-    const uid = `isd-${c.id}@baritur.pro`;
+    const uid = `isd-${c.id}@heredia.app`;
     const summary = `ISD: ${c.deceased.fullName ?? c.ref} (${c.ref})`;
     const description = `Plazo 6 meses ISD (Modelo 650)\\nFallecido: ${c.deceased.fullName ?? "—"}\\nExpediente: ${c.ref}`;
 
@@ -153,7 +153,7 @@ export async function GET(req: NextRequest) {
   return new NextResponse(ics, {
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",
-      "Content-Disposition": 'attachment; filename="plazos-baritur.ics"',
+      "Content-Disposition": 'attachment; filename="plazos-heredia.ics"',
       "Cache-Control": "no-cache, no-store",
     },
   });

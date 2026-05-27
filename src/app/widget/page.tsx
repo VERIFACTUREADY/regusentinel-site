@@ -5,7 +5,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Widget gratis: Calculadora del Impuesto de Sucesiones para tu web | BARITUR PRO",
+  title: "Widget gratis: Calculadora del Impuesto de Sucesiones para tu web | Heredia",
   description:
     "Embebe gratis la calculadora del Impuesto de Sucesiones (Modelo 650) en la web de tu gestoría, funeraria o despacho. Datos oficiales, las 17 CCAAs, sin registro. Personalizable y responsive.",
   alternates: { canonical: "/widget" },
@@ -138,8 +138,8 @@ export default function WidgetPage() {
       <section className="max-w-3xl mx-auto px-4 pb-14">
         <h2 className="text-xl font-bold text-slate-900 tracking-tight">Términos de uso</h2>
         <ul className="mt-4 space-y-2 text-sm text-slate-700">
-          <li>· El widget se ofrece <strong>gratis y sin registro</strong>. No requiere cuenta en BARITUR PRO.</li>
-          <li>· La atribución <em>"Powered by BARITUR PRO"</em> debe permanecer visible.</li>
+          <li>· El widget se ofrece <strong>gratis y sin registro</strong>. No requiere cuenta en Heredia.</li>
+          <li>· La atribución <em>"Powered by Heredia"</em> debe permanecer visible.</li>
           <li>· Los cálculos son orientativos basados en normativa vigente. No constituyen asesoramiento.</li>
           <li>· Nos reservamos el derecho a actualizar tarifas y bonificaciones según evolución legal.</li>
           <li>· Si quieres una versión sin atribución o personalizada, <Link href="/contacto" className="text-primary hover:underline">habla con nosotros</Link>.</li>
@@ -156,7 +156,7 @@ export default function WidgetPage() {
               ¿Gestionas herencias profesionalmente?
             </h2>
             <p className="text-slate-300 text-sm sm:text-base mb-6">
-              El widget es solo el principio. BARITUR PRO automatiza todo el
+              El widget es solo el principio. Heredia automatiza todo el
               backoffice post-fallecimiento: ISD, certificados, bancos,
               Seguridad Social, prestaciones, portal familia.
             </p>

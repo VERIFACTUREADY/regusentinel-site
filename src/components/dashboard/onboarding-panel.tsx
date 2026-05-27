@@ -56,7 +56,7 @@ export function OnboardingPanel({ steps, completed, total }: Props) {
             Primeros pasos
           </p>
           <h2 className="text-lg font-bold text-gray-900">
-            Configura BARITUR en 5 minutos
+            Configura Heredia en 5 minutos
           </h2>
           <p className="text-sm text-gray-600 mt-1">
             {completed === total

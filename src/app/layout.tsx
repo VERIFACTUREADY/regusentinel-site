@@ -4,13 +4,13 @@ import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
 
-const BASE_URL = process.env.NEXTAUTH_URL || "https://baritur.pro";
+const BASE_URL = process.env.NEXTAUTH_URL || "https://heredia.app";
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
   title: {
-    default: "BARITUR PRO — Gestión post-mortem para gestorías y funerarias",
-    template: "%s | BARITUR PRO",
+    default: "Heredia — Gestión post-mortem para gestorías y funerarias",
+    template: "%s | Heredia",
   },
   description:
     "Software B2B para gestorías y funerarias que automatiza los trámites post-fallecimiento: bancos, suministros, fiscal (Modelo 650), portal familia y motor de plazos ISD.",
@@ -23,28 +23,28 @@ export const metadata: Metadata = {
     "portal familia fallecimiento",
     "certificado ultimas voluntades",
   ],
-  authors: [{ name: "BARITUR PRO", url: BASE_URL }],
-  creator: "BARITUR PRO",
+  authors: [{ name: "Heredia", url: BASE_URL }],
+  creator: "Heredia",
   openGraph: {
     type: "website",
     locale: "es_ES",
     url: BASE_URL,
-    siteName: "BARITUR PRO",
-    title: "BARITUR PRO — Software de gestión post-mortem",
+    siteName: "Heredia",
+    title: "Heredia — Software de gestión post-mortem",
     description:
-      "+436.000 defunciones al año en España. Cada una genera decenas de trámites. BARITUR orquesta todo: bancos, fiscal, suministros, portal familia y motor de plazos ISD.",
+      "+436.000 defunciones al año en España. Cada una genera decenas de trámites. Heredia orquesta todo: bancos, fiscal, suministros, portal familia y motor de plazos ISD.",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "BARITUR PRO — Gestión post-mortem profesional",
+        alt: "Heredia — Gestión post-mortem profesional",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "BARITUR PRO — Software de gestión post-mortem",
+    title: "Heredia — Software de gestión post-mortem",
     description:
       "Automatiza los trámites post-fallecimiento: bancos, Modelo 650, suministros y portal familia con plazos ISD en tiempo real.",
     images: ["/og-image.png"],

@@ -5,7 +5,7 @@ import { ssoEnabled } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Iniciar sesión",
-  description: "Accede a tu cuenta de BARITUR PRO para gestionar tus expedientes post-mortem.",
+  description: "Accede a tu cuenta de Heredia para gestionar tus expedientes post-mortem.",
   robots: { index: false },
 };
 

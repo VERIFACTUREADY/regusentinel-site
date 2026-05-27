@@ -167,7 +167,7 @@ function ConsentGate({
           </button>
 
           {branding.showPoweredBy && (
-            <p className="text-center text-xs text-gray-400 mt-4">Powered by BARITUR PRO</p>
+            <p className="text-center text-xs text-gray-400 mt-4">Powered by Heredia</p>
           )}
         </div>
       </main>
@@ -609,7 +609,7 @@ export default function PortalPage() {
             </p>
           )}
           {branding.showPoweredBy && (
-            <p className="text-gray-400 pt-2">Powered by BARITUR PRO</p>
+            <p className="text-gray-400 pt-2">Powered by Heredia</p>
           )}
         </div>
       </main>

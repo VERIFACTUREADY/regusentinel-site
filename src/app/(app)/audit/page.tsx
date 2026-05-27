@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { AuditLogViewer } from "./audit-log-viewer";
 
 export const metadata = {
-  title: "Audit Trail — BARITUR PRO",
+  title: "Audit Trail — Heredia",
   robots: { index: false },
 };
 

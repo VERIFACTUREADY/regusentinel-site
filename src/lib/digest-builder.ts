@@ -84,7 +84,7 @@ export function buildHtmlDigest(cases: DigestCase[], now: Date, orgName?: string
   ${section("Próximos — 61 a 90 días", "#166534", upcoming)}
 
   <p style="margin-top:32px;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:16px">
-    Generado automáticamente por BARITUR PRO · ${dateStr}
+    Generado automáticamente por Heredia · ${dateStr}
   </p>
 </body>
 </html>`;

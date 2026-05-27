@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     reduccion,
     ccaa,
     group,
-    orgName: "BARITUR PRO - Borrador gratuito",
+    orgName: "Heredia - Borrador gratuito",
     generatedAt: new Date(),
   });
 

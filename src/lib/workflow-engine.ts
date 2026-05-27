@@ -164,7 +164,7 @@ function buildHtml(subject: string, body: string): string {
       <h2 style="color:#1a1a2e;">${subject}</h2>
       <div style="color:#333;line-height:1.6;">${body.replace(/\n/g, "<br>")}</div>
       <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
-      <p style="color:#999;font-size:12px;">BARITUR PRO — Aviso automático generado por una regla de automatización.</p>
+      <p style="color:#999;font-size:12px;">Heredia — Aviso automático generado por una regla de automatización.</p>
     </div>
   `;
 }

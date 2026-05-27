@@ -57,7 +57,7 @@ export async function generateMetadata({ params }: { params: { par: string } }):
       `donde se paga menos herencia espana`,
     ],
     alternates: {
-      canonical: `https://bariturpro.com/comparador-isd/${params.par}`,
+      canonical: `https://heredia.app/comparador-isd/${params.par}`,
     },
     openGraph: {
       title,

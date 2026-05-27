@@ -90,7 +90,7 @@ model Organization {
   retentionDays Int @default(90)
 
   // White-label del portal familia. Unlocked en plan DESPACHO/FIRMA
-  // (INICIA sigue mostrando "Powered by BARITUR PRO").
+  // (INICIA sigue mostrando "Powered by Heredia").
   brandDisplayName  String?
   brandLogoUrl      String?
   brandPrimaryColor String? // hex, e.g. "#1e40af"
@@ -100,7 +100,7 @@ model Organization {
   // Integraciones de notificación outbound (Plan Firma).
   // - slackWebhookUrl: incoming webhook de Slack (https://hooks.slack.com/...)
   // - customWebhookUrl: endpoint del cliente que recibe los eventos en JSON
-  // - customWebhookSecret: secreto HMAC-SHA256 que firma el payload en X-BARITUR-Signature
+  // - customWebhookSecret: secreto HMAC-SHA256 que firma el payload en X-HEREDIA-Signature
   slackWebhookUrl     String?
   teamsWebhookUrl     String?
   customWebhookUrl    String?

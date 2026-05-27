@@ -5,7 +5,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Calculadora del Impuesto de Sucesiones (ISD) por Comunidad Autónoma | BARITUR PRO",
+  title: "Calculadora del Impuesto de Sucesiones (ISD) por Comunidad Autónoma | Heredia",
   description:
     "Calcula gratis cuánto se paga por el Impuesto de Sucesiones (Modelo 650) en España según tu Comunidad Autónoma. Compara entre todas las CCAA: Madrid, Andalucía, Cataluña, Galicia, Valencia y más. Estimación basada en la normativa estatal y bonificaciones autonómicas vigentes.",
   keywords: [
@@ -189,7 +189,7 @@ export default function CalculadoraISDPage() {
             autonómicas vigentes en 2025. No sustituye el asesoramiento de un
             profesional. Las normativas autonómicas evolucionan y pueden tener
             requisitos específicos que no se modelan aquí. Navarra y País Vasco
-            tienen régimen foral propio. BARITUR no presta asesoramiento
+            tienen régimen foral propio. Heredia no presta asesoramiento
             jurídico ni fiscal individual.
           </p>
         </div>

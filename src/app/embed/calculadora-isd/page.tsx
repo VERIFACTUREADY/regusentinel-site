@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { EmbedClient } from "./embed-client";
 
 export const metadata: Metadata = {
-  title: "Calculadora ISD | BARITUR PRO",
+  title: "Calculadora ISD | Heredia",
   robots: { index: false, follow: false },
 };
 

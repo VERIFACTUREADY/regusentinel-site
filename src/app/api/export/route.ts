@@ -109,7 +109,7 @@ export async function GET(req: NextRequest) {
   return new Response(json, {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Content-Disposition": `attachment; filename="baritur-export-${org?.slug ?? orgId}-${new Date().toISOString().slice(0, 10)}.json"`,
+      "Content-Disposition": `attachment; filename="heredia-export-${org?.slug ?? orgId}-${new Date().toISOString().slice(0, 10)}.json"`,
     },
   });
 }

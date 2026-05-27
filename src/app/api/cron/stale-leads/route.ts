@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, staleCount: 0 });
   }
 
-  const baseUrl = process.env.NEXTAUTH_URL || "https://baritur.pro";
+  const baseUrl = process.env.NEXTAUTH_URL || "https://heredia.app";
 
   const rows = stale
     .map((r) => {
@@ -81,13 +81,13 @@ export async function GET(req: NextRequest) {
         </a>
       </p>
       <hr style="border:none;border-top:1px solid #eee;margin-top:32px;"/>
-      <p style="color:#999;font-size:12px;">BARITUR PRO · Recordatorio automático de leads sin contactar</p>
+      <p style="color:#999;font-size:12px;">Heredia · Recordatorio automático de leads sin contactar</p>
     </div>
   `;
 
   await sendEmail({
     to: notifyEmail,
-    subject: `⚠️ ${stale.length} lead${stale.length > 1 ? "s" : ""} sin contactar — BARITUR PRO`,
+    subject: `⚠️ ${stale.length} lead${stale.length > 1 ? "s" : ""} sin contactar — Heredia`,
     html,
   });
 

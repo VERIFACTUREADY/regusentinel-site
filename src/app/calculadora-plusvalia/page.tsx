@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     "metodo objetivo plusvalia",
     "plusvalia real",
   ],
-  alternates: { canonical: "https://bariturpro.com/calculadora-plusvalia" },
+  alternates: { canonical: "https://heredia.app/calculadora-plusvalia" },
   openGraph: {
     title: "Calculadora de Plusvalía Municipal — IIVTNU",
     description: "Calcula la plusvalía municipal por los dos métodos y elige el menor.",

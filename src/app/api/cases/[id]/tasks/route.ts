@@ -131,14 +131,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
                   La tarea <strong>${task.title}</strong> ha sido completada. Tu tarea <strong>${dep.title}</strong> en el expediente <strong>${caseData?.ref || params.id}</strong> ya puede continuar.
                 </p>
                 <p style="text-align:center;margin:24px 0;">
-                  <a href="${process.env.NEXTAUTH_URL || "https://app.baritur.pro"}/cases/${params.id}"
+                  <a href="${process.env.NEXTAUTH_URL || "https://app.heredia.app"}/cases/${params.id}"
                      style="background-color:#7c3aed;color:white;padding:12px 32px;
                             border-radius:6px;text-decoration:none;font-weight:600;">
                     Ver expediente
                   </a>
                 </p>
                 <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
-                <p style="color:#999;font-size:12px;">BARITUR PRO — Gestion post-mortem profesional</p>
+                <p style="color:#999;font-size:12px;">Heredia — Gestion post-mortem profesional</p>
               </div>
             `,
           }).catch(console.error);
@@ -175,14 +175,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
                 Se te ha asignado la tarea <strong>${task.title}</strong> en el expediente <strong>${caseData?.ref || params.id}</strong>.
               </p>
               <p style="text-align:center;margin:24px 0;">
-                <a href="${process.env.NEXTAUTH_URL || "https://app.baritur.pro"}/cases/${params.id}"
+                <a href="${process.env.NEXTAUTH_URL || "https://app.heredia.app"}/cases/${params.id}"
                    style="background-color:#1e40af;color:white;padding:12px 32px;
                           border-radius:6px;text-decoration:none;font-weight:600;">
                   Ver expediente
                 </a>
               </p>
               <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
-              <p style="color:#999;font-size:12px;">BARITUR PRO — Gestion post-mortem profesional</p>
+              <p style="color:#999;font-size:12px;">Heredia — Gestion post-mortem profesional</p>
             </div>
           `,
         }).catch(console.error);

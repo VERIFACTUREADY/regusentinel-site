@@ -7,7 +7,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Análisis ISD — BARITUR PRO",
+  title: "Análisis ISD — Heredia",
   robots: { index: false },
 };
 

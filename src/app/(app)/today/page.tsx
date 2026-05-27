@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 
 export const metadata = {
-  title: "Resumen del día — BARITUR PRO",
+  title: "Resumen del día — Heredia",
   robots: { index: false },
 };
 

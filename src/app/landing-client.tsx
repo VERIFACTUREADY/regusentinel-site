@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Reveal } from "@/components/reveal";
 import { SiteFooter } from "@/components/site-footer";
+import { HerediaMark } from "@/components/heredia-mark";
 
 // ─── Datos ────────────────────────────────────────────────
 
@@ -117,7 +118,7 @@ function HeroPreview() {
           <span className="w-2.5 h-2.5 rounded-full bg-rose-300" />
           <span className="w-2.5 h-2.5 rounded-full bg-amber-300" />
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-300" />
-          <span className="ml-3 text-[11px] font-medium text-slate-400">BARITUR PRO — Expediente EXP-2024-087</span>
+          <span className="ml-3 text-[11px] font-medium text-slate-400">Heredia — Expediente EXP-2024-087</span>
         </div>
 
         <div className="p-5 space-y-4">
@@ -242,16 +243,16 @@ export function LandingClient() {
     "@graph": [
       {
         "@type": "Organization",
-        "@id": "https://baritur.pro/#org",
-        name: "BARITUR PRO",
-        url: "https://baritur.pro",
+        "@id": "https://heredia.app/#org",
+        name: "Heredia",
+        url: "https://heredia.app",
         description:
           "Software B2B para gestorías y funerarias que automatiza los trámites post-fallecimiento en España.",
         contactPoint: { "@type": "ContactPoint", contactType: "sales", availableLanguage: "Spanish" },
       },
       {
         "@type": "SoftwareApplication",
-        name: "BARITUR PRO",
+        name: "Heredia",
         applicationCategory: "BusinessApplication",
         operatingSystem: "Web",
         offers: {
@@ -277,10 +278,10 @@ export function LandingClient() {
           },
           {
             "@type": "Question",
-            name: "¿Para qué tipo de empresa es BARITUR PRO?",
+            name: "¿Para qué tipo de empresa es Heredia?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "BARITUR PRO está diseñado para gestorías, asesorías fiscales, funerarias y despachos de abogados que gestionan trámites post-mortem de forma profesional para familias.",
+              text: "Heredia está diseñado para gestorías, asesorías fiscales, funerarias y despachos de abogados que gestionan trámites post-mortem de forma profesional para familias.",
             },
           },
           {
@@ -304,10 +305,8 @@ export function LandingClient() {
       <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/80 backdrop-blur-md">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex justify-between items-center">
           <Link href="/" className="flex items-center gap-2.5">
-            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-indigo-500 flex items-center justify-center shadow-lg shadow-primary/25">
-              <span className="text-white font-bold text-lg">B</span>
-            </span>
-            <span className="text-lg font-bold text-slate-900 tracking-tight">BARITUR PRO</span>
+            <HerediaMark className="w-9 h-9" />
+            <span className="text-lg font-semibold text-slate-900 tracking-tight">Heredia</span>
           </Link>
           <div className="flex gap-1 sm:gap-2 items-center">
             <Link href="/recursos" className="hidden md:inline px-3 py-2 text-sm font-medium text-slate-600 hover:text-primary transition">Recursos</Link>
@@ -361,7 +360,7 @@ export function LandingClient() {
 
           <Reveal delay={160}>
             <p className="mt-6 text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-              BARITUR PRO automatiza el backoffice post-fallecimiento: del certificado a los 15 días
+              Heredia automatiza el backoffice post-fallecimiento: del certificado a los 15 días
               al Modelo 650 a los 6 meses. Plazos, documentación, portal familia y cumplimiento — en una sola plataforma.
             </p>
           </Reveal>
@@ -443,7 +442,7 @@ export function LandingClient() {
             </h2>
             <p className="mt-3 text-slate-600 max-w-2xl mx-auto">
               Calculadoras, comparadores y generadores de documentos abiertos a todos.
-              La misma tecnología que mueve BARITUR PRO, sin coste.
+              La misma tecnología que mueve Heredia, sin coste.
             </p>
           </Reveal>
 
@@ -636,7 +635,7 @@ export function LandingClient() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Servicio gestionado</p>
-                  <h3 className="text-xl font-bold text-slate-900 mb-2">BARITUR MANAGED</h3>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">Heredia Managed</h3>
                   <p className="text-sm text-slate-600 max-w-xl">
                     Operación administrativa coordinada por expediente: intake guiado, recopilación documental,
                     preparación de paquetes, coordinación de plazos y comunicación con la familia. Sin asesoría legal/fiscal.

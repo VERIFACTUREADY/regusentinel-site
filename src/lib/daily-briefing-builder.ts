@@ -154,12 +154,12 @@ export function buildBriefingSubject(overdue: number, isdCritical: number, dueTo
     const parts = [];
     if (overdue > 0) parts.push(`${overdue} tarea${overdue !== 1 ? "s" : ""} vencida${overdue !== 1 ? "s" : ""}`);
     if (isdCritical > 0) parts.push(`${isdCritical} ISD urgente${isdCritical !== 1 ? "s" : ""}`);
-    return `⚠️ Agenda hoy: ${parts.join(", ")} — BARITUR PRO`;
+    return `⚠️ Agenda hoy: ${parts.join(", ")} — Heredia`;
   }
   if (dueToday > 0) {
-    return `📋 Agenda del día: ${dueToday} tarea${dueToday !== 1 ? "s" : ""} para hoy — BARITUR PRO`;
+    return `📋 Agenda del día: ${dueToday} tarea${dueToday !== 1 ? "s" : ""} para hoy — Heredia`;
   }
-  return `📋 Tu agenda de hoy — BARITUR PRO`;
+  return `📋 Tu agenda de hoy — Heredia`;
 }
 
 function taskRow(t: BriefingTask, appUrl: string, urgent = false): string {
@@ -242,7 +242,7 @@ export function buildBriefingHtml(data: BriefingData): string {
   <div style="background:linear-gradient(135deg,#6366f1,#2563eb);padding:24px;border-radius:12px;color:white;margin-bottom:24px">
     <h1 style="margin:0;font-size:20px">Buenos días, ${userName} 👋</h1>
     <p style="margin:6px 0 0;opacity:0.85;font-size:14px">${dateStr}</p>
-    <p style="margin:10px 0 0;font-size:13px;opacity:0.9">Tu agenda y prioridades del día en BARITUR PRO</p>
+    <p style="margin:10px 0 0;font-size:13px;opacity:0.9">Tu agenda y prioridades del día en Heredia</p>
   </div>
 
   ${nothingUrgent ? `
@@ -280,7 +280,7 @@ export function buildBriefingHtml(data: BriefingData): string {
   </div>
 
   <p style="margin-top:32px;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:16px;text-align:center">
-    BARITUR PRO · Gestión de herencias y sucesiones en España<br>
+    Heredia · Gestión de herencias y sucesiones en España<br>
     Generado automáticamente el ${now.toLocaleString("es-ES")}
   </p>
 </body>

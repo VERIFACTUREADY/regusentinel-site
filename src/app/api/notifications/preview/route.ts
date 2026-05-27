@@ -12,7 +12,7 @@ import { classifyCases, buildHtmlDigest } from "@/lib/digest-builder";
 
 export const dynamic = "force-dynamic";
 
-const APP_URL = process.env.NEXTAUTH_URL || "https://app.baritur.pro";
+const APP_URL = process.env.NEXTAUTH_URL || "https://app.heredia.app";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);

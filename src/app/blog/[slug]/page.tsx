@@ -13,16 +13,16 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const post = getPostBySlug(params.slug);
   if (!post) return {};
   return {
-    title: `${post.title} — BARITUR PRO`,
+    title: `${post.title} — Heredia`,
     description: post.description,
-    alternates: { canonical: `https://bariturpro.com/blog/${post.slug}` },
+    alternates: { canonical: `https://heredia.app/blog/${post.slug}` },
     openGraph: {
       title: post.title,
       description: post.description,
       type: "article",
       publishedTime: post.publishedAt,
       modifiedTime: post.updatedAt ?? post.publishedAt,
-      authors: ["BARITUR PRO"],
+      authors: ["Heredia"],
       tags: post.tags,
     },
     keywords: post.tags,
@@ -124,13 +124,13 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
     description: post.description,
     datePublished: post.publishedAt,
     dateModified: post.updatedAt ?? post.publishedAt,
-    author: { "@type": "Organization", name: "BARITUR PRO" },
+    author: { "@type": "Organization", name: "Heredia" },
     publisher: {
       "@type": "Organization",
-      name: "BARITUR PRO",
-      logo: { "@type": "ImageObject", url: "https://bariturpro.com/icon" },
+      name: "Heredia",
+      logo: { "@type": "ImageObject", url: "https://heredia.app/icon" },
     },
-    mainEntityOfPage: { "@type": "WebPage", "@id": `https://bariturpro.com/blog/${post.slug}` },
+    mainEntityOfPage: { "@type": "WebPage", "@id": `https://heredia.app/blog/${post.slug}` },
     keywords: post.tags.join(", "),
   };
 
@@ -183,7 +183,7 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
           {/* Author / about */}
           <div className="mt-8 bg-gray-50 rounded-xl p-5 border">
             <p className="text-sm text-gray-700">
-              <strong>BARITUR PRO</strong> es la plataforma SaaS para gestorías y funerarias que automatiza el seguimiento del Impuesto de Sucesiones, plazos legales y trámites post-fallecimiento en España.
+              <strong>Heredia</strong> es la plataforma SaaS para gestorías y funerarias que automatiza el seguimiento del Impuesto de Sucesiones, plazos legales y trámites post-fallecimiento en España.
             </p>
             <Link href="/#demo" className="mt-3 inline-block text-sm font-medium text-primary hover:underline">
               Probar gratis 14 días →

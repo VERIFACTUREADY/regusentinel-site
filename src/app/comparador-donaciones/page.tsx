@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     "modelo 651 por comunidad",
     "bonificacion donaciones autonomica",
   ],
-  alternates: { canonical: "https://bariturpro.com/comparador-donaciones" },
+  alternates: { canonical: "https://heredia.app/comparador-donaciones" },
   openGraph: {
     title: "Comparador del Impuesto de Donaciones por CCAA",
     description: "Cuánto tributa una donación en cada comunidad autónoma. Tabla interactiva 2025.",

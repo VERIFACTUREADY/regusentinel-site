@@ -1,7 +1,7 @@
 /**
  * Notificaciones outbound a sistemas del cliente (plan Firma):
  *   - Slack incoming webhook (mensaje formateado).
- *   - Webhook genérico HTTP POST + firma HMAC-SHA256 en X-BARITUR-Signature.
+ *   - Webhook genérico HTTP POST + firma HMAC-SHA256 en X-HEREDIA-Signature.
  *
  * Cada función es pura desde el punto de vista del proceso: hace fetch,
  * devuelve { ok, status, error } y no toca DB. El llamador es responsable
@@ -172,7 +172,7 @@ export async function sendSlackNotification(
 
 /**
  * Calcula la firma HMAC-SHA256 de `body` con `secret`. Se envía como
- * "sha256=hex" en el header X-BARITUR-Signature. El cliente puede
+ * "sha256=hex" en el header X-HEREDIA-Signature. El cliente puede
  * verificarla para descartar requests no firmados.
  */
 export function signWebhookPayload(secret: string, body: string): string {
@@ -199,10 +199,10 @@ export async function sendCustomWebhook(
   const body = JSON.stringify(event);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "User-Agent": "BARITUR-PRO/1.0",
-    "X-BARITUR-Event": event.event,
+    "User-Agent": "Heredia/1.0",
+    "X-HEREDIA-Event": event.event,
   };
-  if (secret) headers["X-BARITUR-Signature"] = signWebhookPayload(secret, body);
+  if (secret) headers["X-HEREDIA-Signature"] = signWebhookPayload(secret, body);
 
   try {
     const res = await fetchWithTimeout(url, { method: "POST", headers, body });

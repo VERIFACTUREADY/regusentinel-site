@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { HerediaMark } from "@/components/heredia-mark";
 
 interface Props {
   demoEnabled: boolean;
@@ -54,7 +55,7 @@ export function LoginForm({ demoEnabled, ssoEnabled = false }: Props) {
     setDemoLoading(true);
     try {
       const result = await signIn("credentials", {
-        email: "operador@baritur.com",
+        email: "operador@heredia.app",
         password: "admin123",
         redirect: false,
       });
@@ -78,10 +79,8 @@ export function LoginForm({ demoEnabled, ssoEnabled = false }: Props) {
 
       <div className="relative w-full max-w-md">
         <Link href="/" className="flex items-center justify-center gap-2.5 mb-8">
-          <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-indigo-500 flex items-center justify-center shadow-lg shadow-primary/40">
-            <span className="text-white font-bold text-lg">B</span>
-          </span>
-          <span className="text-xl font-bold text-white tracking-tight">BARITUR PRO</span>
+          <HerediaMark className="w-10 h-10" />
+          <span className="text-xl font-semibold text-white tracking-tight">Heredia</span>
         </Link>
 
         <div className="bg-white p-7 sm:p-8 rounded-2xl shadow-2xl shadow-black/30 border border-white/10">
@@ -195,7 +194,7 @@ export function LoginForm({ demoEnabled, ssoEnabled = false }: Props) {
         </p>
 
         <p className="text-center text-[11px] text-slate-500 mt-6">
-          BARITUR no presta asesoramiento jurídico ni fiscal individual.
+          Heredia no presta asesoramiento jurídico ni fiscal individual.
         </p>
       </div>
     </div>

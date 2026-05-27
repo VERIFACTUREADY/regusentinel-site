@@ -95,8 +95,8 @@ export async function POST(req: NextRequest) {
     try {
       await sendEmail({
         to: data.email,
-        subject: "Invitacion a BARITUR PRO",
-        html: `<p>Has sido invitado a unirte a BARITUR PRO.</p>
+        subject: "Invitacion a Heredia",
+        html: `<p>Has sido invitado a unirte a Heredia.</p>
                <p>Accede con tu email: ${data.email}</p>
                <p><a href="${process.env.APP_URL}/login">Iniciar sesion</a></p>`,
       });

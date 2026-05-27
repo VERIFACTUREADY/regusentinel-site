@@ -4,7 +4,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "API pública gratuita ISD — BARITUR PRO Developers",
+  title: "API pública gratuita ISD — Heredia Developers",
   description:
     "API REST pública y gratuita para calcular el Impuesto sobre Sucesiones, comparar bonificaciones por CCAA y detectar riesgos de plazos. Sin autenticación. Rate limit 60 req/min.",
   keywords: [
@@ -15,11 +15,11 @@ export const metadata: Metadata = {
     "api gestoria",
   ],
   alternates: {
-    canonical: "https://bariturpro.com/docs/api",
+    canonical: "https://heredia.app/docs/api",
   },
 };
 
-const BASE = "https://bariturpro.com";
+const BASE = "https://heredia.app";
 
 export default function ApiDocsPage() {
   return (
@@ -55,7 +55,7 @@ export default function ApiDocsPage() {
         <section className="grid sm:grid-cols-4 gap-3">
           <div className="bg-white rounded-xl border p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Base URL</p>
-            <p className="font-mono text-sm font-bold text-gray-900 mt-1 break-all">bariturpro.com</p>
+            <p className="font-mono text-sm font-bold text-gray-900 mt-1 break-all">heredia.app</p>
           </div>
           <div className="bg-white rounded-xl border p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Versión</p>

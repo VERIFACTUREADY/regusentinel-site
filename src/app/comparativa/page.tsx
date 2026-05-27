@@ -4,10 +4,10 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "BARITUR PRO vs Excel, CRM genérico y software jurídico — Comparativa",
+  title: "Heredia vs Excel, CRM genérico y software jurídico — Comparativa",
   description:
-    "Cómo se compara BARITUR PRO con Excel, CRMs genéricos (HubSpot, Pipedrive) y software jurídico-fiscal tradicional para la gestión de herencias y el ISD.",
-  alternates: { canonical: "https://bariturpro.com/comparativa" },
+    "Cómo se compara Heredia con Excel, CRMs genéricos (HubSpot, Pipedrive) y software jurídico-fiscal tradicional para la gestión de herencias y el ISD.",
+  alternates: { canonical: "https://heredia.app/comparativa" },
 };
 
 interface FeatureRow {
@@ -16,7 +16,7 @@ interface FeatureRow {
   excel: "yes" | "partial" | "no";
   crm: "yes" | "partial" | "no";
   juridico: "yes" | "partial" | "no";
-  baritur: "yes" | "partial" | "no";
+  heredia: "yes" | "partial" | "no";
 }
 
 const FEATURES: FeatureRow[] = [
@@ -26,7 +26,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Borrador del Modelo 650 en PDF",
@@ -34,7 +34,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Radar ISD — vigilancia de los 17 calendarios autonómicos",
@@ -42,7 +42,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Plantillas de tareas precargadas",
@@ -50,7 +50,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Portal Familia con tu marca",
@@ -58,7 +58,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "no",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Pack para banco automático",
@@ -66,7 +66,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "no",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Cumplimiento RGPD post-mortem específico",
@@ -74,7 +74,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "partial",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Audit trail completo",
@@ -82,7 +82,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "partial",
     juridico: "yes",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Búsqueda global y dashboard de cartera",
@@ -90,7 +90,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "yes",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Especialización en herencias y post-mortem",
@@ -98,7 +98,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Coste mensual",
@@ -106,7 +106,7 @@ const FEATURES: FeatureRow[] = [
     excel: "yes",
     crm: "no",
     juridico: "no",
-    baritur: "yes",
+    heredia: "yes",
   },
 ];
 
@@ -149,7 +149,7 @@ export default function ComparativaPage() {
         <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
         <div className="relative max-w-5xl mx-auto px-4 py-12 sm:py-14">
           <h1 className="text-3xl sm:text-4xl font-bold mb-3">
-            BARITUR PRO vs alternativas
+            Heredia vs alternativas
           </h1>
           <p className="text-base sm:text-lg text-blue-100 max-w-3xl">
             Por qué un software especializado en herencias y post-mortem supera a las hojas de cálculo,
@@ -178,7 +178,7 @@ export default function ComparativaPage() {
                     Software<br />jurídico
                   </th>
                   <th className="px-3 py-4 text-center text-xs font-bold text-primary uppercase tracking-wider bg-blue-50">
-                    BARITUR<br />PRO
+                    Heredia
                   </th>
                 </tr>
               </thead>
@@ -192,7 +192,7 @@ export default function ComparativaPage() {
                     <td className="px-3 py-3 text-center"><Cell v={f.excel} /></td>
                     <td className="px-3 py-3 text-center"><Cell v={f.crm} /></td>
                     <td className="px-3 py-3 text-center"><Cell v={f.juridico} /></td>
-                    <td className="px-3 py-3 text-center bg-blue-50/50"><Cell v={f.baritur} /></td>
+                    <td className="px-3 py-3 text-center bg-blue-50/50"><Cell v={f.heredia} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -266,7 +266,7 @@ export default function ComparativaPage() {
       {/* Why we win */}
       <div className="max-w-4xl mx-auto px-4 pb-12">
         <div className="bg-white rounded-2xl border p-6 sm:p-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Por qué BARITUR PRO es distinto</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Por qué Heredia es distinto</h2>
           <div className="grid sm:grid-cols-2 gap-5">
             {[
               {
@@ -326,7 +326,7 @@ export default function ComparativaPage() {
                 href="/#demo"
                 className="px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-lg text-sm text-center transition"
               >
-                Probar BARITUR PRO 14 días
+                Probar Heredia 14 días
               </Link>
             </div>
           </div>

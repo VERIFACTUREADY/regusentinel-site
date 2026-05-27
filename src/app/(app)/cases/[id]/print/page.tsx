@@ -250,7 +250,7 @@ export default async function CasePrintPage({ params }: { params: { id: string }
 
       {/* Footer */}
       <div className="border-t pt-4 text-xs text-gray-400 text-center">
-        BARITUR PRO — Gestion post-mortem profesional — {new Date().toLocaleDateString("es-ES")}
+        Heredia — Gestion post-mortem profesional — {new Date().toLocaleDateString("es-ES")}
       </div>
     </div>
   );

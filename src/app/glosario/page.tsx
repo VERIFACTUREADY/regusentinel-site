@@ -5,10 +5,10 @@ import { SiteFooter } from "@/components/site-footer";
 import { GLOSSARY, GLOSSARY_CATEGORIES } from "@/lib/glossary";
 
 export const metadata: Metadata = {
-  title: "Glosario del Impuesto de Sucesiones y Donaciones (ISD) — BARITUR PRO",
+  title: "Glosario del Impuesto de Sucesiones y Donaciones (ISD) — Heredia",
   description:
     "Diccionario de términos del ISD: base imponible, coeficiente multiplicador, bonificación autonómica, Modelo 650, plazos, RCSV y más de 30 términos explicados.",
-  alternates: { canonical: "https://bariturpro.com/glosario" },
+  alternates: { canonical: "https://heredia.app/glosario" },
   openGraph: {
     title: "Glosario ISD - Modelo 650 y Donaciones",
     description: "Diccionario completo de términos del Impuesto sobre Sucesiones y Donaciones",
@@ -37,7 +37,7 @@ export default function GlosarioPage() {
       "@type": "DefinedTerm",
       name: t.term,
       description: t.definition,
-      url: `https://bariturpro.com/glosario/${t.slug}`,
+      url: `https://heredia.app/glosario/${t.slug}`,
     })),
   };
 

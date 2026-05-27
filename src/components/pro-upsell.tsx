@@ -28,7 +28,7 @@ export function ProUpsell({
             ¿Tramitas herencias profesionalmente?
           </h2>
           <p className="mt-3 text-slate-300 max-w-xl mx-auto">
-            Las herramientas gratuitas son una probada. El trabajo real lo hace BARITUR PRO.
+            Las herramientas gratuitas son una probada. El trabajo real lo hace Heredia.
           </p>
         </div>
 
@@ -57,7 +57,7 @@ export function ProUpsell({
 
           {/* Pro */}
           <div className="rounded-2xl border border-indigo-400/30 bg-gradient-to-b from-indigo-500/15 to-transparent p-6 ring-1 ring-inset ring-white/5">
-            <p className="text-xs font-bold uppercase tracking-wider text-indigo-300 mb-3">BARITUR PRO · el producto</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-indigo-300 mb-3">Heredia · el producto</p>
             <p className="text-sm text-slate-200 mb-4">
               Toda la operación de cada herencia, automatizada y bajo control.
             </p>
@@ -84,7 +84,7 @@ export function ProUpsell({
             href="/#demo"
             className="inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-white text-primary text-base font-bold rounded-xl shadow-xl hover:-translate-y-0.5 transition-all"
           >
-            Probar BARITUR PRO · 14 días gratis
+            Probar Heredia · 14 días gratis
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>

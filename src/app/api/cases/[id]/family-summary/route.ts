@@ -36,7 +36,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     where: { id: session.user.orgId },
     select: { name: true },
   });
-  const orgName = org?.name ?? "BARITUR PRO";
+  const orgName = org?.name ?? "Heredia";
 
   const tasks: FamilySummaryTask[] = c.tasks.map((t) => ({
     title: t.title,

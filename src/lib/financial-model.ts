@@ -1,5 +1,5 @@
 /**
- * Modelo financiero del proyecto BARITUR PRO.
+ * Modelo financiero del proyecto Heredia.
  *
  * Motor puro de proyeccion a 36 meses con tres ejes:
  *   1. Adquisicion (SEO traffic -> free tool sessions -> trials -> paid)
@@ -233,7 +233,7 @@ export function projectionToCSV(p: FinancialProjection): string {
   const lines: string[] = [];
 
   // Header summary
-  lines.push("BARITUR PRO - Modelo financiero a 36 meses");
+  lines.push("Heredia - Modelo financiero a 36 meses");
   lines.push("");
   lines.push(`ARPU medio (€/mes);${p.arpu}`);
   lines.push(`Break-even mes;${p.breakEvenMonth ?? "n/a"}`);

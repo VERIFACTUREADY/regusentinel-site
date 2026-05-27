@@ -11,7 +11,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const EMAIL_FROM = process.env.EMAIL_FROM || "noreply@baritur.pro";
+const EMAIL_FROM = process.env.EMAIL_FROM || "noreply@heredia.app";
 
 interface SendEmailParams {
   to: string;
@@ -43,7 +43,7 @@ export async function sendPortalLink({
   name: string;
   portalUrl: string;
 }) {
-  const subject = "Acceso a su portal de seguimiento — BARITUR PRO";
+  const subject = "Acceso a su portal de seguimiento — Heredia";
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #1a1a2e;">Hola ${name},</h2>
@@ -62,7 +62,7 @@ export async function sendPortalLink({
         Si no solicitó este acceso, puede ignorar este correo.
       </p>
       <hr style="border: none; border-top: 1px solid #eee; margin-top: 32px;" />
-      <p style="color: #999; font-size: 12px;">BARITUR PRO — Gestión post-mortem profesional</p>
+      <p style="color: #999; font-size: 12px;">Heredia — Gestión post-mortem profesional</p>
     </div>
   `;
 
@@ -154,7 +154,7 @@ export async function sendIsdDeadlineAlert({
       </p>
       <hr style="border: none; border-top: 1px solid #eee; margin-top: 32px;" />
       <p style="color: #999; font-size: 12px;">
-        BARITUR PRO — Motor de plazos ISD. Este aviso se genera automaticamente; no respondas a este correo.
+        Heredia — Motor de plazos ISD. Este aviso se genera automaticamente; no respondas a este correo.
       </p>
     </div>
   `;
@@ -231,7 +231,7 @@ export async function sendNewLeadNotification({
         </a>
       </p>
       <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
-      <p style="color:#999;font-size:12px;">BARITUR PRO · Notificación automática de lead</p>
+      <p style="color:#999;font-size:12px;">Heredia · Notificación automática de lead</p>
     </div>
   `;
 
@@ -268,8 +268,8 @@ export async function sendTrialExpiringNotification({
 
   const subject =
     daysLeft <= 1
-      ? `Tu trial de BARITUR PRO expira manana — ${orgName}`
-      : `Tu trial de BARITUR PRO expira en ${daysLeft} dias — ${orgName}`;
+      ? `Tu trial de Heredia expira manana — ${orgName}`
+      : `Tu trial de Heredia expira en ${daysLeft} dias — ${orgName}`;
 
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
@@ -280,18 +280,18 @@ export async function sendTrialExpiringNotification({
         expira el <strong>${expiresStr}</strong> (${daysLeft === 1 ? "manana" : `en ${daysLeft} dias`}).
       </p>
       <p style="font-size:15px;color:#333;">
-        Para seguir usando BARITUR PRO sin interrupcion, activa tu suscripcion desde el panel
+        Para seguir usando Heredia sin interrupcion, activa tu suscripcion desde el panel
         de facturacion o contacta con nuestro equipo.
       </p>
       <p style="text-align:center;margin:32px 0;">
-        <a href="https://baritur.pro/billing"
+        <a href="https://heredia.app/billing"
            style="background-color:#1e40af;color:white;padding:12px 32px;
                   border-radius:6px;text-decoration:none;font-weight:600;">
           Activar suscripcion
         </a>
       </p>
       <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
-      <p style="color:#999;font-size:12px;">BARITUR PRO — Gestion post-mortem profesional</p>
+      <p style="color:#999;font-size:12px;">Heredia — Gestion post-mortem profesional</p>
     </div>
   `;
 
@@ -316,7 +316,7 @@ export async function sendDocumentReminder({
     .map((doc) => `<li>${doc}</li>`)
     .join("\n");
 
-  const subject = "Documentación pendiente — BARITUR PRO";
+  const subject = "Documentación pendiente — Heredia";
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #1a1a2e;">Hola ${name},</h2>
@@ -338,7 +338,7 @@ export async function sendDocumentReminder({
         Si ya ha enviado estos documentos, puede ignorar este correo.
       </p>
       <hr style="border: none; border-top: 1px solid #eee; margin-top: 32px;" />
-      <p style="color: #999; font-size: 12px;">BARITUR PRO — Gestión post-mortem profesional</p>
+      <p style="color: #999; font-size: 12px;">Heredia — Gestión post-mortem profesional</p>
     </div>
   `;
 
@@ -361,7 +361,7 @@ export async function sendWelcomeEmail({
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
       <div style="background:#1e40af;padding:24px;border-radius:8px 8px 0 0;text-align:center;">
-        <h1 style="color:white;margin:0;font-size:24px;">BARITUR PRO</h1>
+        <h1 style="color:white;margin:0;font-size:24px;">Heredia</h1>
       </div>
       <div style="padding:32px 24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
         <h2 style="color:#1a1a2e;margin-top:0;">Bienvenido, ${name}</h2>
@@ -380,7 +380,7 @@ export async function sendWelcomeEmail({
           </ol>
         </div>
         <p style="text-align:center;margin:32px 0;">
-          <a href="https://baritur.pro/dashboard"
+          <a href="https://heredia.app/dashboard"
              style="background-color:#1e40af;color:white;padding:12px 32px;
                     border-radius:6px;text-decoration:none;font-weight:600;">
             Ir al Dashboard
@@ -388,17 +388,17 @@ export async function sendWelcomeEmail({
         </p>
         <p style="font-size:13px;color:#666;">
           Si tienes dudas, responde a este email o escribe a
-          <a href="mailto:soporte@baritur.pro" style="color:#1e40af;">soporte@baritur.pro</a>.
+          <a href="mailto:soporte@heredia.app" style="color:#1e40af;">soporte@heredia.app</a>.
         </p>
         <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
-        <p style="color:#999;font-size:12px;">BARITUR PRO — Gestion post-mortem profesional</p>
+        <p style="color:#999;font-size:12px;">Heredia — Gestion post-mortem profesional</p>
       </div>
     </div>
   `;
 
   return sendEmail({
     to: email,
-    subject: `Bienvenido a BARITUR PRO — Tu trial de ${trialDays} dias ha comenzado`,
+    subject: `Bienvenido a Heredia — Tu trial de ${trialDays} dias ha comenzado`,
     html,
   });
 }

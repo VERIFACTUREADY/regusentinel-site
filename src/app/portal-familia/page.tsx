@@ -5,7 +5,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { Reveal } from "@/components/reveal";
 
 export const metadata: Metadata = {
-  title: "Portal Familia — Tus clientes ven su expediente sin llamarte | BARITUR PRO",
+  title: "Portal Familia — Tus clientes ven su expediente sin llamarte | Heredia",
   description:
     "El Portal Familia muestra a los herederos el estado del expediente, qué documentos faltan, qué plazos quedan y un chat directo con su gestor. Menos llamadas, más confianza, cero clientes perdidos por opacidad.",
   keywords: [
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     "software gestoria portal",
     "experiencia cliente sucesiones",
   ],
-  alternates: { canonical: "https://bariturpro.com/portal-familia" },
+  alternates: { canonical: "https://heredia.app/portal-familia" },
   openGraph: {
     title: "Portal Familia — La transparencia que las familias esperan",
     description:
@@ -49,7 +49,7 @@ const FEATURES = [
   {
     icon: "M12 4v16m8-8H4",
     title: "Subida de documentos arrastrando",
-    desc: "El heredero arrastra el PDF de la escritura. BARITUR lo guarda en el expediente, lo nombra correctamente y avisa al gestor sin que la familia tenga que llamar.",
+    desc: "El heredero arrastra el PDF de la escritura. Heredia lo guarda en el expediente, lo nombra correctamente y avisa al gestor sin que la familia tenga que llamar.",
   },
   {
     icon: "M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z",
@@ -159,7 +159,7 @@ export default function PortalFamiliaPage() {
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                   </div>
-                  <span className="text-xs text-slate-500 font-mono mx-auto pr-12">bariturpro.com/portal/h7g3-pkz2-mxnt</span>
+                  <span className="text-xs text-slate-500 font-mono mx-auto pr-12">heredia.app/portal/h7g3-pkz2-mxnt</span>
                 </div>
 
                 <div className="p-5 sm:p-7">

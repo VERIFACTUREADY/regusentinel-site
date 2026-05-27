@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 
 export const metadata = {
-  title: "Actividad del portal — BARITUR PRO",
+  title: "Actividad del portal — Heredia",
   robots: { index: false },
 };
 

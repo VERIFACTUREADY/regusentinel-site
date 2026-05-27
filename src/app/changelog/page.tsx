@@ -3,9 +3,9 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Changelog — BARITUR PRO",
-  description: "Novedades y actualizaciones de BARITUR PRO. Software de gestion de herencias para gestorias.",
-  alternates: { canonical: "https://baritur.pro/changelog" },
+  title: "Changelog — Heredia",
+  description: "Novedades y actualizaciones de Heredia. Software de gestion de herencias para gestorias.",
+  alternates: { canonical: "https://heredia.app/changelog" },
 };
 
 const entries = [
@@ -18,7 +18,7 @@ const entries = [
       "Importación nativa de Excel (.xlsx) en el endpoint /api/cases/import. SheetJS lee la primera hoja, soporta hasta 200 filas, mantiene la validación CSV existente",
       "Slack notifications (plan Firma) — mensaje en bloques con urgencia coloreada y botón al expediente",
       "Microsoft Teams (plan Firma) — MessageCard con themeColor por urgencia y OpenUri al expediente",
-      "Webhook genérico (plan Firma) — POST JSON con firma HMAC-SHA256 en X-BARITUR-Signature. Helper verifyWebhookSignature para clientes",
+      "Webhook genérico (plan Firma) — POST JSON con firma HMAC-SHA256 en X-HEREDIA-Signature. Helper verifyWebhookSignature para clientes",
       "Google Workspace SSO (plan Firma) — provider NextAuth opt-in via env. Restricción opcional por dominio Workspace (hd)",
       "Calendar deep links — botones \"+ Google\" y \"+ Outlook / .ics\" en cada plazo del expediente",
       "WhatsApp deep link en el contacto del expediente con texto pre-rellenado (ref + causante)",
@@ -119,7 +119,7 @@ export default function ChangelogPage() {
       <main className="max-w-3xl mx-auto px-4 py-12">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Changelog</h1>
         <p className="text-gray-500 mb-10">
-          Novedades, mejoras y correcciones en BARITUR PRO. Publicamos actualizaciones cada semana.
+          Novedades, mejoras y correcciones en Heredia. Publicamos actualizaciones cada semana.
         </p>
 
         <div className="space-y-0">

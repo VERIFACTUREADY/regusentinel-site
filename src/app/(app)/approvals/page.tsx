@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { ApprovalsQueue } from "./approvals-queue";
 
 export const metadata = {
-  title: "Aprobaciones — BARITUR PRO",
+  title: "Aprobaciones — Heredia",
   robots: { index: false },
 };
 

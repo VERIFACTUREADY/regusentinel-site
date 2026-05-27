@@ -5,12 +5,12 @@ import { SiteFooter } from "@/components/site-footer";
 import { BLOG_POSTS } from "@/lib/blog-posts";
 
 export const metadata: Metadata = {
-  title: "Blog BARITUR PRO — Guías sobre el Impuesto de Sucesiones y trámites de herencia",
+  title: "Blog Heredia — Guías sobre el Impuesto de Sucesiones y trámites de herencia",
   description:
     "Artículos sobre plazos del Modelo 650, certificados, valor de referencia del catastro, comparativas entre CCAA y trámites tras una defunción en España.",
-  alternates: { canonical: "https://bariturpro.com/blog" },
+  alternates: { canonical: "https://heredia.app/blog" },
   openGraph: {
-    title: "Blog BARITUR PRO",
+    title: "Blog Heredia",
     description: "Guías prácticas sobre ISD, Modelo 650 y trámites de herencia",
     type: "website",
   },
@@ -38,14 +38,14 @@ export default function BlogIndexPage() {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Blog",
-    name: "Blog BARITUR PRO",
+    name: "Blog Heredia",
     description: "Guías prácticas sobre ISD, Modelo 650 y trámites de herencia en España",
     blogPost: sorted.map((p) => ({
       "@type": "BlogPosting",
       headline: p.title,
       description: p.description,
       datePublished: p.publishedAt,
-      url: `https://bariturpro.com/blog/${p.slug}`,
+      url: `https://heredia.app/blog/${p.slug}`,
     })),
   };
 
@@ -62,7 +62,7 @@ export default function BlogIndexPage() {
           <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl animate-float-slow" />
           <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
           <div className="relative max-w-5xl mx-auto px-4 py-12 sm:py-16">
-            <h1 className="text-3xl sm:text-4xl font-bold mb-3">Blog BARITUR PRO</h1>
+            <h1 className="text-3xl sm:text-4xl font-bold mb-3">Blog Heredia</h1>
             <p className="text-base sm:text-lg text-blue-100 max-w-2xl">
               Guías prácticas sobre el Impuesto de Sucesiones, Modelo 650, plazos legales,
               valor de referencia del Catastro y trámites tras una defunción en España.
