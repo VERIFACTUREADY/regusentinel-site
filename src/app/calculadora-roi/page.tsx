@@ -53,14 +53,15 @@ export default function ROIPage() {
           </p>
           <ol className="space-y-3 text-sm text-gray-700 list-decimal pl-5">
             <li>
-              <strong>Horas administrativas evitadas:</strong> el 40% del tiempo dedicado a tareas repetitivas
+              <strong>Horas administrativas evitadas:</strong> el 30% del tiempo dedicado a tareas repetitivas
               (recordatorios, plazos, redacción de mails, seguimiento documental, generación de borradores)
-              se elimina al automatizarlas. Aplicamos el coste/hora declarado.
+              se elimina al automatizarlas. El resto del expediente sigue siendo trabajo interpretativo
+              legal/fiscal. Aplicamos el coste/hora declarado.
             </li>
             <li>
               <strong>Errores evitados:</strong> 1 error costoso por cada 50 expedientes (recargos del 5-20%
               por presentación tardía, pérdida de bonificación autonómica, reclamaciones del cliente),
-              con coste medio de 350 €.
+              con coste medio de 1.200 € (≈10% sobre una cuota ISD típica de 12.000 € + intereses).
             </li>
             <li>
               <strong>Capacidad recuperada:</strong> las horas liberadas se convierten en expedientes

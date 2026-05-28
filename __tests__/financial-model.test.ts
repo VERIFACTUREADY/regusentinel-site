@@ -3,6 +3,7 @@ import {
   projectFinancials,
   projectionToCSV,
   DEFAULT_ASSUMPTIONS,
+  CONSERVATIVE_ASSUMPTIONS,
   type FinancialAssumptions,
 } from "../src/lib/financial-model";
 
@@ -38,18 +39,20 @@ describe("projectFinancials", () => {
     expect(p.monthly[35].totalCustomers).toBeGreaterThan(p.monthly[11].totalCustomers);
   });
 
-  it("MRR equals customers * ARPU", () => {
+  it("MRR is approximately customers * ARPU (tolerancia por redondeo independiente de cada campo)", () => {
     const p = projectFinancials(DEFAULT_ASSUMPTIONS);
     for (const row of p.monthly) {
-      const expected = Math.round(row.totalCustomers * p.arpu);
-      expect(Math.abs(row.mrr - expected)).toBeLessThanOrEqual(1);
+      // Customers y MRR se redondean por separado del float interno, asi
+      // que la identidad solo se mantiene con tolerancia ±ARPU/2.
+      const expected = row.totalCustomers * p.arpu;
+      expect(Math.abs(row.mrr - expected)).toBeLessThanOrEqual(p.arpu);
     }
   });
 
-  it("ARR equals MRR * 12", () => {
+  it("ARR is approximately MRR * 12", () => {
     const p = projectFinancials(DEFAULT_ASSUMPTIONS);
     for (const row of p.monthly) {
-      expect(row.arr).toBe(row.mrr * 12);
+      expect(Math.abs(row.arr - row.mrr * 12)).toBeLessThanOrEqual(12);
     }
   });
 
@@ -96,29 +99,78 @@ describe("projectFinancials", () => {
     expect(p.totalCapitalNeeded).toBe(Math.abs(minCash));
   });
 
-  it("annual revenue equals sum of monthly MRR for that year", () => {
+  it("annual revenue equals sum of monthly totalRevenue (MRR + setup)", () => {
     const p = projectFinancials(DEFAULT_ASSUMPTIONS);
     for (let y = 0; y < 3; y++) {
       const slice = p.monthly.slice(y * 12, (y + 1) * 12);
-      const sum = slice.reduce((s, r) => s + r.mrr, 0);
+      const sum = slice.reduce((s, r) => s + r.totalRevenue, 0);
       expect(p.annual[y].totalRevenue).toBe(Math.round(sum));
     }
   });
 
-  it("variable costs scale linearly with customers", () => {
+  it("variable costs scale approximately linearly with customers", () => {
     const p = projectFinancials(DEFAULT_ASSUMPTIONS);
     for (const row of p.monthly) {
       const expected = row.totalCustomers * DEFAULT_ASSUMPTIONS.variableCostPerCustomer;
-      expect(row.variableCost).toBe(Math.round(expected));
+      // Tolerancia: variableCost se redondea del float, totalCustomers tambien
+      // por separado, asi que diferencia maxima es variableCostPerCustomer.
+      expect(Math.abs(row.variableCost - expected)).toBeLessThanOrEqual(DEFAULT_ASSUMPTIONS.variableCostPerCustomer);
     }
   });
 
-  it("EBITDA = MRR - variable - fixed", () => {
+  it("EBITDA = totalRevenue - variable - CAC - fixed", () => {
     const p = projectFinancials(DEFAULT_ASSUMPTIONS);
     for (const row of p.monthly) {
-      const expected = row.mrr - row.variableCost - row.fixedOpex;
+      const expected = row.totalRevenue - row.variableCost - row.cacCost - row.fixedOpex;
       expect(Math.abs(row.ebitda - expected)).toBeLessThanOrEqual(1);
     }
+  });
+
+  it("setup revenue scales with new customers and weighted avg setup fee", () => {
+    const p = projectFinancials(DEFAULT_ASSUMPTIONS);
+    // Mix-weighted setup fee: 40% * 0 + 50% * 299 + 10% * 990 = 248.5
+    const expectedAvg = 248.5;
+    for (const row of p.monthly) {
+      const expected = row.newCustomersGross * expectedAvg;
+      // Tolerancia: ambos campos redondean del float interno por separado.
+      expect(Math.abs(row.setupRevenue - expected)).toBeLessThanOrEqual(expectedAvg);
+    }
+  });
+
+  it("CAC cost scales with new customers and per-customer CAC", () => {
+    const CAC = 80;
+    const p = projectFinancials(withOverrides({ cacPerNewCustomer: CAC }));
+    for (const row of p.monthly) {
+      const expected = row.newCustomersGross * CAC;
+      expect(Math.abs(row.cacCost - expected)).toBeLessThanOrEqual(CAC);
+    }
+  });
+
+  it("totalRevenue is approximately MRR + setupRevenue", () => {
+    const p = projectFinancials(DEFAULT_ASSUMPTIONS);
+    for (const row of p.monthly) {
+      expect(Math.abs(row.totalRevenue - (row.mrr + row.setupRevenue))).toBeLessThanOrEqual(2);
+    }
+  });
+});
+
+describe("CONSERVATIVE_ASSUMPTIONS scenario", () => {
+  it("produces meaningfully different (smaller) results than DEFAULT", () => {
+    const stretch = projectFinancials(DEFAULT_ASSUMPTIONS);
+    const conservative = projectFinancials(CONSERVATIVE_ASSUMPTIONS);
+    // Conservative debe tener menos clientes finales que stretch
+    expect(conservative.monthly[35].totalCustomers).toBeLessThan(stretch.monthly[35].totalCustomers);
+    // Capital necesario debe ser mayor en escenario conservador
+    expect(conservative.totalCapitalNeeded).toBeGreaterThan(stretch.totalCapitalNeeded);
+  });
+
+  it("includes CAC and setup fees in annual P&L", () => {
+    const p = projectFinancials(CONSERVATIVE_ASSUMPTIONS);
+    expect(p.annual[2].totalCac).toBeGreaterThan(0);
+    // Y3 totalRevenue debe incluir tanto MRR como setup
+    const y3Slice = p.monthly.slice(24, 36);
+    const setupY3 = y3Slice.reduce((s, r) => s + r.setupRevenue, 0);
+    expect(setupY3).toBeGreaterThan(0);
   });
 });
 

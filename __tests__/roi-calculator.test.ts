@@ -17,21 +17,21 @@ describe("calculateROI", () => {
     expect(r.costePlanMensual).toBe(749);
   });
 
-  it("computes hours saved per expediente at 40% of input hours", () => {
+  it("computes hours saved per expediente at 30% of input hours", () => {
     const r = calculateROI({ expedientesPorMes: 10, horasPorExpediente: 10, costeHora: 30, plan: "INICIA" });
-    expect(r.horasAhorradasPorExpediente).toBe(4);
-    expect(r.horasAhorradasMes).toBe(40);
+    expect(r.horasAhorradasPorExpediente).toBe(3);
+    expect(r.horasAhorradasMes).toBe(30);
   });
 
   it("computes hours savings in euros", () => {
     const r = calculateROI({ expedientesPorMes: 10, horasPorExpediente: 10, costeHora: 30, plan: "INICIA" });
-    expect(r.ahorroHorasMensual).toBe(40 * 30); // 1200
+    expect(r.ahorroHorasMensual).toBe(30 * 30); // 900
   });
 
   it("includes error-avoidance value", () => {
     const r = calculateROI({ expedientesPorMes: 50, horasPorExpediente: 8, costeHora: 30, plan: "DESPACHO" });
-    // 50 expedientes * 1/50 prob error * 350 € = 350 €
-    expect(r.ahorroErroresMensual).toBe(350);
+    // 50 expedientes * 1/50 prob error * 1200 € = 1200 €
+    expect(r.ahorroErroresMensual).toBe(1200);
   });
 
   it("computes net savings (savings minus plan cost)", () => {
@@ -72,18 +72,18 @@ describe("calculateROI", () => {
 });
 
 describe("recommendPlan", () => {
-  it("recommends INICIA for low volume", () => {
+  it("recommends INICIA for low volume (≤15 exp/mes)", () => {
     expect(recommendPlan(5)).toBe("INICIA");
-    expect(recommendPlan(30)).toBe("INICIA");
+    expect(recommendPlan(15)).toBe("INICIA");
   });
 
-  it("recommends DESPACHO for medium volume", () => {
-    expect(recommendPlan(31)).toBe("DESPACHO");
-    expect(recommendPlan(100)).toBe("DESPACHO");
+  it("recommends DESPACHO for medium volume (16–50 exp/mes)", () => {
+    expect(recommendPlan(16)).toBe("DESPACHO");
+    expect(recommendPlan(50)).toBe("DESPACHO");
   });
 
-  it("recommends FIRMA for high volume", () => {
-    expect(recommendPlan(101)).toBe("FIRMA");
+  it("recommends FIRMA for high volume (>50 exp/mes)", () => {
+    expect(recommendPlan(51)).toBe("FIRMA");
     expect(recommendPlan(500)).toBe("FIRMA");
   });
 });

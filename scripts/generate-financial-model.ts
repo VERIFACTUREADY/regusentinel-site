@@ -18,10 +18,18 @@ import {
   projectFinancials,
   DEFAULT_ASSUMPTIONS,
   type FinancialAssumptions,
+  type PlanConfig,
 } from "../src/lib/financial-model";
 
 const OUT_DIR = join(process.cwd(), "public");
 const OUT_FILE = join(OUT_DIR, "heredia-modelo-financiero.xlsx");
+
+function setupFeeWeightedAvg(plans: FinancialAssumptions["plans"]): number {
+  const total = plans.INICIA.mix + plans.DESPACHO.mix + plans.FIRMA.mix;
+  if (total === 0) return 0;
+  const f = (p: PlanConfig) => (p.setupFee ?? 0) * p.mix;
+  return (f(plans.INICIA) + f(plans.DESPACHO) + f(plans.FIRMA)) / total;
+}
 
 // Helpers ─────────────────────────────────────────────────
 
@@ -54,6 +62,7 @@ const a = DEFAULT_ASSUMPTIONS;
 const arpu = a.plans.INICIA.price * a.plans.INICIA.mix +
              a.plans.DESPACHO.price * a.plans.DESPACHO.mix +
              a.plans.FIRMA.price * a.plans.FIRMA.mix;
+const avgSetupFee = setupFeeWeightedAvg(a.plans);
 
 // ─── HOJA 1: HIPOTESIS ────────────────────────────────────
 
@@ -122,18 +131,25 @@ function buildAssumptionsSheet(): XLSX.WorkSheet {
 
   setCell(ws, "A20", "PRICING Y MIX");
   setCell(ws, "C20", "valor");
+  setCell(ws, "E20", "setup fee");
 
   setCell(ws, "A21", "Precio INICIA");
   setCell(ws, "C21", a.plans.INICIA.price);
   setCell(ws, "D21", "EUR/mes");
+  setCell(ws, "E21", a.plans.INICIA.setupFee ?? 0);
+  setCell(ws, "F21", "EUR setup unico");
 
   setCell(ws, "A22", "Precio DESPACHO");
   setCell(ws, "C22", a.plans.DESPACHO.price);
   setCell(ws, "D22", "EUR/mes");
+  setCell(ws, "E22", a.plans.DESPACHO.setupFee ?? 0);
+  setCell(ws, "F22", "EUR setup unico");
 
   setCell(ws, "A23", "Precio FIRMA");
   setCell(ws, "C23", a.plans.FIRMA.price);
   setCell(ws, "D23", "EUR/mes");
+  setCell(ws, "E23", a.plans.FIRMA.setupFee ?? 0);
+  setCell(ws, "F23", "EUR setup unico");
 
   setCell(ws, "A25", "% mix INICIA");
   setCell(ws, "C25", a.plans.INICIA.mix);
@@ -153,7 +169,7 @@ function buildAssumptionsSheet(): XLSX.WorkSheet {
   setCell(ws, "A30", "Coste variable por cliente");
   setCell(ws, "C30", a.variableCostPerCustomer);
   setCell(ws, "D30", "EUR/cliente/mes");
-  setCell(ws, "E30", "Infra+AI+Stripe+Email");
+  setCell(ws, "E30", "Infra+AI+Stripe+Email+soporte");
 
   setCell(ws, "A31", "OPEX fijo mensual Y1");
   setCell(ws, "C31", a.fixedOpexY1);
@@ -169,13 +185,23 @@ function buildAssumptionsSheet(): XLSX.WorkSheet {
   setCell(ws, "D33", "EUR/mes");
   setCell(ws, "E33", "Soporte + sales + marketing");
 
-  setCell(ws, "A35", "ARPU MEDIO (calculado)");
-  setFormulaWithValue(ws, "C35", "C21*C25+C22*C26+C23*C27", arpu);
-  setCell(ws, "D35", "EUR/mes");
-  setCell(ws, "E35", "Mix-weighted (no editar; deriva de Pricing y Mix)");
+  setCell(ws, "A34", "CAC por nuevo cliente");
+  setCell(ws, "C34", a.cacPerNewCustomer);
+  setCell(ws, "D34", "EUR/cliente nuevo");
+  setCell(ws, "E34", "Blended: contenidos amortizados + paid puntual (0 si 100% organico)");
 
-  setRange(ws, "A1:E35");
-  setCols(ws, [36, 4, 14, 18, 60]);
+  setCell(ws, "A36", "ARPU MEDIO (calculado)");
+  setFormulaWithValue(ws, "C36", "C21*C25+C22*C26+C23*C27", arpu);
+  setCell(ws, "D36", "EUR/mes");
+  setCell(ws, "E36", "Mix-weighted (no editar; deriva de Pricing y Mix)");
+
+  setCell(ws, "A37", "SETUP FEE MEDIO (calculado)");
+  setFormulaWithValue(ws, "C37", "E21*C25+E22*C26+E23*C27", avgSetupFee);
+  setCell(ws, "D37", "EUR/cliente nuevo");
+  setCell(ws, "E37", "Mix-weighted (no editar; deriva de Setup y Mix)");
+
+  setRange(ws, "A1:F37");
+  setCols(ws, [36, 4, 14, 18, 14, 60]);
   return ws;
 }
 
@@ -187,8 +213,14 @@ function buildMonthlySheet(): XLSX.WorkSheet {
   setCell(ws, "A1", "PROYECCION MENSUAL - 36 MESES");
   setCell(ws, "A2", "Todas las cifras se recalculan al cambiar las Hipotesis");
 
-  const headers = ["Mes", "Visitas SEO", "Free tool sessions", "Trials", "Nuevos clientes", "Clientes churn", "Net new", "Total clientes", "MRR (EUR)", "ARR (EUR)", "Coste variable (EUR)", "OPEX fijo (EUR)", "EBITDA (EUR)", "Cash acumulado (EUR)"];
-  const cols = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"];
+  const headers = [
+    "Mes", "Visitas SEO", "Free tool sessions", "Trials", "Nuevos clientes",
+    "Clientes churn", "Net new", "Total clientes",
+    "MRR (EUR)", "ARR (EUR)", "Setup rev (EUR)", "Revenue total (EUR)",
+    "Coste variable (EUR)", "CAC (EUR)", "OPEX fijo (EUR)",
+    "EBITDA (EUR)", "Cash acumulado (EUR)",
+  ];
+  const cols = ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q"];
   headers.forEach((h, i) => setCell(ws, `${cols[i]}4`, h));
 
   const A_VISITS_INIT = "Hipotesis!$C$5";
@@ -205,7 +237,9 @@ function buildMonthlySheet(): XLSX.WorkSheet {
   const A_OPEX_Y1 = "Hipotesis!$C$31";
   const A_OPEX_Y2 = "Hipotesis!$C$32";
   const A_OPEX_Y3 = "Hipotesis!$C$33";
-  const A_ARPU = "Hipotesis!$C$35";
+  const A_CAC = "Hipotesis!$C$34";
+  const A_ARPU = "Hipotesis!$C$36";
+  const A_SETUP_AVG = "Hipotesis!$C$37";
 
   for (let m = 1; m <= 36; m++) {
     const row = m + 4;
@@ -242,21 +276,24 @@ function buildMonthlySheet(): XLSX.WorkSheet {
 
     setFormulaWithValue(ws, `I${row}`, `ROUND(H${row}*${A_ARPU},0)`, data.mrr);
     setFormulaWithValue(ws, `J${row}`, `I${row}*12`, data.arr);
-    setFormulaWithValue(ws, `K${row}`, `ROUND(H${row}*${A_VAR_COST},0)`, data.variableCost);
+    setFormulaWithValue(ws, `K${row}`, `ROUND(E${row}*${A_SETUP_AVG},0)`, data.setupRevenue);
+    setFormulaWithValue(ws, `L${row}`, `I${row}+K${row}`, data.totalRevenue);
+    setFormulaWithValue(ws, `M${row}`, `ROUND(H${row}*${A_VAR_COST},0)`, data.variableCost);
+    setFormulaWithValue(ws, `N${row}`, `ROUND(E${row}*${A_CAC},0)`, data.cacCost);
 
     const opexRef = m <= 12 ? A_OPEX_Y1 : m <= 24 ? A_OPEX_Y2 : A_OPEX_Y3;
-    setFormulaWithValue(ws, `L${row}`, opexRef, data.fixedOpex);
-    setFormulaWithValue(ws, `M${row}`, `I${row}-K${row}-L${row}`, data.ebitda);
+    setFormulaWithValue(ws, `O${row}`, opexRef, data.fixedOpex);
+    setFormulaWithValue(ws, `P${row}`, `L${row}-M${row}-N${row}-O${row}`, data.ebitda);
 
     if (m === 1) {
-      setFormulaWithValue(ws, `N${row}`, `M${row}`, data.cumulativeCash);
+      setFormulaWithValue(ws, `Q${row}`, `P${row}`, data.cumulativeCash);
     } else {
-      setFormulaWithValue(ws, `N${row}`, `N${row - 1}+M${row}`, data.cumulativeCash);
+      setFormulaWithValue(ws, `Q${row}`, `Q${row - 1}+P${row}`, data.cumulativeCash);
     }
   }
 
-  setRange(ws, "A1:N40");
-  setCols(ws, [6, 14, 18, 10, 14, 14, 10, 14, 14, 16, 18, 14, 14, 18]);
+  setRange(ws, "A1:Q40");
+  setCols(ws, [6, 14, 18, 10, 14, 14, 10, 14, 14, 16, 14, 16, 18, 12, 14, 14, 18]);
   return ws;
 }
 
@@ -266,10 +303,10 @@ function buildAnnualSheet(): XLSX.WorkSheet {
   const ws: XLSX.WorkSheet = {};
 
   setCell(ws, "A1", "RESUMEN ANUAL");
-  setCell(ws, "A2", "Calculado a partir de la Proyeccion Mensual");
+  setCell(ws, "A2", "Calculado a partir de la Proyeccion Mensual (Revenue = MRR + Setup)");
 
-  const headers = ["Anyo", "Clientes fin", "MRR fin (EUR)", "ARR fin (EUR)", "Ingresos (EUR)", "Coste var (EUR)", "OPEX fijo (EUR)", "EBITDA (EUR)", "Margen EBITDA"];
-  const cols = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
+  const headers = ["Anyo", "Clientes fin", "MRR fin (EUR)", "ARR fin (EUR)", "Revenue total (EUR)", "Coste var (EUR)", "CAC (EUR)", "OPEX fijo (EUR)", "EBITDA (EUR)", "Margen EBITDA"];
+  const cols = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
   headers.forEach((h, i) => setCell(ws, `${cols[i]}4`, h));
 
   for (let y = 1; y <= 3; y++) {
@@ -282,25 +319,26 @@ function buildAnnualSheet(): XLSX.WorkSheet {
     setFormulaWithValue(ws, `B${row}`, `Proyeccion!H${endMonth}`, yData.endingCustomers);
     setFormulaWithValue(ws, `C${row}`, `Proyeccion!I${endMonth}`, yData.endingMrr);
     setFormulaWithValue(ws, `D${row}`, `Proyeccion!J${endMonth}`, yData.endingArr);
-    setFormulaWithValue(ws, `E${row}`, `SUM(Proyeccion!I${startMonth}:I${endMonth})`, yData.totalRevenue);
-    setFormulaWithValue(ws, `F${row}`, `SUM(Proyeccion!K${startMonth}:K${endMonth})`, yData.totalVariableCost);
-    setFormulaWithValue(ws, `G${row}`, `SUM(Proyeccion!L${startMonth}:L${endMonth})`, yData.totalFixedOpex);
-    setFormulaWithValue(ws, `H${row}`, `E${row}-F${row}-G${row}`, yData.ebitda);
-    setFormulaWithValue(ws, `I${row}`, `IF(E${row}=0,0,H${row}/E${row})`, yData.ebitdaMargin);
+    setFormulaWithValue(ws, `E${row}`, `SUM(Proyeccion!L${startMonth}:L${endMonth})`, yData.totalRevenue);
+    setFormulaWithValue(ws, `F${row}`, `SUM(Proyeccion!M${startMonth}:M${endMonth})`, yData.totalVariableCost);
+    setFormulaWithValue(ws, `G${row}`, `SUM(Proyeccion!N${startMonth}:N${endMonth})`, yData.totalCac);
+    setFormulaWithValue(ws, `H${row}`, `SUM(Proyeccion!O${startMonth}:O${endMonth})`, yData.totalFixedOpex);
+    setFormulaWithValue(ws, `I${row}`, `E${row}-F${row}-G${row}-H${row}`, yData.ebitda);
+    setFormulaWithValue(ws, `J${row}`, `IF(E${row}=0,0,I${row}/E${row})`, yData.ebitdaMargin);
   }
 
   setCell(ws, "A10", "BREAK-EVEN");
   setCell(ws, "A11", "Mes en que cash acumulado >= 0");
   if (projection.breakEvenMonth) {
-    setFormulaWithValue(ws, "C11", "MATCH(TRUE,Proyeccion!N5:N40>=0,0)", projection.breakEvenMonth);
+    setFormulaWithValue(ws, "C11", "MATCH(TRUE,Proyeccion!Q5:Q40>=0,0)", projection.breakEvenMonth);
   } else {
     setCell(ws, "C11", "n/a");
   }
   setCell(ws, "A12", "Capital inicial necesario (EUR)");
-  setFormulaWithValue(ws, "C12", "ABS(MIN(0,MIN(Proyeccion!N5:N40)))", projection.totalCapitalNeeded);
+  setFormulaWithValue(ws, "C12", "ABS(MIN(0,MIN(Proyeccion!Q5:Q40)))", projection.totalCapitalNeeded);
 
-  setRange(ws, "A1:I12");
-  setCols(ws, [36, 14, 14, 16, 18, 18, 16, 14, 14]);
+  setRange(ws, "A1:J12");
+  setCols(ws, [36, 14, 14, 16, 18, 18, 12, 16, 14, 14]);
   return ws;
 }
 
@@ -310,25 +348,26 @@ function buildCashFlowSheet(): XLSX.WorkSheet {
   const ws: XLSX.WorkSheet = {};
 
   setCell(ws, "A1", "CASH FLOW MENSUAL");
-  setCell(ws, "A2", "Ingresos cobrados, costes y posicion de tesoreria");
+  setCell(ws, "A2", "Ingresos (MRR + Setup), costes (variable + CAC + OPEX) y posicion de tesoreria");
 
-  const headers = ["Mes", "MRR (EUR)", "Coste variable (EUR)", "OPEX fijo (EUR)", "Cash flow del mes (EUR)", "Cash acumulado (EUR)"];
-  const cols = ["A", "B", "C", "D", "E", "F"];
+  const headers = ["Mes", "Revenue total (EUR)", "Coste variable (EUR)", "CAC (EUR)", "OPEX fijo (EUR)", "Cash flow del mes (EUR)", "Cash acumulado (EUR)"];
+  const cols = ["A", "B", "C", "D", "E", "F", "G"];
   headers.forEach((h, i) => setCell(ws, `${cols[i]}4`, h));
 
   for (let m = 1; m <= 36; m++) {
     const row = m + 4;
     const d = projection.monthly[m - 1];
     setCell(ws, `A${row}`, m);
-    setFormulaWithValue(ws, `B${row}`, `Proyeccion!I${row}`, d.mrr);
-    setFormulaWithValue(ws, `C${row}`, `Proyeccion!K${row}`, d.variableCost);
-    setFormulaWithValue(ws, `D${row}`, `Proyeccion!L${row}`, d.fixedOpex);
-    setFormulaWithValue(ws, `E${row}`, `B${row}-C${row}-D${row}`, d.ebitda);
-    setFormulaWithValue(ws, `F${row}`, `Proyeccion!N${row}`, d.cumulativeCash);
+    setFormulaWithValue(ws, `B${row}`, `Proyeccion!L${row}`, d.totalRevenue);
+    setFormulaWithValue(ws, `C${row}`, `Proyeccion!M${row}`, d.variableCost);
+    setFormulaWithValue(ws, `D${row}`, `Proyeccion!N${row}`, d.cacCost);
+    setFormulaWithValue(ws, `E${row}`, `Proyeccion!O${row}`, d.fixedOpex);
+    setFormulaWithValue(ws, `F${row}`, `B${row}-C${row}-D${row}-E${row}`, d.ebitda);
+    setFormulaWithValue(ws, `G${row}`, `Proyeccion!Q${row}`, d.cumulativeCash);
   }
 
-  setRange(ws, "A1:F40");
-  setCols(ws, [6, 14, 18, 14, 22, 18]);
+  setRange(ws, "A1:G40");
+  setCols(ws, [6, 18, 18, 12, 14, 22, 18]);
   return ws;
 }
 
@@ -337,37 +376,47 @@ function buildCashFlowSheet(): XLSX.WorkSheet {
 function buildScenariosSheet(): XLSX.WorkSheet {
   const ws: XLSX.WorkSheet = {};
 
-  setCell(ws, "A1", "ESCENARIOS COMPARADOS (resultados M36)");
-  setCell(ws, "A2", "Para usar: copia este Excel, edita Hipotesis con los valores de cada escenario y compara.");
+  setCell(ws, "A1", "ESCENARIOS COMPARADOS");
+  setCell(ws, "A2", "Este XLSX se genera con el escenario STRETCH. Para ver el escenario CONSERVATIVE, edita la hoja Hipotesis con los valores de la columna 'Conservador' o consulta src/lib/financial-model.ts (export CONSERVATIVE_ASSUMPTIONS).");
 
   const rows: (string | number | null)[][] = [
-    ["Variable", "Conservador", "Base", "Optimista"],
-    ["Visitas SEO mes 1", 100, 200, 400],
-    ["Crecimiento m-a-m inicial (x)", 1.30, 1.45, 1.60],
-    ["Crecimiento m-a-m maduro (x)", 1.08, 1.12, 1.18],
-    ["% free tools sobre visitas", 0.10, 0.15, 0.22],
-    ["% trials sobre free tools", 0.025, 0.03, 0.04],
-    ["% paid sobre trials", 0.25, 0.30, 0.40],
-    ["Churn Y1", 0.035, 0.025, 0.018],
-    ["Churn Y2", 0.025, 0.020, 0.015],
-    ["Churn Y3", 0.020, 0.015, 0.012],
-    [null, null, null, null],
-    ["Resultados aproximados M36 (de tu plan financiero):", null, null, null],
-    ["Clientes finales", 400, 870, 1500],
-    ["MRR fin (EUR/mes)", 140000, 305000, 525000],
-    ["ARR fin (EUR/anyo)", 1700000, 3660000, 6300000],
+    ["Variable", "Conservador", "Stretch (default)"],
+    ["Visitas SEO mes 1", 400, 200],
+    ["Crecimiento m-a-m inicial (x)", 1.28, 1.45],
+    ["Crecimiento m-a-m maduro (x)", 1.09, 1.12],
+    ["% free tools sobre visitas", 0.15, 0.15],
+    ["% trials sobre free tools", 0.025, 0.03],
+    ["% paid sobre trials", 0.20, 0.30],
+    ["Churn Y1", 0.035, 0.025],
+    ["Churn Y2", 0.025, 0.020],
+    ["Churn Y3", 0.018, 0.015],
+    ["Coste variable / cliente", 50, 35],
+    ["CAC / nuevo cliente", 120, 0],
+    ["OPEX fijo Y1 (EUR/mes)", 5000, 1200],
+    ["OPEX fijo Y2 (EUR/mes)", 14000, 8500],
+    ["OPEX fijo Y3 (EUR/mes)", 32000, 22000],
+    ["% mix INICIA / DESPACHO / FIRMA", "55/38/7", "40/50/10"],
+    [null, null, null],
+    ["Resultados M36 (valores aproximados del motor):", null, null],
+    ["Clientes finales", 213, 910],
+    ["ARR fin (EUR/anyo)", 681000, 3373000],
+    ["Revenue total acumulado 36m (EUR)", 600000, 2610000],
+    ["EBITDA Y3 (EUR)", -26000, 1620000],
+    ["Margen EBITDA Y3", "-6%", "77%"],
+    ["Break-even (mes)", "no alcanzado", 8],
+    ["Capital necesario (EUR)", 174000, 3200],
   ];
 
   rows.forEach((r, i) => {
     const rowNum = i + 4;
     r.forEach((cell, j) => {
-      const colLetter = ["A", "B", "C", "D"][j];
+      const colLetter = ["A", "B", "C"][j];
       if (cell != null) setCell(ws, `${colLetter}${rowNum}`, cell as string | number);
     });
   });
 
-  setRange(ws, "A1:D20");
-  setCols(ws, [42, 16, 16, 16]);
+  setRange(ws, "A1:C30");
+  setCols(ws, [42, 18, 18]);
   return ws;
 }
 
@@ -398,13 +447,28 @@ function buildNotesSheet(): XLSX.WorkSheet {
     "",
     "COSTE VARIABLE",
     "Por cliente al mes incluye: Vercel/DB/S3, Anthropic API,",
-    "email transaccional, Stripe fees (~2.5% de la cuota).",
+    "email transaccional, Stripe fees (~3%) y soporte humano basico",
+    "(30 min/cliente/mes en escenario conservador).",
     "",
-    "OPEX FIJO",
-    "Y1: founder solo (sin contrataciones). 1.200/mes cubre",
-    "herramientas, asesoria, legal, dominios.",
-    "Y2: +1 perfil soporte (~30k anuales) -> 8.500/mes",
-    "Y3: +1 perfil sales + marketing pagado -> 22.000/mes",
+    "CAC",
+    "Coste de adquisicion blended: amortizacion del contenido SEO publicado",
+    "+ paid puntual. Default STRETCH = 0 (asume 100% organico).",
+    "Default CONSERVATIVE = 120 EUR/cliente nuevo.",
+    "",
+    "SETUP FEE",
+    "Cuota unica al activar planes Despacho (299 EUR) y Firma (990 EUR).",
+    "El motor calcula el promedio ponderado por mix y lo aplica a cada nuevo",
+    "cliente. Se contabiliza como revenue puntual en Revenue total.",
+    "",
+    "OPEX FIJO (escenario STRETCH default)",
+    "Y1: founder sin sueldo + tools + dominios = 1.200/mes",
+    "Y2: +1 perfil soporte (~30k anuales) = 8.500/mes",
+    "Y3: +1 perfil sales + marketing pagado = 22.000/mes",
+    "",
+    "OPEX FIJO (escenario CONSERVATIVE)",
+    "Y1: payroll fundador minimo + tools + legal + DPO + RC = 5.000/mes",
+    "Y2: +1 FTE customer success/soporte = 14.000/mes",
+    "Y3: +2 FTE dev + sales/marketing + content = 32.000/mes",
     "",
     "LIMITACIONES DEL MODELO",
     "1. No considera estacionalidad (mortalidad varia por mes)",
@@ -412,12 +476,15 @@ function buildNotesSheet(): XLSX.WorkSheet {
     "3. No incluye recargos por overage (expedientes extra)",
     "4. No considera precio anual con descuento (suele dar +15% LTV)",
     "5. Supone bootstrap: si levantas capital, ajusta OPEX",
+    "6. No incluye IVA ni Impuesto de Sociedades (25%)",
+    "7. No incluye bad debt (1-3% tipico SaaS B2B)",
     "",
     "COMO USAR",
     "1. Edita las Hipotesis en la primera hoja con tus propios numeros",
     "2. Las hojas Proyeccion, Resumen anual y Cash flow recalcularan automaticamente",
     "3. Si Excel no recalcula, presiona F9 (PC) o Cmd+= (Mac)",
-    "4. Para escenarios distintos, guarda copias del Excel con cada hipotesis",
+    "4. Para el escenario CONSERVATIVE, edita Hipotesis con los valores de la",
+    "   hoja Escenarios (columna B) o consulta CONSERVATIVE_ASSUMPTIONS en el codigo",
   ];
 
   lines.forEach((line, i) => setCell(ws, `A${i + 1}`, line));

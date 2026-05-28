@@ -4,9 +4,9 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Casos de uso reales — Cómo gestorías y funerarias usan Heredia",
+  title: "Casos de uso ilustrativos — Cómo gestorías y funerarias usan Heredia",
   description:
-    "6 escenarios concretos con cifras: cómo despachos pasaron de 60 a 150 expedientes/año, cómo evitaron recargos del Modelo 650 y cómo cobran servicios post-mortem.",
+    "6 escenarios con cifras orientativas: cómo despachos pueden pasar de 60 a 150 expedientes/año, evitar recargos del Modelo 650 y monetizar servicios post-mortem.",
   alternates: { canonical: "https://heredia.app/casos-de-uso" },
 };
 
@@ -193,13 +193,14 @@ export default function CasosDeUsoPage() {
         <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl animate-float-slow" />
         <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
         <div className="relative max-w-4xl mx-auto px-4 py-14 sm:py-16">
-          <h1 className="text-3xl sm:text-4xl font-bold mb-3">Casos de uso reales con cifras</h1>
+          <h1 className="text-3xl sm:text-4xl font-bold mb-3">Casos de uso ilustrativos</h1>
           <p className="text-base sm:text-lg text-blue-100 max-w-2xl mb-2">
-            Cómo gestorías, funerarias y despachos de derecho sucesorio usan Heredia para multiplicar
-            su capacidad, evitar recargos y monetizar servicios post-mortem.
+            Cómo gestorías, funerarias y despachos de derecho sucesorio pueden usar Heredia para
+            multiplicar su capacidad, evitar recargos y monetizar servicios post-mortem.
           </p>
           <p className="text-sm text-blue-300">
-            Casos sintéticos basados en patrones reales de despachos en periodo de prueba o producción.
+            Casos modelo basados en supuestos del sector. Las cifras ilustran el potencial; el ROI
+            real depende del despacho, su volumen y su madurez operativa.
           </p>
         </div>
       </div>

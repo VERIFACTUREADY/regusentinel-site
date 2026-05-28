@@ -48,18 +48,19 @@ export interface ROIResult {
 }
 
 const PLANES = {
-  INICIA: { precioMes: 149, capacidadIncluida: 30 },
-  DESPACHO: { precioMes: 349, capacidadIncluida: 100 },
-  FIRMA: { precioMes: 749, capacidadIncluida: 250 },
+  INICIA: { precioMes: 149, capacidadIncluida: 15 },
+  DESPACHO: { precioMes: 349, capacidadIncluida: 50 },
+  FIRMA: { precioMes: 749, capacidadIncluida: 200 },
 } as const;
 
 /**
- * Heuristica conservadora: Heredia ahorra entre 35% y 55% del tiempo
+ * Heuristica conservadora: Heredia ahorra entre 25% y 35% del tiempo
  * dedicado a tareas administrativas repetitivas (recordatorios, plazos,
- * borradores, comunicacion familia, plantillas). Usamos 40% como estimacion
- * conservadora.
+ * borradores, comunicacion familia, plantillas). Usamos 30% como estimacion
+ * conservadora — el resto del tiempo es trabajo interpretativo legal/fiscal
+ * que el software no automatiza.
  */
-const FACTOR_AHORRO_HORAS = 0.4;
+const FACTOR_AHORRO_HORAS = 0.3;
 
 /**
  * Probabilidad mensual de un error costoso por expediente. Errores tipicos:
@@ -67,10 +68,11 @@ const FACTOR_AHORRO_HORAS = 0.4;
  * - Perdida de bonificacion autonomica por presentacion fuera de plazo
  * - Reclamacion de cliente por documentacion mal archivada
  *
- * Estimacion conservadora: 1 error cada 50 expedientes con coste medio 350€.
+ * Estimacion: 1 error cada 50 expedientes con coste medio 1.200€
+ * (recargo del 10% sobre cuota ISD tipica de 12k€ + intereses de demora).
  */
 const PROB_ERROR_POR_EXPEDIENTE = 1 / 50;
-const COSTE_MEDIO_ERROR = 350;
+const COSTE_MEDIO_ERROR = 1200;
 
 export function calculateROI(inputs: ROIInputs): ROIResult {
   const plan = PLANES[inputs.plan];
@@ -116,8 +118,8 @@ export function calculateROI(inputs: ROIInputs): ROIResult {
  * Recomendacion de plan basada en numero de expedientes mensuales.
  */
 export function recommendPlan(expedientesPorMes: number): ROIInputs["plan"] {
-  if (expedientesPorMes <= 30) return "INICIA";
-  if (expedientesPorMes <= 100) return "DESPACHO";
+  if (expedientesPorMes <= 15) return "INICIA";
+  if (expedientesPorMes <= 50) return "DESPACHO";
   return "FIRMA";
 }
 
