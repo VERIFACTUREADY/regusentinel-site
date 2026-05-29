@@ -160,10 +160,25 @@ export async function createPortalSession(
 export async function handleWebhookEvent(
   body: string | Buffer,
   sig: string
-): Promise<{ received: boolean; type: string }> {
+): Promise<{ received: boolean; type: string; duplicate?: boolean }> {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
   const event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
+
+  // Idempotencia: Stripe reintenta hasta 3 dias si no respondes 200 rapido.
+  // Si ya procesamos este event.id antes, devolvemos OK sin ejecutar handlers
+  // (evita duplicar emails, mutaciones de subscription, etc.).
+  try {
+    await prisma.stripeEvent.create({
+      data: { id: event.id, type: event.type },
+    });
+  } catch (err: any) {
+    // P2002 = unique constraint violation → ya procesado.
+    if (err?.code === "P2002") {
+      return { received: true, type: event.type, duplicate: true };
+    }
+    throw err;
+  }
 
   switch (event.type) {
     case "checkout.session.completed": {

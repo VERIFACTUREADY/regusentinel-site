@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { rateLimit } from "@/lib/api-rate-limit";
 import crypto from "crypto";
 import { z } from "zod";
 
@@ -9,6 +10,11 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // Rate limit por IP: 5 intentos / hora. Evita reset-email spam y saturacion
+  // de SMTP/Resend si alguien itera sobre listas de emails de la org.
+  const limited = rateLimit(req, { bucket: "forgot-password", windowMs: 60 * 60 * 1000, max: 5 });
+  if (limited) return limited;
+
   try {
     const body = await req.json();
     const { email } = schema.parse(body);

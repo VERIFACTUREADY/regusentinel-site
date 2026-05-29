@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCaseDeadlines } from "@/lib/deadline-engine";
+import { rateLimit } from "@/lib/api-rate-limit";
 
-export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { token: string } }) {
+  // Rate limit por IP: 60 lecturas/min. El token es CUID (espacio ~10^36) y
+  // el bruteforce es invianle, pero si un enlace se filtra (WhatsApp, search
+  // engine) impedimos scraping pesado del expediente.
+  const limited = rateLimit(req, { bucket: "portal-read", windowMs: 60_000, max: 60 });
+  if (limited) return limited;
+
   const c = await prisma.case.findFirst({
     where: { portalToken: params.token, portalEnabled: true, deletedAt: null },
     include: {

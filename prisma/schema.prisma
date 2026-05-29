@@ -593,3 +593,16 @@ model DemoRequest {
 
   org Organization? @relation(fields: [orgId], references: [id])
 }
+
+// ─── STRIPE WEBHOOK IDEMPOTENCY ─────────────────────────
+// Stripe reintenta cada evento hasta 3 dias si el endpoint no responde 200
+// rapido. Cacheamos el event.id para no duplicar emails ni mutaciones de
+// suscripcion en reintentos.
+
+model StripeEvent {
+  id          String   @id // Stripe event.id (evt_xxx)
+  type        String
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
+}

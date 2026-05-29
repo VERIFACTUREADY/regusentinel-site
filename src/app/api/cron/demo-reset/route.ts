@@ -6,6 +6,7 @@ import {
   DEMO_OPERATOR_EMAIL,
   resetDemoCases,
 } from "@/lib/demo-data";
+import { validateCronSecret } from "@/lib/cron-auth";
 
 /**
  * Scheduled reset of the public demo org's cases so prospects always see a
@@ -23,9 +24,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ skipped: "DEMO_ENABLED not set" });
   }
 
-  const secret = process.env.CRON_SECRET;
-  const auth = req.headers.get("authorization");
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!validateCronSecret(req)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 

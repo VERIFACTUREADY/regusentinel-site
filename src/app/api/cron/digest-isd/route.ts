@@ -3,18 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { buildHtmlDigest, classifyCases } from "@/lib/digest-builder";
 import { parsePrefs } from "@/lib/notif-prefs";
+import { validateCronSecret } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const CRON_SECRET = process.env.CRON_SECRET;
-
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
-  const secretParam = req.nextUrl.searchParams.get("secret");
-  const provided = authHeader?.replace("Bearer ", "") || secretParam;
-
-  if (CRON_SECRET && provided !== CRON_SECRET) {
+  if (!validateCronSecret(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
