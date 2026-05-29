@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isSuperAdmin } from "@/lib/admin";
 import { z } from "zod";
 
 const VALID_STATUSES = ["NEW", "CONTACTED", "MEETING", "PILOT", "CUSTOMER", "LOST"] as const;
@@ -16,7 +17,9 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   const session = await getServerSession(authOptions);
-  if (session?.user?.role !== "OWNER") {
+  // Solo equipo Heredia: demoRequests son leads B2B globales (pre-onboarding,
+  // sin orgId). Antes cualquier OWNER de cualquier despacho podia editarlos.
+  if (!session?.user?.email || !isSuperAdmin(session.user.email)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 

@@ -2,11 +2,12 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isSuperAdmin } from "@/lib/admin";
 import { LeadsTable } from "./leads-table";
 
 export default async function DemoRequestsPage() {
   const session = await getServerSession(authOptions);
-  if (session?.user?.role !== "OWNER") redirect("/dashboard");
+  if (!isSuperAdmin(session?.user?.email)) redirect("/dashboard");
 
   const requests = await prisma.demoRequest.findMany({
     orderBy: { createdAt: "desc" },

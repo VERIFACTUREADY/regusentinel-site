@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isSuperAdmin } from "@/lib/admin";
 import { OrgTrialActions } from "./org-trial-actions";
 
 export const metadata = { title: "Métricas de uso" };
@@ -72,7 +73,7 @@ function Stat({
 
 export default async function MetricsPage() {
   const session = await getServerSession(authOptions);
-  if (session?.user?.role !== "OWNER") redirect("/dashboard");
+  if (!isSuperAdmin(session?.user?.email)) redirect("/dashboard");
 
   const months = lastNMonths(6);
   const sixMonthsAgo = new Date();
