@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/api-rate-limit";
 
 export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
+  // 10 aceptaciones/min por IP — consent es one-shot por expediente pero
+  // limitamos por si alguien intenta spammear el endpoint.
+  const limited = rateLimit(req, { bucket: "portal-consent", windowMs: 60_000, max: 10 });
+  if (limited) return limited;
+
   const c = await prisma.case.findFirst({
     where: { portalToken: params.token, portalEnabled: true, deletedAt: null },
     select: { id: true, consentAccepted: true },

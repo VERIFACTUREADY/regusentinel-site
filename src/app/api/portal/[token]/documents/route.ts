@@ -4,8 +4,12 @@ import { uploadFile, getPresignedUrl } from "@/lib/s3";
 import { logAudit } from "@/lib/audit";
 import { matchDocumentToTag } from "@/lib/doc-task-matching";
 import { triggerWorkflow } from "@/lib/workflow-engine";
+import { rateLimit } from "@/lib/api-rate-limit";
 
-export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { token: string } }) {
+  const limited = rateLimit(req, { bucket: "portal-docs-read", windowMs: 60_000, max: 60 });
+  if (limited) return limited;
+
   const c = await prisma.case.findFirst({
     where: { portalToken: params.token, portalEnabled: true, deletedAt: null },
   });
@@ -32,6 +36,11 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
 }
 
 export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
+  // 10 uploads/min por IP. Limite muy bajo porque cada upload escribe en S3 + DB.
+  // Sin esto un atacante con token filtrado podria llenar el bucket con basura.
+  const limited = rateLimit(req, { bucket: "portal-docs-upload", windowMs: 60_000, max: 10 });
+  if (limited) return limited;
+
   const c = await prisma.case.findFirst({
     where: { portalToken: params.token, portalEnabled: true, deletedAt: null },
   });
