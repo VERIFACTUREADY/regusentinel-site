@@ -45,7 +45,9 @@ const ICON_SHIELD = "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955
 const ICON_BELL = "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9";
 const ICON_INBOX = "M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4";
 
-export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
+export type VerticalSlug = "funerarias" | "gestorias" | "abogados";
+
+export const VERTICAL_CONFIG: Record<VerticalSlug, VerticalConfig> = {
   funerarias: {
     slug: "funerarias",
     title: "Software para funerarias y servicios funerarios — Heredia",
@@ -278,14 +280,14 @@ export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
       },
       {
         q: "¿Cuánto cuesta para un despacho con 5 abogados?",
-        a: "El plan Firma a 749 €/mes incluye 250 expedientes/mes y usuarios ilimitados. Si gestionáis 80-150 herencias al año, sale a unos 5-9 € por expediente — un coste menor que la luz del despacho.",
+        a: "El plan Firma a 749 €/mes incluye 200 expedientes/mes y hasta 20 usuarios. Si gestionáis 80-150 herencias al año, sale a unos 5-9 € por expediente — un coste menor que la luz del despacho.",
       },
     ],
   },
 };
 
-export const ALL_VERTICAL_SLUGS = Object.keys(VERTICAL_CONFIG);
+export const ALL_VERTICAL_SLUGS = Object.keys(VERTICAL_CONFIG) as VerticalSlug[];
 
 export function getVerticalBySlug(slug: string): VerticalConfig | null {
-  return VERTICAL_CONFIG[slug] ?? null;
+  return (VERTICAL_CONFIG as Record<string, VerticalConfig>)[slug] ?? null;
 }

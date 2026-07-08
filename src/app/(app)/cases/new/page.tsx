@@ -70,29 +70,34 @@ export default function NewCasePage() {
     setError("");
 
     try {
+      // Omitimos los opcionales vacíos: el schema del API acepta undefined
+      // pero no null, y el parentesco viaja como `contactRelationship`.
       const res = await fetch("/api/cases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           deceasedName: form.deceasedName,
-          deathDate: form.deathDate || null,
-          deceasedDni: form.deceasedDni || null,
+          deathDate: form.deathDate || undefined,
+          deceasedDni: form.deceasedDni || undefined,
           contactName: form.contactName,
-          contactPhone: form.contactPhone || null,
-          contactEmail: form.contactEmail || null,
-          relationship: form.relationship || null,
-          province: form.province || null,
+          contactPhone: form.contactPhone || undefined,
+          contactEmail: form.contactEmail || undefined,
+          contactRelationship: form.relationship || undefined,
+          province: form.province || undefined,
           isUrgent: form.isUrgent,
           hasDeceasedInsurance: form.hasDeceasedInsurance,
           categories: form.categories,
           consentAccepted: form.consentAccepted,
-          caseTemplateId: form.caseTemplateId || null,
+          caseTemplateId: form.caseTemplateId || undefined,
         }),
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Error al crear expediente");
+        const data = await res.json().catch(() => null);
+        // Con errores de validación Zod, mostrar el primer detalle es mucho
+        // más útil que el genérico "Datos invalidos".
+        const detail = Array.isArray(data?.details) && data.details[0]?.message;
+        throw new Error(detail || data?.error || "Error al crear expediente");
       }
 
       const data = await res.json();
@@ -156,16 +161,17 @@ export default function NewCasePage() {
                 className="w-full px-3 py-2 border rounded-md" />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Telefono</label>
+              <label className="block text-sm font-medium mb-1">Telefono *</label>
               <input type="tel" value={form.contactPhone}
                 onChange={(e) => update("contactPhone", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md" />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Email</label>
+              <label className="block text-sm font-medium mb-1">Email *</label>
               <input type="email" value={form.contactEmail}
                 onChange={(e) => update("contactEmail", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md" />
+              <p className="text-xs text-gray-400 mt-1">Al menos uno de los dos: teléfono o email.</p>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Relacion con el fallecido</label>
@@ -177,7 +183,11 @@ export default function NewCasePage() {
             </div>
             <div className="flex gap-2">
               <button onClick={() => setStep(1)} className="flex-1 py-2 border rounded-md">Atras</button>
-              <button onClick={() => form.contactName ? setStep(3) : setError("Nombre obligatorio")}
+              <button onClick={() => {
+                if (!form.contactName) return setError("Nombre obligatorio");
+                if (!form.contactPhone && !form.contactEmail) return setError("Indica al menos un teléfono o email de contacto");
+                setStep(3);
+              }}
                 className="flex-1 py-2 bg-primary text-white rounded-md hover:bg-primary/90">Siguiente</button>
             </div>
           </div>

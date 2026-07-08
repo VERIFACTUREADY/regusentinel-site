@@ -78,11 +78,23 @@ npm install --legacy-peer-deps
 npx prisma generate
 
 # Ejecutar migraciones
-npx prisma migrate dev --name init
+npx prisma migrate deploy
 
 # Poblar datos de demo
 npx tsx prisma/seed.ts
 ```
+
+> **Nota sobre migraciones (julio 2026):** el historial de migraciones se
+> regeneró desde cero (`20260708000000_init_heredia`) porque el historial
+> anterior no era aplicable en una base de datos vacía (le faltaban modelos
+> que solo existían vía `db push`). Si tienes una base de datos ANTERIOR a
+> este cambio, tienes dos opciones:
+>
+> - **Sin datos que conservar** (dev / staging / demo): `npx prisma migrate reset`
+>   y listo.
+> - **Con datos**: marca la baseline como aplicada sin ejecutarla:
+>   `npx prisma migrate resolve --applied 20260708000000_init_heredia`
+>   y después `npx prisma db push` para sincronizar cualquier columna que falte.
 
 ### 5. Configurar MinIO (bucket)
 

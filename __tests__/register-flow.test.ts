@@ -253,6 +253,22 @@ describe("POST /api/register — flujo de registro E2E", () => {
     });
   });
 
+  it("quita acentos y enes al generar el slug (Gestoría Ñoño)", async () => {
+    await registerPOST(fakeReq({ ...validBody(), orgName: "Gestoría Ñoño 2024" }));
+    expect(orgCreate).toHaveBeenCalledWith({
+      data: { name: "Gestoría Ñoño 2024", slug: "gestoria-nono-2024" },
+    });
+  });
+
+  // Regresión: un nombre sin caracteres alfanuméricos ASCII dejaba slug ""
+  // (colisión garantizada al segundo registro). Ahora genera org-XXXXXX.
+  it("genera slug aleatorio si el nombre no tiene caracteres alfanumericos", async () => {
+    const res = await registerPOST(fakeReq({ ...validBody(), orgName: "€€€ ЯЯЯ" }));
+    expect(res.status).toBe(201);
+    const call = orgCreate.mock.calls[0][0];
+    expect(call.data.slug).toMatch(/^org-[a-z0-9]{6}$/);
+  });
+
   // ─── Notificacion al equipo ─────────────────────────────
 
   it("envia notificacion a LEADS_NOTIFY_EMAIL si esta configurado", async () => {

@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { AppShell, type TrialInfo, type BadgeCounts } from "@/components/layout/app-shell";
 import { prisma } from "@/lib/prisma";
 import { DEMO_ORG_SLUG } from "@/lib/demo-data";
+import { isSuperAdmin } from "@/lib/admin";
 import Link from "next/link";
 
 const SUSPENSION_EXEMPT_PATHS = ["/billing"];
@@ -88,7 +89,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <AppShell session={session} isDemoOrg={isDemoOrg} trialInfo={trialInfo} badgeCounts={badgeCounts}>
+    <AppShell
+      session={session}
+      isDemoOrg={isDemoOrg}
+      isSuperAdmin={isSuperAdmin(session.user.email)}
+      trialInfo={trialInfo}
+      badgeCounts={badgeCounts}
+    >
       {children}
     </AppShell>
   );

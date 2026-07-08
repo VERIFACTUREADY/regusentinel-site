@@ -2,16 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
-import { notFound } from "next/navigation";
-import { VERTICAL_CONFIG, ALL_VERTICAL_SLUGS, getVerticalBySlug } from "@/lib/vertical-landings";
+import { VERTICAL_CONFIG, ALL_VERTICAL_SLUGS, type VerticalSlug } from "@/lib/vertical-landings";
 
-export async function generateStaticParams() {
-  return ALL_VERTICAL_SLUGS.map((slug) => ({ vertical: slug }));
-}
+/**
+ * Landing vertical compartida por /para-gestorias, /para-funerarias y
+ * /para-abogados. Nota: Next.js no soporta segmentos parcialmente dinamicos
+ * ("para-[vertical]"), por eso cada URL tiene su carpeta estatica y este
+ * componente concentra el contenido.
+ */
 
-export async function generateMetadata({ params }: { params: { vertical: string } }): Promise<Metadata> {
-  const v = getVerticalBySlug(params.vertical);
-  if (!v) return {};
+export function verticalMetadata(slug: VerticalSlug): Metadata {
+  const v = VERTICAL_CONFIG[slug];
   return {
     title: v.title,
     description: v.description,
@@ -24,15 +25,17 @@ export async function generateMetadata({ params }: { params: { vertical: string 
   };
 }
 
+// Alineado con PLAN_PRICING (src/lib/stripe.ts), la fuente de verdad de
+// precios y capacidad incluida. No importamos stripe.ts aqui porque
+// instancia el cliente de Stripe al cargar el modulo.
 const PLAN_PRICES = {
-  INICIA: { price: "149 €", limit: "30 expedientes/mes" },
-  DESPACHO: { price: "349 €", limit: "100 expedientes/mes" },
-  FIRMA: { price: "749 €", limit: "250 expedientes/mes" },
+  INICIA: { price: "149 €", limit: "15 expedientes/mes" },
+  DESPACHO: { price: "349 €", limit: "50 expedientes/mes" },
+  FIRMA: { price: "749 €", limit: "200 expedientes/mes" },
 };
 
-export default function VerticalPage({ params }: { params: { vertical: string } }) {
-  const v = getVerticalBySlug(params.vertical);
-  if (!v) return notFound();
+export function VerticalLanding({ slug }: { slug: VerticalSlug }) {
+  const v = VERTICAL_CONFIG[slug];
 
   const plan = PLAN_PRICES[v.recommendedPlan];
 

@@ -13,6 +13,10 @@ const roles = Object.values(Role) as [Role, ...Role[]];
 
 // ─── Case schemas ──────────────────────────────────────
 
+// Los clientes JS suelen serializar los campos vacíos como null; tratamos
+// null igual que undefined en los opcionales para no rechazar el alta.
+const nullAsUndefined = (v: unknown) => (v === null ? undefined : v);
+
 export const createCaseSchema = z
   .object({
     deceasedName: z
@@ -23,9 +27,9 @@ export const createCaseSchema = z
       .string()
       .min(1, "El nombre del contacto es obligatorio")
       .max(200),
-    contactEmail: z.string().email("Email no valido").optional().or(z.literal("")),
-    contactPhone: z.string().max(20).optional().or(z.literal("")),
-    province: z.string().max(100).optional(),
+    contactEmail: z.preprocess(nullAsUndefined, z.string().email("Email no valido").optional().or(z.literal(""))),
+    contactPhone: z.preprocess(nullAsUndefined, z.string().max(20).optional().or(z.literal(""))),
+    province: z.preprocess(nullAsUndefined, z.string().max(100).optional()),
     categories: z
       .array(z.nativeEnum(TaskCategory))
       .min(1, "Seleccione al menos una categoria"),
@@ -36,10 +40,10 @@ export const createCaseSchema = z
         message: "Debe aceptar el consentimiento para continuar",
       }),
     }),
-    notes: z.string().max(2000).optional(),
-    deathDate: z.string().optional(),
-    deceasedDni: z.string().max(20).optional(),
-    contactRelationship: z.string().max(100).optional(),
+    notes: z.preprocess(nullAsUndefined, z.string().max(2000).optional()),
+    deathDate: z.preprocess(nullAsUndefined, z.string().optional()),
+    deceasedDni: z.preprocess(nullAsUndefined, z.string().max(20).optional()),
+    contactRelationship: z.preprocess(nullAsUndefined, z.string().max(100).optional()),
   })
   .refine(
     (data) =>

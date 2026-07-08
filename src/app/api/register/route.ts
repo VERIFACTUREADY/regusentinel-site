@@ -32,8 +32,13 @@ export async function POST(req: NextRequest) {
 
     const slug = data.orgName
       .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+      .replace(/^-|-$/g, "")
+      // Nombres sin caracteres alfanuméricos ("Gestoría ЯЯЯ") dejarían un
+      // slug vacío; generamos uno aleatorio en vez de fallar el registro.
+      || `org-${Math.random().toString(36).slice(2, 8)}`;
 
     const existingOrg = await prisma.organization.findUnique({ where: { slug } });
     if (existingOrg) {
@@ -73,7 +78,11 @@ export async function POST(req: NextRequest) {
       await seedSampleCase(tx, org.id);
 
       return { org, user };
-    });
+    },
+    // El seed de plantillas + expediente de muestra escribe decenas de filas;
+    // con un serverless frío y la DB remota, el timeout por defecto de las
+    // transacciones interactivas de Prisma (5s) puede abortar el registro.
+    { timeout: 20000 });
 
     logAudit({
       orgId: result.org.id,

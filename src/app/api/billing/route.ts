@@ -71,6 +71,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url: checkout.url });
   } catch (error) {
     console.error("Stripe checkout error:", error);
+    // Distinguir la mala configuración (price IDs / secret key sin definir)
+    // del fallo transitorio: al owner le dice qué pasa y a soporte le ahorra
+    // adivinar con un 500 genérico.
+    if (error instanceof Error && /price no configurado|apiKey|api key/i.test(error.message)) {
+      return NextResponse.json(
+        { error: "La pasarela de pago no está configurada todavía. Contacta con soporte@heredia.app." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: "Error al crear sesion de pago" }, { status: 500 });
   }
 }

@@ -43,23 +43,30 @@ export interface BadgeCounts {
 export function AppShell({
   session,
   isDemoOrg = false,
+  isSuperAdmin = false,
   trialInfo,
   badgeCounts,
   children,
 }: {
   session: Session;
   isDemoOrg?: boolean;
+  isSuperAdmin?: boolean;
   trialInfo?: TrialInfo | null;
   badgeCounts?: BadgeCounts | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isOwner = session.user.role === "OWNER";
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const role = session.user.role;
-  const visibleNavItems = navItems.filter(
-    (item) => !item.permission || (role && hasPermission(role, item.permission))
-  );
+  // Sin organización todavía: la única pantalla útil es el dashboard
+  // (que ofrece crearla). El resto de secciones necesitan orgId y solo
+  // generarían redirecciones de vuelta que parecen enlaces rotos.
+  const hasOrg = Boolean(session.user.orgId);
+  const visibleNavItems = hasOrg
+    ? navItems.filter(
+        (item) => !item.permission || (role && hasPermission(role, item.permission))
+      )
+    : navItems.filter((item) => item.href === "/dashboard");
 
   const sidebarContent = (
     <>
@@ -102,7 +109,7 @@ export function AppShell({
             </Link>
           );
         })}
-        {isOwner && (
+        {isSuperAdmin && (
           <>
             <div className="pt-3 pb-1 px-3">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Admin</p>
@@ -190,28 +197,32 @@ export function AppShell({
             </button>
             <div className="hidden lg:block" />
             <div className="flex items-center gap-2 sm:gap-4">
-              <button
-                onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
-                className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 border rounded-md hover:border-gray-400 hover:text-gray-600 transition"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                Buscar...
-                <kbd className="text-xs border rounded px-1 py-0.5 ml-1">⌘K</kbd>
-              </button>
-              <Link
-                href="/cases/new"
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-sm font-medium rounded-md hover:bg-primary/90 transition"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Nuevo
-              </Link>
-              <NotificationBell />
+              {hasOrg && (
+                <>
+                  <button
+                    onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+                    className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 border rounded-md hover:border-gray-400 hover:text-gray-600 transition"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    Buscar...
+                    <kbd className="text-xs border rounded px-1 py-0.5 ml-1">⌘K</kbd>
+                  </button>
+                  <Link
+                    href="/cases/new"
+                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-sm font-medium rounded-md hover:bg-primary/90 transition"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Nuevo
+                  </Link>
+                  <NotificationBell />
+                </>
+              )}
               <Link href="/profile" className="text-sm text-gray-600 hidden sm:inline hover:text-primary transition">{session.user.name || session.user.email}</Link>
-              <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-500">{session.user.role}</span>
+              {role && <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-500">{role}</span>}
               <button onClick={() => signOut({ callbackUrl: "/login" })}
                 className="text-sm text-gray-500 hover:text-red-600">
                 Salir

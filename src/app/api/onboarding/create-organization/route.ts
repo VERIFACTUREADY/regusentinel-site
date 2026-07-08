@@ -73,7 +73,10 @@ export async function POST(req: NextRequest) {
       await seedDefaultCaseTemplates(tx, created.id);
       await seedSampleCase(tx, created.id);
       return created;
-    });
+    },
+    // Mismo margen que /api/register: el seed escribe decenas de filas y el
+    // timeout por defecto (5s) puede abortar la transacción en serverless frío.
+    { timeout: 20000 });
 
     logAudit({
       orgId: org.id,
