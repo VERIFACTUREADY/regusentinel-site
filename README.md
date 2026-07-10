@@ -87,14 +87,14 @@ npx tsx prisma/seed.ts
 > **Nota sobre migraciones (julio 2026):** el historial de migraciones se
 > regeneró desde cero (`20260708000000_init_heredia`) porque el historial
 > anterior no era aplicable en una base de datos vacía (le faltaban modelos
-> que solo existían vía `db push`). Si tienes una base de datos ANTERIOR a
-> este cambio, tienes dos opciones:
+> que solo existían vía `db push`).
 >
-> - **Sin datos que conservar** (dev / staging / demo): `npx prisma migrate reset`
->   y listo.
-> - **Con datos**: marca la baseline como aplicada sin ejecutarla:
->   `npx prisma migrate resolve --applied 20260708000000_init_heredia`
->   y después `npx prisma db push` para sincronizar cualquier columna que falte.
+> Las migraciones se aplican **automáticamente en cada build**
+> (`scripts/migrate-deploy.mjs`, incluido en `npm run build`): cubre DB vacía,
+> DB al día y DB creada con `db push` sin historial (hace la baseline sola).
+> Esto es imprescindible en Vercel, donde `npm start` nunca se ejecuta.
+> No hace falta ningún reset ni comando manual; solo si quieres hacerlo a
+> mano: `npx prisma migrate deploy`.
 
 ### 5. Configurar MinIO (bucket)
 

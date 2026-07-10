@@ -116,7 +116,7 @@ describe("POST /api/register — flujo de registro E2E", () => {
     expect(body.userId).toBe("user_new");
 
     expect(orgCreate).toHaveBeenCalledWith({
-      data: { name: "Gestoria Demo", slug: "gestoria-demo" },
+      data: { name: "Gestoria Demo", slug: expect.stringMatching(/^gestoria-demo-[a-z0-9]{6}$/) },
     });
     expect(userCreate).toHaveBeenCalledWith({
       data: {
@@ -233,15 +233,15 @@ describe("POST /api/register — flujo de registro E2E", () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 
-  it("rechaza 400 si el slug de la organizacion ya esta en uso", async () => {
-    orgFindUnique.mockResolvedValueOnce({ id: "org_existing", slug: "gestoria-demo" });
-
+  // Regresión: antes se rechazaba el registro si otra org tenía el mismo
+  // nombre (colisión de slug). Dos gestorías pueden compartir nombre
+  // comercial — y quien reintentaba tras un fallo quedaba bloqueado con
+  // "ya en uso". Ahora el slug lleva sufijo aleatorio y nunca colisiona.
+  it("permite registrar aunque exista otra org con el mismo nombre", async () => {
     const res = await registerPOST(fakeReq(validBody()));
-    const body = await res.json();
-
-    expect(res.status).toBe(400);
-    expect(body.error).toMatch(/ya en uso/i);
-    expect(transaction).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(orgFindUnique).not.toHaveBeenCalled();
+    expect(transaction).toHaveBeenCalled();
   });
 
   // ─── Slug generation ────────────────────────────────────
@@ -249,14 +249,14 @@ describe("POST /api/register — flujo de registro E2E", () => {
   it("genera slug normalizado para nombres con caracteres especiales", async () => {
     await registerPOST(fakeReq({ ...validBody(), orgName: "Asesoria Perez & Cia" }));
     expect(orgCreate).toHaveBeenCalledWith({
-      data: { name: "Asesoria Perez & Cia", slug: "asesoria-perez-cia" },
+      data: { name: "Asesoria Perez & Cia", slug: expect.stringMatching(/^asesoria-perez-cia-[a-z0-9]{6}$/) },
     });
   });
 
   it("quita acentos y enes al generar el slug (Gestoría Ñoño)", async () => {
     await registerPOST(fakeReq({ ...validBody(), orgName: "Gestoría Ñoño 2024" }));
     expect(orgCreate).toHaveBeenCalledWith({
-      data: { name: "Gestoría Ñoño 2024", slug: "gestoria-nono-2024" },
+      data: { name: "Gestoría Ñoño 2024", slug: expect.stringMatching(/^gestoria-nono-2024-[a-z0-9]{6}$/) },
     });
   });
 

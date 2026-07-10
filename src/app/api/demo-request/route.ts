@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { dbUnavailableMessage } from "@/lib/db-errors";
 import { demoRequestSchema } from "@/lib/validations";
 import { sendNewLeadNotification } from "@/lib/email";
 import { rateLimit } from "@/lib/api-rate-limit";
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Datos invalidos", details: error.errors }, { status: 400 });
     }
     console.error("Demo request error:", error);
-    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+    const dbMsg = dbUnavailableMessage(error);
+    return NextResponse.json({ error: dbMsg ?? "Error interno" }, { status: dbMsg ? 503 : 500 });
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { dbUnavailableMessage } from "@/lib/db-errors";
 import { logAudit } from "@/lib/audit";
 import { sendWelcomeEmail, sendEmail } from "@/lib/email";
 import { seedDefaultCaseTemplates } from "@/lib/default-case-templates";
@@ -30,20 +31,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Email ya registrado" }, { status: 400 });
     }
 
-    const slug = data.orgName
+    // Slug único: base + sufijo aleatorio, igual que en
+    // /api/onboarding/create-organization. Dos gestorías pueden compartir
+    // nombre comercial; rechazar el registro por colisión de slug dejaba
+    // fuera a cualquiera que reutilizara un nombre ya visto (incluida la
+    // misma persona reintentando tras un fallo).
+    const baseSlug = data.orgName
       .toLowerCase()
       .normalize("NFD")
       .replace(/[̀-ͯ]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")
-      // Nombres sin caracteres alfanuméricos ("Gestoría ЯЯЯ") dejarían un
-      // slug vacío; generamos uno aleatorio en vez de fallar el registro.
-      || `org-${Math.random().toString(36).slice(2, 8)}`;
-
-    const existingOrg = await prisma.organization.findUnique({ where: { slug } });
-    if (existingOrg) {
-      return NextResponse.json({ error: "Nombre de organizacion ya en uso" }, { status: 400 });
-    }
+      .slice(0, 40) || "org";
+    const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 8)}`;
 
     const passwordHash = await bcrypt.hash(data.password, 12);
     const trialEnd = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
@@ -125,6 +125,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Datos invalidos", details: error.errors }, { status: 400 });
     }
     console.error("Register error:", error);
-    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+    const dbMsg = dbUnavailableMessage(error);
+    return NextResponse.json({ error: dbMsg ?? "Error interno" }, { status: dbMsg ? 503 : 500 });
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { dbUnavailableMessage } from "@/lib/db-errors";
 import { logAudit } from "@/lib/audit";
 import { seedDefaultCaseTemplates } from "@/lib/default-case-templates";
 import { seedSampleCase } from "@/lib/sample-case-seeder";
@@ -88,6 +89,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ orgId: org.id, created: true });
   } catch (err) {
     console.error("create-organization error:", err);
-    return NextResponse.json({ error: "No se pudo crear la organización" }, { status: 500 });
+    const dbMsg = dbUnavailableMessage(err);
+    return NextResponse.json(
+      { error: dbMsg ?? "No se pudo crear la organización" },
+      { status: dbMsg ? 503 : 500 }
+    );
   }
 }
