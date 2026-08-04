@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 
@@ -25,13 +24,14 @@ function foldLine(line: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return new NextResponse("No autorizado", { status: 401 });
+  const auth = await requireOrgPermission("tasks.read");
+  if (!auth.ok) {
+    // Este endpoint sirve texto/calendario, no JSON: traducimos la respuesta.
+    return new NextResponse(auth.reason === "forbidden" ? "Sin permisos" : "No autorizado", {
+      status: auth.response.status,
+    });
   }
-  if (!hasPermission(session.user.role, "tasks.read")) {
-    return new NextResponse("Sin permisos", { status: 403 });
-  }
+  const session = auth.session;
 
   const url = new URL(req.url);
   const scope = url.searchParams.get("scope") ?? "me"; // "me" | "all"

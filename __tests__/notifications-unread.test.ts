@@ -10,11 +10,14 @@ vi.mock("../src/lib/prisma", () => ({
     task: { findMany: vi.fn().mockResolvedValue([]) },
     case: { findMany: vi.fn().mockResolvedValue([]) },
     portalMessage: { findMany: vi.fn().mockResolvedValue([]) },
+    // La autorizacion relee al usuario y su membresia en cada peticion.
+    user: { findUnique: vi.fn() },
   },
 }));
 
 import { GET } from "../src/app/api/notifications/unread/route";
 import { prisma } from "../src/lib/prisma";
+import { fakeUserRow } from "./helpers/verified-session";
 
 describe("GET /api/notifications/unread", () => {
   beforeEach(() => {
@@ -32,6 +35,9 @@ describe("GET /api/notifications/unread", () => {
   // errores en consola cada minuto. Debe recibir 200 con lista vacía.
   it("devuelve 200 vacío para usuario autenticado sin organización", async () => {
     getServerSessionMock.mockResolvedValue({ user: { id: "u1", email: "ans@test.local", orgId: null, role: null } });
+    (prisma.user.findUnique as any).mockResolvedValue(
+      fakeUserRow({ userId: "u1", email: "ans@test.local", memberships: [] }),
+    );
     const res = await GET();
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -42,6 +48,9 @@ describe("GET /api/notifications/unread", () => {
 
   it("consulta alertas para usuario con organización", async () => {
     getServerSessionMock.mockResolvedValue({ user: { id: "u1", email: "a@b.c", orgId: "org1", role: "OWNER" } });
+    (prisma.user.findUnique as any).mockResolvedValue(
+      fakeUserRow({ userId: "u1", email: "a@b.c", orgId: "org1", role: "OWNER" }),
+    );
     const res = await GET();
     expect(res.status).toBe(200);
     const body = await res.json();

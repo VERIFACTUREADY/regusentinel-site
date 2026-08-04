@@ -1,22 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
 import { inviteUserSchema } from "@/lib/validations";
+import { checkRoleAssignment } from "@/lib/rbac";
 import { sendEmail } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 import { PLAN_PRICING } from "@/lib/stripe";
 import crypto from "crypto";
 
 export async function GET(_req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "org.members")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireOrgPermission("org.members");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const members = await prisma.membership.findMany({
     where: { orgId: session.user.orgId },
@@ -27,17 +22,26 @@ export async function GET(_req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "org.members.invite")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireOrgPermission("org.members.invite");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   try {
     const body = await req.json();
     const data = inviteUserSchema.parse(body);
+
+    // Sólo un OWNER puede incorporar a otro OWNER. `org.members.invite` lo
+    // tiene también MANAGER, así que sin esto un MANAGER podía crear un OWNER
+    // nuevo (y entrar con él) para saltarse sus propias restricciones.
+    const denial = checkRoleAssignment({
+      actorRole: auth.session.role,
+      actorUserId: auth.session.userId,
+      targetUserId: "", // invitación: todavía no hay miembro destino
+      targetRole: data.role,
+    });
+    if (denial) {
+      return NextResponse.json({ error: denial }, { status: 403 });
+    }
 
     // Plan-level user cap: la tabla /precios promete "Hasta N usuarios"
     // por plan. Antes de crear la membership, contamos los activos y
@@ -88,7 +92,7 @@ export async function POST(req: NextRequest) {
     }
 
     await prisma.membership.create({
-      data: { userId: user.id, orgId: session.user.orgId, role: data.role as any },
+      data: { userId: user.id, orgId: session.user.orgId, role: data.role },
     });
 
     // Send invite email

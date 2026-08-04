@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/admin";
 import { z } from "zod";
@@ -16,7 +15,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const session = await getServerSession(authOptions);
+  const verified = await getVerifiedUser();
+  const session = verified ? { user: verified } : null;
   // Solo equipo Heredia: demoRequests son leads B2B globales (pre-onboarding,
   // sin orgId). Antes cualquier OWNER de cualquier despacho podia editarlos.
   if (!session?.user?.email || !isSuperAdmin(session.user.email)) {

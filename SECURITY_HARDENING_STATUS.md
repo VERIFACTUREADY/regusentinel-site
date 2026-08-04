@@ -110,7 +110,7 @@ Cada entrada está confirmada leyendo el fichero indicado. No son sospechas.
 | Fase | Estado | Commit |
 |---|---|---|
 | 0 — Baseline y mapa de riesgos | ✅ completada | `chore(security): establish hardening baseline` |
-| 1 — Sesiones, membresías y RBAC | ⬜ pendiente | — |
+| 1 — Sesiones, membresías y RBAC | ✅ completada | `fix(auth): enforce live membership and subscription authorization` |
 | 2 — Aislamiento multi-tenant | ⬜ pendiente | — |
 | 3 — Portal, consentimiento y archivos | ⬜ pendiente | — |
 | 4 — Stripe y límites de plan | ⬜ pendiente | — |
@@ -119,6 +119,54 @@ Cada entrada está confirmada leyendo el fichero indicado. No son sospechas.
 | 7 — Retención, IA y plazos | ⬜ pendiente | — |
 | 8 — Copy y documentación honesta | ⬜ pendiente | — |
 | 9 — Tests reales y CI | ⬜ pendiente | — |
+
+---
+
+## Fase 1 — decisiones técnicas
+
+**Módulo central `src/lib/session.ts`.** Toda la autorización pasa por él:
+`getVerifiedSession`, `getVerifiedUser`, `requireOrgPermission`,
+`requireSession`, `requireBillingAccess`, `isOrgSuspended`.
+
+**No se ha añadido versión de sesión ni lista de revocación**, y es deliberado:
+el rol, la organización y el estado de suscripción se releen de PostgreSQL en
+cada petición, así que el JWT queda reducido a un identificador de usuario.
+Manipular el `role` del token no tiene efecto. La revocación es inmediata
+porque el estado vive en la base de datos, no en el token. Coste: una consulta
+indexada por petición autenticada (`Membership` ya tiene `@@unique([userId, orgId])`).
+
+**Migración de rutas.** 102 de las 103 ocurrencias del patrón antiguo se
+migraron con un codemod; las 14 rutas restantes (superadmin, onboarding,
+perfil, campana de notificaciones) se revisaron a mano porque tienen
+requisitos distintos. Ya no queda ningún `getServerSession` en `src/app/api`.
+
+**Trampa detectada durante la migración:** el codemod dejó las rutas de
+facturación bajo `requireOrgPermission`, lo que habría **encerrado a un OWNER
+suspendido** sin forma de reactivar el plan. Se corrigió con
+`requireBillingAccess`, que exime de la suspensión, y hay prueba de regresión.
+
+**Suspensión.** Se aplica en la capa API (402), no sólo en el layout de React.
+Estados que suspenden: `canceled`, `past_due`, `unpaid`, `incomplete_expired`,
+y `trialing` con `currentPeriodEnd` vencido (la fecha manda sobre el estado
+almacenado, por si el cron no ha corrido). La organización de demo está exenta.
+
+**`x-pathname`.** El matcher del middleware enumeraba rutas concretas, así que
+el header no existía en todas y la exención de `/billing` podía fallar. Ahora
+el middleware corre en todo salvo estáticos.
+
+**VIEWER** pierde `autopilot.approve`: era una mutación bajo una etiqueta de
+"solo lectura". Los roles operativos la conservan.
+
+**Última decisión relevante:** `AppShell` pasa de tipar su prop con `Session`
+de next-auth a una interfaz estructural `ShellSession`. Fabricar un `expires`
+sin significado para satisfacer el tipo habría sido peor.
+
+### Riesgo residual de Fase 1
+
+- La protección del último OWNER es correcta bajo la concurrencia que ofrece el
+  nivel de aislamiento por defecto de PostgreSQL (`READ COMMITTED`) porque el
+  recuento se hace dentro de la transacción, pero **no está verificada con dos
+  transacciones reales simultáneas**. Esa prueba llega en la Fase 9.
 
 ## Migraciones creadas
 
@@ -130,4 +178,5 @@ Ninguna todavía.
 
 ## Pendientes conocidos
 
-- Nada omitido en Fase 0: es sólo inventario, no modifica código de producción.
+- Fase 0: nada omitido (sólo inventario).
+- Fase 1: ver "Riesgo residual" arriba.

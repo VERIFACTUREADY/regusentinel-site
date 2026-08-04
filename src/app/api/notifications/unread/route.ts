@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession, getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  // Autenticado pero sin organización (p.ej. alta por SSO pendiente de
-  // crearla): no hay nada que notificar. Devolver vacío en vez de 401
-  // evita que la campana del shell spamee errores en consola.
-  if (!session.user.orgId) {
+  const session = await getVerifiedSession();
+
+  if (!session) {
+    // Distinguimos "no autenticado" de "autenticado pero todavía sin
+    // organización" (alta por SSO pendiente de crearla): al segundo no hay
+    // nada que notificarle, y devolver 401 hacía que la campana del shell
+    // spameara errores en consola cada minuto.
+    const user = await getVerifiedUser();
+    if (!user) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
     return NextResponse.json({ alerts: [], unreadCount: 0 });
   }
 

@@ -1,8 +1,7 @@
-import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { authOptions } from "@/lib/auth";
 import { AppShell, type TrialInfo, type BadgeCounts } from "@/components/layout/app-shell";
+import { getVerifiedSession, getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import { isSuperAdmin } from "@/lib/admin";
@@ -10,19 +9,32 @@ import Link from "next/link";
 
 const SUSPENSION_EXEMPT_PATHS = ["/billing"];
 
+/**
+ * Sesión mínima para el usuario autenticado que todavía no pertenece a
+ * ninguna organización (acaba de registrarse y está en el onboarding).
+ * `getVerifiedSession` devuelve null en ese caso porque exige membresía.
+ */
+async function onboardingSession() {
+  const user = await getVerifiedUser();
+  if (!user) return null;
+  return {
+    user: { id: user.id, email: user.email, name: user.name, orgId: null, role: null },
+  };
+}
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  let session;
-  try {
-    session = await getServerSession(authOptions);
-  } catch {
-    redirect("/login");
-  }
+  // Sesión verificada contra base de datos: un usuario expulsado o borrado
+  // pierde la interfaz en la siguiente navegación, no dentro de 30 días.
+  // Los usuarios autenticados que todavía no tienen organización siguen
+  // llegando al onboarding, así que ahí caemos a la identidad sin membresía.
+  const verified = await getVerifiedSession();
+  const session = verified ?? (await onboardingSession());
   if (!session) redirect("/login");
 
   let isDemoOrg = false;
   let trialInfo: TrialInfo | null = null;
   let badgeCounts: BadgeCounts | null = null;
-  let suspended = false;
+  let suspended = verified?.suspended ?? false;
 
   if (session.user.orgId) {
     try {
@@ -47,13 +59,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         );
         if (daysLeft >= 0) {
           trialInfo = { plan: org.subscription.plan, daysLeft };
-        } else {
-          suspended = true;
         }
-      }
-
-      if (subStatus === "canceled" || subStatus === "past_due") {
-        suspended = true;
       }
 
       // Badge counts for sidebar
@@ -80,9 +86,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   if (suspended && !isDemoOrg) {
-    const headersList = headers();
-    const pathname = headersList.get("x-pathname") || "";
-    const isExempt = SUSPENSION_EXEMPT_PATHS.some((p) => pathname.startsWith(p));
+    // El middleware fija `x-pathname` en todas las rutas no estáticas, así que
+    // la exención de /billing ya no depende de un header ausente. Si aun así
+    // faltara, se falla cerrado (pantalla de suspensión) salvo para el OWNER,
+    // que necesita llegar a Facturación para reactivar el plan.
+    const pathname = headers().get("x-pathname") ?? "";
+    const isExempt = SUSPENSION_EXEMPT_PATHS.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`),
+    );
     if (!isExempt) {
       return <SuspendedView isOwner={session.user.role === "OWNER"} />;
     }

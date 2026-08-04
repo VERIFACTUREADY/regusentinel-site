@@ -7,7 +7,22 @@ import { signOut } from "next-auth/react";
 import { SearchModal } from "./search-modal";
 import { NotificationBell } from "./notification-bell";
 import { hasPermission } from "@/lib/rbac";
-import type { Session } from "next-auth";
+import type { Role } from "@prisma/client";
+/**
+ * El shell sólo necesita estos cuatro campos de identidad. Tiparlo así (en vez
+ * de con `Session` de next-auth, que exige `expires`) permite alimentarlo tanto
+ * con la sesión verificada contra base de datos como con la identidad mínima
+ * del usuario que aún no tiene organización.
+ */
+export interface ShellSession {
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    orgId: string | null;
+    role: Role | null;
+  };
+}
 
 const navItems: { href: string; label: string; icon: string; permission?: string }[] = [
   { href: "/dashboard", label: "Dashboard", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4" },
@@ -48,7 +63,7 @@ export function AppShell({
   badgeCounts,
   children,
 }: {
-  session: Session;
+  session: ShellSession;
   isDemoOrg?: boolean;
   isSuperAdmin?: boolean;
   trialInfo?: TrialInfo | null;

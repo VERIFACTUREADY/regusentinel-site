@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireBillingAccess } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
 import { createCheckoutSession, PLAN_PRICING } from "@/lib/stripe";
 import type { PlanTier, BillingInterval } from "@prisma/client";
 
 export async function GET(_req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "billing.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireBillingAccess("billing.read");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const subscription = await prisma.subscription.findUnique({
     where: { orgId: session.user.orgId },
@@ -42,13 +36,9 @@ export async function GET(_req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "billing.manage")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireBillingAccess("billing.manage");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const body = await req.json();
   const plan = body.plan as PlanTier | undefined;

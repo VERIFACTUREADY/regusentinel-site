@@ -66,10 +66,11 @@ const PERMISSIONS_MAP: Record<Role, string[]> = {
     "autopilot.approve",
   ],
 
-  [Role.VIEWER]: [
-    ...ALL_PERMISSIONS.filter((p) => p.endsWith(".read")),
-    "autopilot.approve",
-  ],
+  // VIEWER es estrictamente de solo lectura. `autopilot.approve` estuvo aquí
+  // y era una mutación encubierta bajo una etiqueta comercial de "solo
+  // lectura": aprobar una acción del autopilot cambia el estado de la tarea y
+  // dispara envíos. Quien deba aprobar necesita OPERATOR o superior.
+  [Role.VIEWER]: [...ALL_PERMISSIONS.filter((p) => p.endsWith(".read"))],
 
   [Role.MANAGED_OPS]: [
     "cases.create",
@@ -158,6 +159,57 @@ export function requirePermission(
   }
 
   return null; // Access granted
+}
+
+// ─── Política de OWNER ──────────────────────────────────
+//
+// `org.members` lo tienen OWNER y MANAGER. Sin las reglas de abajo, un MANAGER
+// podía enviar `role: "OWNER"` en el body y auto-promoverse, porque el valor
+// llegaba sin validar hasta `prisma.membership.update`.
+
+/** Roles asignables. Cualquier valor fuera de esta lista se rechaza. */
+export const ASSIGNABLE_ROLES: Role[] = [
+  Role.OWNER,
+  Role.MANAGER,
+  Role.OPERATOR,
+  Role.VIEWER,
+  Role.MANAGED_OPS,
+];
+
+export function isValidRole(value: unknown): value is Role {
+  return typeof value === "string" && (ASSIGNABLE_ROLES as string[]).includes(value);
+}
+
+/**
+ * Sólo un OWNER puede crear otro OWNER (invitación o promoción). Devuelve el
+ * motivo del rechazo, o `null` si la operación está permitida.
+ */
+export function checkRoleAssignment(params: {
+  actorRole: Role;
+  actorUserId: string;
+  targetUserId: string;
+  targetRole: Role;
+  /** Rol actual del destinatario; `null` en una invitación. */
+  currentTargetRole?: Role | null;
+}): string | null {
+  const { actorRole, actorUserId, targetUserId, targetRole, currentTargetRole } = params;
+
+  if (targetRole === Role.OWNER && actorRole !== Role.OWNER) {
+    return "Sólo un Owner puede asignar el rol Owner.";
+  }
+
+  // Nadie cambia su propio rol: es la vía directa de auto-promoción y además
+  // permitiría que el último OWNER se degradase dejando la organización huérfana.
+  if (actorUserId === targetUserId && currentTargetRole !== undefined && targetRole !== currentTargetRole) {
+    return "No puedes cambiar tu propio rol.";
+  }
+
+  // Degradar a un OWNER requiere ser OWNER.
+  if (currentTargetRole === Role.OWNER && targetRole !== Role.OWNER && actorRole !== Role.OWNER) {
+    return "Sólo un Owner puede modificar el rol de otro Owner.";
+  }
+
+  return null;
 }
 
 export { Role, ALL_PERMISSIONS, type Permission };

@@ -7,6 +7,8 @@ vi.mock("../src/lib/prisma", () => ({
     organization: { findUniqueOrThrow: vi.fn() },
     usageRecord: { findUnique: vi.fn(), findMany: vi.fn() },
     membership: { count: vi.fn() },
+    // La autorizacion relee al usuario y su membresia en cada peticion.
+    user: { findUnique: vi.fn() },
   },
 }));
 
@@ -40,6 +42,7 @@ process.env.APP_URL = "http://localhost:3000";
 
 import { getServerSession } from "next-auth";
 import { prisma } from "../src/lib/prisma";
+import { fakeUserRow } from "./helpers/verified-session";
 import { stripe, createCheckoutSession } from "../src/lib/stripe";
 
 import { POST as billingPOST, GET as billingGET } from "../src/app/api/billing/route";
@@ -51,6 +54,7 @@ const orgFindUnique = prisma.organization.findUniqueOrThrow as unknown as Return
 const usageOne = prisma.usageRecord.findUnique as unknown as ReturnType<typeof vi.fn>;
 const usageMany = prisma.usageRecord.findMany as unknown as ReturnType<typeof vi.fn>;
 const memCount = prisma.membership.count as unknown as ReturnType<typeof vi.fn>;
+const userFindUnique = prisma.user.findUnique as unknown as ReturnType<typeof vi.fn>;
 const customerCreate = (stripe as any).customers.create as ReturnType<typeof vi.fn>;
 const checkoutCreate = (stripe as any).checkout.sessions.create as ReturnType<typeof vi.fn>;
 
@@ -66,14 +70,21 @@ function resetAll() {
   usageOne.mockReset();
   usageMany.mockReset();
   memCount.mockReset();
+  userFindUnique.mockReset();
   customerCreate.mockReset();
   checkoutCreate.mockReset();
 }
 
+/**
+ * Encola la sesion de NextAuth y, ademas, la fila de usuario que la
+ * autorizacion releera de la base de datos. El rol efectivo es el de la fila:
+ * el del JWT ya no decide nada.
+ */
 function asUser(role: "OWNER" | "MANAGER" | "OPERATOR" | "VIEWER") {
-  return {
-    user: { id: "user1", email: "u@u.com", orgId: "org1", role },
-  };
+  userFindUnique.mockResolvedValueOnce(
+    fakeUserRow({ userId: "user1", email: "u@u.com", orgId: "org1", role }),
+  );
+  return { user: { id: "user1", email: "u@u.com", orgId: "org1", role } };
 }
 
 // ─── POST /api/billing (crear checkout) ────────────────────

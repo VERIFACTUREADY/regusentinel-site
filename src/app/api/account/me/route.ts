@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { sendEmail } from "@/lib/email";
@@ -35,10 +34,14 @@ export async function DELETE(req: NextRequest) {
   const limited = rateLimit(req, { bucket: "account-delete", windowMs: 60 * 60 * 1000, max: 3 });
   if (limited) return limited;
 
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id || !session.user.email) {
+  // Identidad verificada contra base de datos (no contra el JWT). Se permite
+  // con la suscripción suspendida: el derecho de supresión no depende de que
+  // la organización esté al corriente de pago.
+  const verified = await getVerifiedUser();
+  if (!verified) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+  const session = { user: verified };
 
   let body: unknown;
   try {
@@ -115,7 +118,11 @@ export async function DELETE(req: NextRequest) {
           orgId: m.orgId,
           userId: user.id,
           action: "account.deleted",
-          details: `Usuario ${originalEmail} solicito borrado de cuenta (GDPR Art. 17)`,
+          // Sin el email original: escribirlo aquí dejaba el dato personal
+          // justo en el registro que documenta su supresión, y contradecía
+          // el email de confirmación que afirma haberlo eliminado. El `userId`
+          // basta para trazar la actuación contra el row ya anonimizado.
+          details: "El titular solicitó el borrado de su cuenta (RGPD Art. 17)",
           ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
         },
       })

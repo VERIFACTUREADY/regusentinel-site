@@ -18,8 +18,17 @@ import { join, relative } from "path";
  *
  * Si un endpoint nuevo no cumple ninguna, este test falla con un
  * mensaje claro. La intencion es prevenir regresiones del tipo "olvide
- * meter hasPermission en mi nuevo endpoint write", que en el pasado nos
+ * meter el guard en mi nuevo endpoint write", que en el pasado nos
  * ha costado 3 bugs cross-tenant.
+ *
+ * ALCANCE — leer antes de confiar en este test:
+ * Es un analisis ESTATICO de imports. Comprueba que el fichero importa un
+ * guard, no que lo llame, ni que lo llame con el permiso correcto, ni que
+ * valide la pertenencia de los IDs que recibe del cliente. Un endpoint puede
+ * pasar este test y seguir siendo vulnerable a cross-tenant. Es una red de
+ * seguridad barata contra despistes, NO una garantia de autorizacion: esa la
+ * dan las pruebas de comportamiento de __tests__/session-authorization.test.ts
+ * y las de aislamiento multi-tenant.
  *
  * Si un endpoint nuevo es legitimamente sin RBAC, anadirlo a la lista
  * EXEMPT_ENDPOINTS con un comentario explicando por que.
@@ -100,9 +109,21 @@ function hasWriteMethod(content: string): boolean {
 }
 
 function importsRbacGuard(content: string): boolean {
-  // Busca importacion explicita de hasPermission o requirePermission desde @/lib/rbac.
-  return /from\s+["']@\/lib\/rbac["']/.test(content)
-    && /\b(hasPermission|requirePermission)\b/.test(content);
+  // Guard centralizado y verificado contra base de datos (@/lib/session).
+  // Es el que deben usar los endpoints nuevos: relee membresia y rol en cada
+  // peticion, asi que detecta expulsiones y degradaciones.
+  const usesVerifiedSession =
+    /from\s+["']@\/lib\/session["']/.test(content) &&
+    /\b(requireOrgPermission|requireSession|requireBillingAccess|getVerifiedSession|getVerifiedUser)\b/.test(
+      content,
+    );
+
+  // Guard antiguo, basado en el rol del JWT. Se sigue aceptando para no
+  // bloquear ficheros que todavia lo combinen, pero no detecta revocaciones.
+  const usesLegacyRbac =
+    /from\s+["']@\/lib\/rbac["']/.test(content) && /\b(hasPermission|requirePermission)\b/.test(content);
+
+  return usesVerifiedSession || usesLegacyRbac;
 }
 
 function endpointKey(filePath: string): string {

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/admin";
 import { logAudit } from "@/lib/audit";
@@ -17,7 +16,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const session = await getServerSession(authOptions);
+  const verified = await getVerifiedUser();
+  const session = verified ? { user: verified } : null;
   // Solo el equipo de Heredia (ADMIN_EMAILS whitelist) puede otorgar trials
   // a otras orgs. Antes esto comprobaba `role === "OWNER"`, lo cual permitia
   // a cualquier OWNER de cualquier despacho darse 90 dias gratis a si mismo

@@ -58,14 +58,15 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
+  // Antes el matcher enumeraba rutas concretas, así que `x-pathname` sólo
+  // existía en algunas: el layout de la aplicación lo lee para eximir /billing
+  // de la pantalla de suspensión y, cuando el header faltaba, un OWNER
+  // suspendido no podía llegar a Facturación para reactivar el plan.
+  //
+  // Ahora se ejecuta en todo salvo estáticos, de modo que el header está
+  // siempre presente. La limitación de intentos sigue aplicándose sólo a los
+  // POST de las rutas listadas en RATE_LIMITED_PATHS.
   matcher: [
-    "/api/auth/:path*",
-    "/api/register",
-    "/dashboard/:path*",
-    "/cases/:path*",
-    "/billing/:path*",
-    "/users/:path*",
-    "/settings/:path*",
-    "/admin/:path*",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|manifest.webmanifest|.*\\.(?:png|jpg|jpeg|gif|svg|webp|avif|ico|txt|xml|woff|woff2|ttf)$).*)",
   ],
 };

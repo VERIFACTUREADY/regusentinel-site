@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { dbUnavailableMessage } from "@/lib/db-errors";
 import { logAudit } from "@/lib/audit";
@@ -18,7 +17,8 @@ const VALID_PLANS = ["INICIA", "DESPACHO", "FIRMA"] as const;
  * (registro interrumpido, error transitorio al iniciar sesión, etc.).
  */
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const verified = await getVerifiedUser();
+  const session = verified ? { user: verified } : null;
   if (!session?.user?.id) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   }

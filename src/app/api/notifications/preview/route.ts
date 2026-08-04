@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   fetchBriefingData,
@@ -15,10 +14,9 @@ export const dynamic = "force-dynamic";
 const APP_URL = process.env.NEXTAUTH_URL || "https://app.heredia.app";
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id || !session.user.orgId) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
+  const auth = await requireSession();
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const type = req.nextUrl.searchParams.get("type") ?? "daily-briefing";
   const orgId = session.user.orgId;
