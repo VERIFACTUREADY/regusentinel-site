@@ -1,4 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// El envio outbound valida ahora el destino antes de conectar: se resuelve el
+// DNS y se comprueban todas las IPs. Aqui lo fijamos a una direccion publica
+// para que las pruebas no dependan de la red (la proteccion SSRF en si se
+// verifica en __tests__/ssrf-guard.test.ts).
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]),
+}));
+
 import {
   buildSlackMessage,
   buildTeamsMessage,

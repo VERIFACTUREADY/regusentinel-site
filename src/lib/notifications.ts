@@ -8,6 +8,7 @@
  */
 
 import { prisma } from "./prisma";
+import { readSecret } from "./secret-crypto";
 import { addMonths, daysUntil } from "./deadline-engine";
 import { sendIsdDeadlineAlert, sendDocumentReminder } from "./email";
 import {
@@ -87,7 +88,7 @@ async function scanIsdDeadlines(result: NotificationRunResult): Promise<void> {
       status: { notIn: ["CLOSED", "ARCHIVED"] },
       deceased: { deathDate: { not: null } },
     },
-    include: { deceased: true, org: true },
+    include: { deceased: true, org: { include: { subscription: true } } },
   });
 
   for (const c of cases) {
@@ -146,7 +147,14 @@ async function scanIsdDeadlines(result: NotificationRunResult): Promise<void> {
       }
     }
 
-    // ── Notificaciones outbound (Slack + webhook, plan Firma) ──
+    // ── Notificaciones outbound (Slack + Teams + webhook, plan Firma) ──
+    //
+    // El plan se vuelve a comprobar AQUI, en el momento de enviar. Antes solo
+    // se comprobaba al guardar la configuracion, asi que una organizacion que
+    // configuro las integraciones con plan Firma y luego bajo de plan seguia
+    // recibiendolas indefinidamente.
+    const outboundEnabled = c.org.subscription?.plan === "FIRMA";
+
     const event: OutboundEvent = {
       event: eventNameForKind(bucket),
       orgId: c.orgId,
@@ -159,7 +167,7 @@ async function scanIsdDeadlines(result: NotificationRunResult): Promise<void> {
       emittedAt: new Date().toISOString(),
     };
 
-    if (c.org.slackWebhookUrl) {
+    if (outboundEnabled && c.org.slackWebhookUrl) {
       const dispatch = await sendSlackNotification(c.org.slackWebhookUrl, event);
       await prisma.notificationLog.create({
         data: {
@@ -179,7 +187,7 @@ async function scanIsdDeadlines(result: NotificationRunResult): Promise<void> {
       }
     }
 
-    if (c.org.teamsWebhookUrl) {
+    if (outboundEnabled && c.org.teamsWebhookUrl) {
       const dispatch = await sendTeamsNotification(c.org.teamsWebhookUrl, event);
       await prisma.notificationLog.create({
         data: {
@@ -199,10 +207,10 @@ async function scanIsdDeadlines(result: NotificationRunResult): Promise<void> {
       }
     }
 
-    if (c.org.customWebhookUrl) {
+    if (outboundEnabled && c.org.customWebhookUrl) {
       const dispatch = await sendCustomWebhook(
         c.org.customWebhookUrl,
-        c.org.customWebhookSecret,
+        readSecret(c.org.customWebhookSecret),
         event,
       );
       await prisma.notificationLog.create({

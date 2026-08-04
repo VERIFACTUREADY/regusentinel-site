@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
+import { validateOutboundUrl } from "@/lib/ssrf-guard";
+import { writeSecret, encryptionAvailable } from "@/lib/secret-crypto";
 
 const integrationsSchema = z.object({
   slackWebhookUrl: z
@@ -93,16 +95,52 @@ export async function PATCH(req: NextRequest) {
     );
   }
 
+  // Validación de destino ANTES de guardar. Zod sólo comprueba que la cadena
+  // parece una URL: no impide `https://169.254.169.254/` ni un nombre público
+  // que resuelva a una dirección interna. Se vuelve a comprobar al enviar,
+  // porque el DNS puede cambiar entre que se guarda y que se usa.
+  for (const [campo, valor] of [
+    ["Teams", parsed.data.teamsWebhookUrl],
+    ["webhook personalizado", parsed.data.customWebhookUrl],
+    ["Slack", parsed.data.slackWebhookUrl],
+  ] as const) {
+    if (!valor) continue;
+    const verdict = await validateOutboundUrl(valor);
+    if (!verdict.ok) {
+      return NextResponse.json(
+        { error: `URL de ${campo} no admitida: ${verdict.message}` },
+        { status: 400 },
+      );
+    }
+  }
+
+  // El secreto se guarda cifrado (AES-256-GCM). Si no hay clave configurada,
+  // se rechaza la operación: guardarlo en claro sin avisar sería peor.
+  let secretToStore: string | null | undefined;
+  if (parsed.data.customWebhookSecret !== undefined) {
+    if (parsed.data.customWebhookSecret) {
+      if (!encryptionAvailable()) {
+        return NextResponse.json(
+          {
+            error:
+              "No se puede guardar el secreto: falta SECRETS_ENCRYPTION_KEY en el servidor. Contacta con soporte.",
+          },
+          { status: 503 },
+        );
+      }
+      secretToStore = writeSecret(parsed.data.customWebhookSecret);
+    } else {
+      secretToStore = null;
+    }
+  }
+
   const updated = await prisma.organization.update({
     where: { id: session.user.orgId },
     data: {
       slackWebhookUrl: parsed.data.slackWebhookUrl ?? null,
       teamsWebhookUrl: parsed.data.teamsWebhookUrl ?? null,
       customWebhookUrl: parsed.data.customWebhookUrl ?? null,
-      // Si el cliente envía un secreto, lo guardamos; si manda undefined, no tocamos.
-      ...(parsed.data.customWebhookSecret !== undefined && {
-        customWebhookSecret: parsed.data.customWebhookSecret || null,
-      }),
+      ...(secretToStore !== undefined && { customWebhookSecret: secretToStore }),
     },
     select: {
       slackWebhookUrl: true,

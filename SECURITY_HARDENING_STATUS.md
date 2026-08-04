@@ -114,7 +114,7 @@ Cada entrada está confirmada leyendo el fichero indicado. No son sospechas.
 | 2 — Aislamiento multi-tenant | ✅ completada | `fix(tenancy): enforce organization boundaries on all relations` |
 | 3 — Portal, consentimiento y archivos | ✅ completada | `fix(portal): protect family access consent and document visibility` |
 | 4 — Stripe y límites de plan | ✅ completada | `fix(billing): make Stripe processing retryable and enforce plan limits` |
-| 5 — SSRF y secretos outbound | ⬜ pendiente | — |
+| 5 — SSRF y secretos outbound | ✅ completada | `fix(integrations): prevent SSRF and encrypt outbound secrets` |
 | 6 — Notificaciones y workflows | ⬜ pendiente | — |
 | 7 — Retención, IA y plazos | ⬜ pendiente | — |
 | 8 — Copy y documentación honesta | ⬜ pendiente | — |
@@ -325,6 +325,58 @@ la de al lado que la nueva no.
   `lastError`, pero no hay panel ni cron que los recupere: hay que mirarlos a
   mano. Anotado como revisión manual pendiente.
 
+---
+
+## Fase 5 — decisiones técnicas
+
+**P0-5 cerrado** (`src/lib/ssrf-guard.ts`). `validateOutboundUrl` comprueba
+esquema (HTTPS obligatorio en producción), credenciales embebidas, puerto
+(80/443/8443), nombre y **todas** las direcciones que devuelve el DNS. Bloquea
+loopback, privadas IPv4 e IPv6, CGNAT, link-local, multicast, reservadas,
+IPv4 mapeada en IPv6 y los endpoints de metadatos conocidos (AWS, GCP, Azure,
+Alibaba, ECS).
+
+`safeFetch` usa `redirect: "manual"` y **revalida cada salto**: antes un
+destino público podía responder `302` hacia `169.254.169.254` y `fetch` lo
+seguía sin comprobar nada. Además limita a 3 redirecciones, aplica timeout,
+lee como mucho 64 KB del cuerpo y **nunca devuelve ese cuerpo al llamador** —
+las tres funciones de envío propagaban `text.slice(0, 200)` de la respuesta
+remota, lo que convertía el webhook en una vía para leer servicios internos y
+ver el resultado.
+
+**Revalidación al enviar.** El plan se vuelve a comprobar en el momento del
+envío, no sólo al guardar: una organización que configuró las integraciones con
+plan Firma y luego bajó de plan seguía recibiéndolas indefinidamente. El
+destino también se revalida en cada envío, porque el DNS puede cambiar entre
+que se guarda la configuración y que se usa.
+
+**P0-6 cerrado** (`src/lib/secret-crypto.ts`). AES-256-GCM con IV aleatorio de
+12 bytes y tag de autenticación, formato versionado `v1.iv.tag.ciphertext`.
+Clave en `SECRETS_ENCRYPTION_KEY`, **independiente de `NEXTAUTH_SECRET`** a
+propósito: rotar la de sesiones no debe obligar a redescifrar secretos.
+
+Si la clave no está configurada, guardar un secreto **se rechaza con 503** en
+vez de guardarlo en claro sin avisar. Los valores heredados en texto plano se
+siguen aceptando al leer para no romper integraciones ya configuradas;
+`scripts/encrypt-existing-secrets.mjs` los reescribe cifrados (idempotente,
+con `--dry-run`).
+
+Manipular el ciphertext, el tag o el IV hace fallar el descifrado en vez de
+devolver basura — es lo que aporta GCM frente a un cifrado sin autenticar.
+`readSecret` devuelve `null` ante un fallo, nunca un valor corrupto.
+
+**Rate limit** en el endpoint de prueba de integraciones (6/min): hace
+peticiones salientes bajo demanda.
+
+### Riesgo residual de Fase 5
+
+- **DNS rebinding no está cerrado del todo.** Se valida la resolución y luego
+  se conecta por nombre, así que existe una ventana teórica en la que el DNS
+  cambie entre la comprobación y la conexión. Cerrarlo requiere conectar por IP
+  con `Host` fijado o un agente HTTP propio. Se ha dejado documentado en el
+  módulo; el riesgo es bajo porque el destino lo configura un OWNER autenticado
+  del plan Firma, no un anónimo.
+
 ## Migraciones creadas
 
 | Migración | Contenido | Probada |
@@ -338,6 +390,7 @@ la de al lado que la nueva no.
 | Variable | Obligatoria | Por defecto | Para qué |
 |---|---|---|---|
 | `MAX_UPLOAD_MB` | No | `20` | Tamaño máximo por archivo subido (tope duro de 200) |
+| `SECRETS_ENCRYPTION_KEY` | Sí, si se usan webhooks propios | — | Clave AES-256-GCM (32 bytes en base64 o hex) para cifrar `customWebhookSecret`. Sin ella, guardar un secreto se rechaza con 503 |
 
 ## Pendientes conocidos
 
@@ -346,3 +399,4 @@ la de al lado que la nueva no.
 - Fase 2: ver "Riesgo residual" arriba (renombrado de refs duplicadas).
 - Fase 3: sin antivirus; documentos internos previos quedan privados.
 - Fase 4: los eventos que agoten los reintentos de Stripe quedan en `FAILED` sin recuperación automática.
+- Fase 5: ventana teórica de DNS rebinding (se conecta por nombre tras validar la resolución).

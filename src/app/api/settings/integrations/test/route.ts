@@ -7,6 +7,8 @@ import {
   sendCustomWebhook,
   type OutboundEvent,
 } from "@/lib/outbound-integrations";
+import { readSecret } from "@/lib/secret-crypto";
+import { rateLimit } from "@/lib/api-rate-limit";
 
 /**
  * Dispara un evento de prueba a Slack y/o al webhook configurado de la org
@@ -14,6 +16,11 @@ import {
  * plazo crítico real. Devuelve el resultado por canal.
  */
 export async function POST(req: NextRequest) {
+  // El endpoint hace peticiones salientes bajo demanda: sin limite, sirve para
+  // sondear destinos a ritmo alto aunque cada destino se valide de por si.
+  const limited = rateLimit(req, { bucket: "integrations-test", windowMs: 60_000, max: 6 });
+  if (limited) return limited;
+
   const auth = await requireOrgPermission("billing.manage");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -65,7 +72,11 @@ export async function POST(req: NextRequest) {
   }
 
   if ((target === "all" || target === "webhook") && org.customWebhookUrl) {
-    results.webhook = await sendCustomWebhook(org.customWebhookUrl, org.customWebhookSecret, event);
+    results.webhook = await sendCustomWebhook(
+      org.customWebhookUrl,
+      readSecret(org.customWebhookSecret),
+      event,
+    );
   } else if (target === "webhook" && !org.customWebhookUrl) {
     results.webhook = { ok: false, error: "Webhook URL no configurado" };
   }

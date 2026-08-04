@@ -9,6 +9,7 @@
  */
 
 import { createHmac, timingSafeEqual } from "crypto";
+import { safeFetch } from "./ssrf-guard";
 
 export interface DispatchResult {
   ok: boolean;
@@ -30,16 +31,6 @@ export interface OutboundEvent {
 }
 
 const FETCH_TIMEOUT_MS = 7000;
-
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
-  try {
-    return await fetch(url, { ...init, signal: ctrl.signal });
-  } finally {
-    clearTimeout(t);
-  }
-}
 
 /** Construye un mensaje Slack legible a partir del evento. */
 export function buildSlackMessage(event: OutboundEvent): unknown {
@@ -133,20 +124,21 @@ export async function sendTeamsNotification(
   event: OutboundEvent,
 ): Promise<DispatchResult> {
   if (!webhookUrl) return { ok: false, error: "Teams webhook URL not configured" };
-  try {
-    const res = await fetchWithTimeout(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildTeamsMessage(event)),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      return { ok: false, status: res.status, error: text.slice(0, 200) };
-    }
-    return { ok: true, status: res.status };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "fetch failed" };
-  }
+
+  // safeFetch valida el destino ANTES de conectar y en cada redireccion, y no
+  // devuelve el cuerpo remoto: antes se propagaba `text.slice(0, 200)` al
+  // llamador, lo que convertia el webhook en una via para leer servicios
+  // internos y ver el resultado.
+  const res = await safeFetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildTeamsMessage(event)),
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+
+  return res.ok
+    ? { ok: true, status: res.status }
+    : { ok: false, status: res.status, error: res.error ?? `HTTP ${res.status}` };
 }
 
 export async function sendSlackNotification(
@@ -154,20 +146,17 @@ export async function sendSlackNotification(
   event: OutboundEvent,
 ): Promise<DispatchResult> {
   if (!webhookUrl) return { ok: false, error: "Slack webhook URL not configured" };
-  try {
-    const res = await fetchWithTimeout(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildSlackMessage(event)),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      return { ok: false, status: res.status, error: text.slice(0, 200) };
-    }
-    return { ok: true, status: res.status };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "fetch failed" };
-  }
+
+  const res = await safeFetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildSlackMessage(event)),
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+
+  return res.ok
+    ? { ok: true, status: res.status }
+    : { ok: false, status: res.status, error: res.error ?? `HTTP ${res.status}` };
 }
 
 /**
@@ -204,16 +193,16 @@ export async function sendCustomWebhook(
   };
   if (secret) headers["X-HEREDIA-Signature"] = signWebhookPayload(secret, body);
 
-  try {
-    const res = await fetchWithTimeout(url, { method: "POST", headers, body });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      return { ok: false, status: res.status, error: text.slice(0, 200) };
-    }
-    return { ok: true, status: res.status };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "fetch failed" };
-  }
+  const res = await safeFetch(url, {
+    method: "POST",
+    headers,
+    body,
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+
+  return res.ok
+    ? { ok: true, status: res.status }
+    : { ok: false, status: res.status, error: res.error ?? `HTTP ${res.status}` };
 }
 
 /** Helper para mapear una NotificationKind del ISD a un nombre de evento estable. */
