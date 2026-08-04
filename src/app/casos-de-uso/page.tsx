@@ -6,7 +6,7 @@ import { SiteFooter } from "@/components/site-footer";
 export const metadata: Metadata = {
   title: "Casos de uso ilustrativos — Cómo gestorías y funerarias usan Heredia",
   description:
-    "6 escenarios con cifras orientativas: cómo despachos pueden pasar de 60 a 150 expedientes/año, evitar recargos del Modelo 650 y monetizar servicios post-mortem.",
+    "6 escenarios ilustrativos con cifras hipotéticas, no medidas en clientes reales: cómo un despacho podría ampliar capacidad, reducir el riesgo de recargos del Modelo 650 y monetizar servicios post-mortem.",
   alternates: { canonical: "https://heredia.app/casos-de-uso" },
 };
 
@@ -17,7 +17,6 @@ interface UseCase {
   before: string[];
   after: string[];
   metrics: { label: string; value: string; tone: "positive" | "neutral" }[];
-  quote: string;
 }
 
 const CASES: UseCase[] = [
@@ -43,7 +42,6 @@ const CASES: UseCase[] = [
       { label: "Plazos perdidos", value: "0", tone: "positive" },
       { label: "Plan", value: "Despacho", tone: "neutral" },
     ],
-    quote: "Pasamos de tramitar 60 herencias al año a 150 con el mismo equipo. La automatización del Modelo 650 y el portal familia son los dos ejes que cambiaron todo.",
   },
 
   {
@@ -68,7 +66,6 @@ const CASES: UseCase[] = [
       { label: "Tiempo dedicado", value: "Constante", tone: "neutral" },
       { label: "Plan", value: "Despacho", tone: "neutral" },
     ],
-    quote: "Pasamos de ser la funeraria que organiza el sepelio a ser el referente que la familia recomienda durante años. El servicio post-mortem ha sido nuestra mejor inversión.",
   },
 
   {
@@ -93,7 +90,6 @@ const CASES: UseCase[] = [
       { label: "Coste Heredia/año", value: "4.188 €", tone: "neutral" },
       { label: "Plan", value: "Despacho", tone: "neutral" },
     ],
-    quote: "Lo que costaba el plan se cubrió con un solo recargo evitado. El año entero ha sido beneficio puro.",
   },
 
   {
@@ -118,7 +114,6 @@ const CASES: UseCase[] = [
       { label: "Honorarios facturados", value: "+ 1.800 €", tone: "positive" },
       { label: "Plan", value: "Firma", tone: "neutral" },
     ],
-    quote: "El audit trail nos sacó de un proceso disciplinario. Pudimos demostrar al colegio que cada paso del expediente estaba registrado.",
   },
 
   {
@@ -143,7 +138,6 @@ const CASES: UseCase[] = [
       { label: "Tiempo/donación", value: "2,5 h", tone: "neutral" },
       { label: "Plan", value: "Despacho", tone: "neutral" },
     ],
-    quote: "Antes derivábamos las donaciones; con Heredia ya no hay diferencia entre 650 y 651. Es el mismo flujo y abrimos un vertical entero.",
   },
 
   {
@@ -168,7 +162,6 @@ const CASES: UseCase[] = [
       { label: "Inversión inicial", value: "0 €", tone: "neutral" },
       { label: "Plan", value: "Firma", tone: "neutral" },
     ],
-    quote: "El portal con nuestro dominio es la mejor herramienta de marca que hemos tenido. La familia ve nuestro logo durante meses, no el del software.",
   },
 ];
 
@@ -251,10 +244,6 @@ export default function CasosDeUsoPage() {
               </div>
             </div>
 
-            {/* Quote */}
-            <div className="p-6 bg-gray-50 border-t">
-              <p className="text-sm text-gray-700 italic">"{c.quote}"</p>
-            </div>
           </article>
         ))}
       </div>

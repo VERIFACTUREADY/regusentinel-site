@@ -7,7 +7,7 @@ import { Reveal } from "@/components/reveal";
 export const metadata: Metadata = {
   title: "Radar ISD — Cero presentaciones tardías del Modelo 650 | Heredia",
   description:
-    "Radar ISD vigila los 17 calendarios autonómicos del Impuesto de Sucesiones por ti. Alertas antes de cada plazo, ventana de prórroga, umbral de patrimonio o cambio de residencia. Cero recargos del 5-20%.",
+    "Radar ISD vigila el plazo estatal de 6 meses del Impuesto de Sucesiones y avisa antes de que venza: ventana de prórroga, umbral de patrimonio y cambio de residencia. Los plazos se calculan de lunes a viernes, sin calendario de festivos.",
   keywords: [
     "radar isd",
     "plazos modelo 650",
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Radar ISD — Cero presentaciones tardías",
     description:
-      "Alertas proactivas en los 17 calendarios autonómicos. Tu equipo nunca vuelve a olvidar un plazo del Modelo 650.",
+      "Alertas proactivas antes de cada vencimiento del Modelo 650, con avisos escalonados a 60, 30, 7 y 1 día.",
     type: "article",
   },
 };
@@ -140,7 +140,7 @@ export default function RadarISDPage() {
             </h1>
             <p className="text-lg sm:text-xl text-blue-100 max-w-3xl mb-7">
               Mientras tu equipo está con el siguiente expediente, Radar ISD vigila los{" "}
-              <strong className="text-white">17 calendarios autonómicos</strong>, las
+              <strong className="text-white">el plazo estatal de 6 meses</strong>, las
               ventanas de prórroga, los umbrales de patrimonio preexistente y los
               cambios de residencia. Si algo va a vencer o a costar dinero, te avisa
               antes — no después.

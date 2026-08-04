@@ -250,6 +250,9 @@ model Case {
   /// simultáneas producían la misma. Esta restricción hace que la segunda
   /// falle con P2002 en lugar de duplicar, y el alta reintenta.
   @@unique([orgId, ref])
+
+  /// Lo consulta el cron de retención para localizar lo que toca purgar.
+  @@index([purgeScheduledAt])
 }
 
 model Deceased {

@@ -78,7 +78,7 @@ export default function OnboardingPage() {
 
           <ul className="mt-8 space-y-3.5 max-w-md">
             {[
-              "Radar ISD vigila plazos en los 17 calendarios autonómicos",
+              "Radar ISD vigila el plazo del Modelo 650 y avisa antes de que venza",
               "Portal Familia con tu marca para que la familia vea el expediente",
               "Borradores del Modelo 650 y 651 auto-rellenados",
               "Importa tu Excel actual en la primera llamada",

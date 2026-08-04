@@ -6,11 +6,11 @@ import { SiteFooter } from "@/components/site-footer";
 export const metadata: Metadata = {
   title: "Seguridad y privacidad — Heredia",
   description:
-    "Cómo Heredia protege los datos de tus expedientes: cifrado en tránsito y reposo, hosting en UE, RGPD compliant, audit trail inmutable y retención configurable.",
+    "Cómo Heredia protege los datos de tus expedientes: cifrado en tránsito, control de acceso por roles, registro de actividad append-only y retención configurable con purga real.",
   alternates: { canonical: "https://heredia.app/seguridad" },
   openGraph: {
     title: "Seguridad y privacidad - Heredia",
-    description: "Cifrado, RGPD, hosting UE, audit trail. Cómo protegemos los datos de tus expedientes.",
+    description: "Cifrado en tránsito, aislamiento por organización, registro append-only y retención con purga real. Qué garantiza el software y qué depende de tu despliegue.",
     type: "website",
   },
 };
@@ -29,23 +29,23 @@ const MEASURES: MeasureCard[] = [
   },
   {
     icon: "M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z",
-    title: "Cifrado en reposo",
-    desc: "Base de datos con cifrado AES-256 a nivel de almacenamiento. Documentos en S3 con SSE-S3. Backups diarios cifrados con retención de 30 días.",
+    title: "Cifrado en reposo del proveedor",
+    desc: "El cifrado en reposo lo aporta el proveedor de base de datos y de almacenamiento de objetos contratado en cada despliegue (por ejemplo AES-256 y SSE-S3). No es una garantía del software: consulta la configuración concreta de tu instalación.",
   },
   {
     icon: "M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-    title: "Hosting en Unión Europea",
-    desc: "Toda la infraestructura (compute, base de datos, storage, backups) reside en datacenters de la UE. Nunca se transfieren datos personales fuera del EEE.",
+    title: "Ubicación configurable del despliegue",
+    desc: "La región de la aplicación, la base de datos y el almacenamiento se elige al desplegar. Para mantener los datos en el EEE hay que contratar todos los servicios en regiones europeas; el software no lo impone por sí solo.",
   },
   {
     icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
-    title: "Audit trail inmutable",
-    desc: "Cada acción (lectura, escritura, exportación) queda registrada con autor, IP, timestamp y diff. El log es append-only y no editable. Válido para procesos disciplinarios o judiciales.",
+    title: "Registro de actividad append-only",
+    desc: "Cada acción relevante queda registrada con autor, momento y, cuando procede, IP. La aplicación no expone edición ni borrado del registro (append-only a nivel de aplicación). No es inmutabilidad criptográfica ni impuesta por la base de datos, y la purga de retención lo anonimiza cuando corresponde.",
   },
   {
     icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",
     title: "Retención configurable",
-    desc: "Tu organización define cuánto se conservan los datos tras el cierre de cada expediente. Borrado lógico con tombstone, plazo configurable de purga definitiva.",
+    desc: "Tu organización define cuánto se conservan los datos tras el cierre de cada expediente. El ciclo es: borrado lógico, periodo de gracia y purga definitiva, que elimina las filas de la base de datos y los objetos del almacenamiento. Si el borrado del fichero falla, el expediente NO se marca como purgado y se reintenta.",
   },
   {
     icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z",
@@ -54,8 +54,8 @@ const MEASURES: MeasureCard[] = [
   },
   {
     icon: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15",
-    title: "Recuperación ante desastres",
-    desc: "RPO 1 hora (backup más reciente), RTO 4 horas (tiempo de recuperación). Procedimiento documentado y testado mensualmente. Plan de continuidad de negocio.",
+    title: "Copias de seguridad",
+    desc: "Las copias y su frecuencia dependen del proveedor de base de datos contratado en cada despliegue. Objetivos de recuperación y pruebas de restauración deben acordarse y verificarse por instalación; no hay un compromiso genérico de RPO/RTO.",
   },
   {
     icon: "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9",
@@ -92,7 +92,7 @@ const RGPD_POINTS: RGPDPoint[] = [
   },
   {
     q: "¿Hacéis transferencias internacionales de datos?",
-    a: "No. Toda la infraestructura está en datacenters de la UE (Frankfurt, Dublin). Las únicas API externas son Stripe (UE), Anthropic (con SCC firmadas), Resend (UE). En ningún caso datos personales identificables se transfieren a terceros países.",
+    a: "Depende de los servicios que contrates al desplegar. El software minimiza los datos que salen: antes de enviar contexto a un proveedor de IA se eliminan emails, DNI, teléfonos e IBAN y se pseudonimizan los nombres, y el uso de IA está desactivado por defecto hasta que tu organización lo activa. Comprueba la región y el contrato de encargado de cada proveedor de tu instalación.",
   },
   {
     q: "¿Qué medidas habéis tomado tras el incidente X o ante Y vulnerabilidad?",
@@ -129,7 +129,7 @@ export default function SeguridadPage() {
           <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
           <div className="relative max-w-5xl mx-auto px-4 py-14 sm:py-16">
             <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-400/30 rounded-full px-3 py-1 text-xs text-emerald-300 mb-4">
-              RGPD + LOPDGDD compliant - Hosting UE
+              Diseñado para RGPD y LOPDGDD
             </div>
             <h1 className="text-3xl sm:text-4xl font-bold mb-3">Seguridad y privacidad</h1>
             <p className="text-base sm:text-lg text-blue-100 max-w-3xl">
@@ -143,8 +143,8 @@ export default function SeguridadPage() {
         <div className="bg-white border-b">
           <div className="max-w-5xl mx-auto px-4 py-6 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
             <div>
-              <p className="text-2xl font-bold text-gray-900">UE</p>
-              <p className="text-xs text-gray-500 mt-0.5">Datos solo en datacenters UE</p>
+              <p className="text-2xl font-bold text-gray-900">Configurable</p>
+              <p className="text-xs text-gray-500 mt-0.5">Región elegida en el despliegue</p>
             </div>
             <div>
               <p className="text-2xl font-bold text-gray-900">TLS 1.3</p>
@@ -185,7 +185,7 @@ export default function SeguridadPage() {
           <div className="max-w-5xl mx-auto px-4 py-12">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Subencargados del tratamiento</h2>
             <p className="text-sm text-gray-600 mb-6">
-              Lista completa de proveedores que procesan datos personales en nuestro nombre. Todos con DPA firmado y ubicación UE.
+              Proveedores que pueden procesar datos personales según la configuración del despliegue. Antes de operar con datos reales verifica en tu instalación qué servicios están contratados, en qué región y con qué contrato de encargado.
             </p>
             <div className="overflow-x-auto bg-gray-50 rounded-xl border">
               <table className="w-full text-sm">

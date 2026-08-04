@@ -37,7 +37,7 @@ const FEATURES: FeatureRow[] = [
     heredia: "yes",
   },
   {
-    feature: "Radar ISD — vigilancia de los 17 calendarios autonómicos",
+    feature: "Radar ISD — vigilancia del plazo del Modelo 650",
     detail: "Avisos antes de vencer el Modelo 650, ventana de prórroga, tramos de patrimonio, bonificaciones con caducidad y cambios de residencia",
     excel: "no",
     crm: "no",
@@ -78,7 +78,7 @@ const FEATURES: FeatureRow[] = [
   },
   {
     feature: "Audit trail completo",
-    detail: "Registro inmutable de cada acción, autor y momento — válido en juicio",
+    detail: "Registro append-only de cada acción, autor y momento, exportable con el expediente",
     excel: "no",
     crm: "partial",
     juridico: "yes",

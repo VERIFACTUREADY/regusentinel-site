@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Sin secretos reales: todos los valores de abajo son de juguete y solo sirven
+# para que el codigo arranque. Un PR desde un fork no debe poder leer nada.
+env:
+  NEXTAUTH_SECRET: ci-secret-de-pruebas-con-mas-de-32-caracteres
+  NEXTAUTH_URL: http://localhost:3000
+  APP_URL: http://localhost:3000
+  CRON_SECRET: ci-cron-secret
+  SECRETS_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  STRIPE_SECRET_KEY: sk_test_ci
+  STRIPE_WEBHOOK_SECRET: whsec_ci
+  S3_ENDPOINT: http://127.0.0.1:9000
+  S3_ACCESS_KEY: minioadmin
+  S3_SECRET_KEY: minioadmin123
+  S3_BUCKET: heredia-ci
+  S3_REGION: us-east-1
+
+jobs:
+  verificacion:
+    name: Tipos, pruebas y build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: heredia_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Instalacion reproducible a partir del lockfile.
+      - name: Instalar dependencias
+        run: npm ci --legacy-peer-deps
+
+      - name: Generar cliente Prisma
+        run: npx prisma generate
+
+      - name: Validar el esquema
+        run: npx prisma validate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
+
+      # Comprueba que las migraciones aplican sobre una base VACIA. Sin esto,
+      # un esquema editado a mano pasa CI y revienta en el despliegue.
+      - name: Aplicar migraciones sobre base vacia
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
+
+      # Detecta un schema.prisma modificado sin su migracion correspondiente.
+      - name: Comprobar que no faltan migraciones
+        run: |
+          npx prisma migrate status
+          npx prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "$DATABASE_URL" \
+            --exit-code && echo "Esquema y migraciones coinciden" || {
+              echo "::error::El esquema tiene cambios sin migracion. Ejecuta prisma migrate dev."
+              exit 1
+            }
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Pruebas unitarias
+        run: npm test
+
+      - name: Pruebas de integracion (PostgreSQL real)
+        run: npx vitest run --config vitest.integration.config.ts
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
+
+      # Sin DATABASE_URL: reproduce el build de Vercel en un entorno sin base
+      # de datos, que es como se construyen las previews.
+      - name: Build
+        run: npm run build
+
+  dependencias:
+    name: Auditoria de dependencias
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci --legacy-peer-deps
+
+      # Solo bloquea por vulnerabilidades CRITICAS. Las de nivel bajo y medio
+      # se informan pero no paran el PR: bloquear por todo lleva a ignorar el
+      # aviso entero, que es peor.
+      - name: Vulnerabilidades criticas
+        run: npm audit --audit-level=critical
+
+      - name: Informe completo (no bloqueante)
+        run: npm audit || true

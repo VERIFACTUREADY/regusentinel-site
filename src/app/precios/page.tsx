@@ -39,7 +39,7 @@ const faqItems = [
   },
   {
     q: "¿Es compatible con el RGPD y la LOPDGDD?",
-    a: "Sí. Mantenemos el RAT actualizado, aplicamos minimización de datos, cifrado en tránsito y reposo, política de retención configurable y DPA con cada cliente. El tratamiento de datos de personas fallecidas sigue el marco del art. 3 de la LO 3/2018.",
+    a: "Aplicamos minimización de datos, control de acceso por roles, cifrado en tránsito, registro de actividad append-only y política de retención configurable con purga real de base de datos y almacenamiento. Ponemos a tu disposición un contrato de encargado de tratamiento (art. 28 RGPD) para que lo firmes como responsable. El tratamiento de datos de personas fallecidas sigue el marco del art. 3 de la LO 3/2018. El cumplimiento del RGPD no es una certificación: es responsabilidad compartida y cada cliente debe mantener su propio registro de actividades.",
   },
 ];
 
@@ -139,7 +139,7 @@ export default function PreciosPage() {
                 href: "/radar-isd",
                 tile: "from-rose-500/15 to-amber-500/10 text-rose-600 ring-rose-100",
                 title: "Radar ISD",
-                desc: "Vigila los 17 calendarios autonómicos, las ventanas de prórroga y los tramos de patrimonio. Cero recargos del 5-20%.",
+                desc: "Vigila el plazo del Modelo 650, la ventana de prórroga y los tramos de patrimonio, con avisos escalonados antes de cada vencimiento.",
               },
               {
                 href: "/portal-familia",
@@ -196,7 +196,7 @@ export default function PreciosPage() {
                 {[
                   ["Usuarios", "2", "5", "20"],
                   ["Expedientes/mes incluidos", "15", "50", "200"],
-                  ["Radar ISD (los 17 calendarios autonómicos)", "✓", "✓", "✓"],
+                  ["Radar ISD (vigilancia de plazos del Modelo 650)", "✓", "✓", "✓"],
                   ["Checklist inteligente por categoría", "✓", "✓", "✓"],
                   ["Portal Familia", "Básico", "White-label", "White-label"],
                   ["Borrador automático Modelo 650 / 651", "✓", "✓", "✓"],
@@ -205,7 +205,7 @@ export default function PreciosPage() {
                   ["Notificaciones email automáticas ISD", "—", "✓", "✓"],
                   ["Reporting operativo (lead time, bloqueos)", "—", "✓", "✓"],
                   ["Export PDF/ZIP expediente completo", "✓", "✓", "✓"],
-                  ["Audit trail inmutable", "✓", "✓", "✓"],
+                  ["Registro de actividad append-only", "✓", "✓", "✓"],
                   ["SSO con Google Workspace + roles avanzados", "—", "—", "✓"],
                   ["API / webhooks", "—", "—", "✓"],
                   ["DPA extendido + auditorías", "—", "—", "✓"],

@@ -124,7 +124,7 @@ export default function MigrarDeExcelPage() {
             </h1>
             <p className="text-lg sm:text-xl text-blue-100 max-w-3xl mb-7">
               No es un problema de orden, es un problema de <strong className="text-white">arquitectura</strong>:
-              el Excel se diseñó para hojas de cálculo, no para vigilar 17 calendarios
+              el Excel se diseñó para hojas de cálculo, no para vigilar plazos
               autonómicos, dar acceso a 4 herederos a la vez y guardar quién hizo qué.
             </p>
             <p className="text-sm text-blue-200 mb-7 max-w-3xl">
@@ -218,7 +218,7 @@ export default function MigrarDeExcelPage() {
                 <ul className="space-y-3 text-sm text-gray-700">
                   {[
                     "Un expediente = una página con todo: causante, herederos, bienes, plazos, alertas",
-                    "Radar ISD calcula y vigila los 17 calendarios autonómicos por ti",
+                    "Radar ISD calcula el plazo del Modelo 650 y avisa antes de que venza",
                     "Documentos clasificados automáticamente al subirlos al expediente",
                     "Portal Familia: cada heredero ve plazos y docs sin llamarte",
                     "Cola de Acciones: cada mañana sabes qué hacer y en qué orden",

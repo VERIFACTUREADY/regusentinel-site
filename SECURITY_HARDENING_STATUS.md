@@ -117,7 +117,7 @@ Cada entrada está confirmada leyendo el fichero indicado. No son sospechas.
 | 5 — SSRF y secretos outbound | ✅ completada | `fix(integrations): prevent SSRF and encrypt outbound secrets` |
 | 6 — Notificaciones y workflows | ✅ completada | `fix(notifications): make delivery idempotent retryable and preference-aware` |
 | 7 — Retención, IA y plazos | ✅ completada | `fix(privacy): implement real retention AI minimization and unified deadlines` |
-| 8 — Copy y documentación honesta | ⬜ pendiente | — |
+| 8 — Copy y documentación honesta | ✅ completada | `docs: align product claims with verified capabilities` |
 | 9 — Tests reales y CI | ⬜ pendiente | — |
 
 ---
@@ -491,6 +491,82 @@ festivos**, y así está documentado. El copy se corrige en la Fase 8.
 - Las reglas fiscales no están verificadas a 2026; se presentan como estimación
   orientativa (Fase 8).
 
+---
+
+## Fase 8 — afirmaciones corregidas
+
+| Afirmación anterior | Por qué no se sostiene | Cómo queda |
+|---|---|---|
+| "Audit trail inmutable" (4 páginas) | La aplicación no expone edición, pero usa el mismo usuario de PostgreSQL y de hecho escribe sobre `AuditLog` al anonimizar en la purga | "Registro de actividad append-only a nivel de aplicación" |
+| "Válido en juicio" | El valor probatorio lo decide un tribunal, no el proveedor | "Exportable con el expediente y las evidencias registradas" |
+| "Hosting en la UE" / "datacenters de Frankfurt y Dublín" | Depende de dónde se despliegue; el código no lo impone | "Ubicación configurable del despliegue", con la advertencia de contratar todo en el EEE |
+| "Cifrado en reposo AES-256 / SSE-S3" | Lo aporta el proveedor contratado, no el software | "Cifrado en reposo del proveedor", con aviso de verificar la instalación |
+| "Mantenemos el RAT actualizado" | El registro de actividades es del responsable, y el responsable es el cliente | Se explica que cada cliente mantiene el suyo |
+| "DPA con cada cliente" | No consta firmado con nadie | "Ponemos a tu disposición un contrato de encargado para que lo firmes" |
+| "RGPD compliant" | No es una certificación | "Diseñado para RGPD y LOPDGDD" |
+| "17 calendarios autonómicos" (6 sitios) | El motor calcula el plazo estatal de 6 meses y ni siquiera aplica festivos | "Vigilancia del plazo del Modelo 650", con la limitación explícita |
+| "RPO 1 hora, RTO 4 horas, testado mensualmente" | No hay procedimiento ni pruebas | "Las copias dependen del proveedor; los objetivos deben acordarse por instalación" |
+| 6 testimonios de clientes | No consta ninguno real ni autorizado | **Eliminados**. Los escenarios se conservan etiquetados como hipotéticos |
+| "de 60 a 150 expedientes/año" | Cifra inventada presentada como resultado | "cifras hipotéticas, no medidas en clientes reales" |
+| "HEREDIA TECHNOLOGIES S.L." | La entidad no consta constituida | Marcadores explícitos `[DENOMINACION SOCIAL]`, `[NIF]`, `[DOMICILIO]` con aviso destacado de que la política no es válida hasta rellenarlos |
+
+**Corrección de fondo en la política de privacidad:** decía que el proveedor es
+el responsable del tratamiento de todo. Respecto de los datos de los
+expedientes el proveedor es **encargado**; el responsable es la gestoría o
+funeraria que decide las finalidades. Es la distinción que determina quién
+responde ante un interesado.
+
+**README reescrito** con arquitectura, seguridad (separando lo que garantiza el
+software de lo que depende del despliegue), planes reales, variables de
+entorno, migraciones, pruebas, CI, IA, portal, Stripe, retención, y una lista
+de "antes de operar con datos reales".
+
+No existe `HANDOFF.md` en el repositorio, así que no había nada que corregir
+ahí; su función la cumple este documento.
+
+---
+
+## Fase 9 — pruebas reales y CI
+
+**Separación de suites.** `npm test` son unit / service / **handler tests**: no
+se llaman E2E, porque importan el handler y mockean Prisma, Stripe, S3 y
+NextAuth. `npm run test:integration` usa **PostgreSQL real y efímero**, sin
+mocks, y comprueba lo que un mock no puede: constraints, transacciones,
+concurrencia, aislamiento y cascadas de borrado.
+
+31 pruebas de integración reales en 4 ficheros: aislamiento multi-tenant y
+concurrencia de referencias, visibilidad documental y consentimiento,
+StripeEvent y topes de plan, retención y purga.
+
+Dos de ellas demuestran el fallo original en lugar de sólo comprobar el
+arreglo: `sin el lock, el mismo escenario superaría el tope` y la
+reproducción de `count + 1` con 10 altas simultáneas.
+
+**CI** (`.github/workflows/ci.yml`): `npm ci`, `prisma validate`, migraciones
+sobre base vacía, **comprobación de deriva entre esquema y migraciones**,
+TypeScript, unitarias, integración contra PostgreSQL de servicio, build sin
+`DATABASE_URL` (como las previews de Vercel) y auditoría de dependencias que
+sólo bloquea por vulnerabilidades críticas. Sin secretos reales.
+
+El comprobador de deriva **ya encontró un problema real** al escribirlo: una de
+mis migraciones creaba un índice (`Case_purgeScheduledAt_idx`) que no estaba
+declarado en el esquema. Corregido.
+
+El test estático de imports RBAC se mantiene, pero con su alcance escrito
+dentro: comprueba que el fichero **importa** un guard, no que lo llame, ni con
+qué permiso, ni que valide los IDs. Un endpoint puede pasarlo y seguir siendo
+vulnerable.
+
+### Riesgo residual de Fase 9
+
+- **No hay pruebas de navegador (Playwright).** Los 10 flujos pedidos
+  (registro, login, expulsión, portal con consentimiento, suspensión…) están
+  cubiertos a nivel de handler e integración, pero **no en un navegador real**.
+  Es la parte del encargo que queda pendiente; está en "Pendientes conocidos".
+- **No hay integración real con MinIO.** El almacenamiento se mockea incluso en
+  las pruebas de integración; lo verificado de S3 es la lógica de compensación,
+  no el cliente contra un servidor real.
+
 ## Migraciones creadas
 
 | Migración | Contenido | Probada |
@@ -519,3 +595,5 @@ festivos**, y así está documentado. El copy se corrige en la Fase 8.
 - Fase 5: ventana teórica de DNS rebinding (se conecta por nombre tras validar la resolución).
 - Fase 6: las acciones de workflow no encadenan; validación de email sólo sintáctica.
 - Fase 7: auditoría append-only a nivel de aplicación, **no** inmutable en base de datos; días hábiles sin festivos.
+- Fase 8: los textos legales llevan marcadores; hay que rellenarlos antes de operar.
+- **Fase 9 INCOMPLETA: faltan las pruebas de navegador con Playwright y la integración real con MinIO.** Todo lo demás de la fase está hecho.
