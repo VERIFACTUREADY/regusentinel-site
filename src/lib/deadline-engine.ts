@@ -6,7 +6,13 @@
  */
 
 /**
- * Add business days to a date (Mon-Fri only, no holiday calendar).
+ * Suma dias habiles contando **solo de lunes a viernes, sin calendario de
+ * festivos**.
+ *
+ * No se aplican festivos nacionales, autonomicos ni locales. Los plazos que
+ * salen de aqui son por tanto una estimacion optimista: el plazo real puede
+ * ser posterior. Cualquier texto de producto debe describirlo asi y no como
+ * "calendario laboral" ni "17 calendarios autonomicos".
  */
 export function addBusinessDays(date: Date, days: number): Date {
   const result = new Date(date);
@@ -20,11 +26,31 @@ export function addBusinessDays(date: Date, days: number): Date {
 }
 
 /**
- * Add months to a date.
+ * Suma meses conservando el ultimo dia del mes cuando el destino es mas corto.
+ *
+ * `setMonth` desborda: 31-ene + 1 mes da 3 de marzo, porque febrero no tiene
+ * 31 dias. Aplicado al plazo de 6 meses del ISD, un fallecimiento el 31 de
+ * agosto daba como plazo el 3 de marzo en vez del 28 de febrero: **tres dias
+ * de mas en un plazo legal**, justo en el sentido peligroso.
+ *
+ * El criterio del art. 67 RISD (de fecha a fecha, y si no existe el dia
+ * equivalente, el ultimo del mes) se implementa fijando el dia 1 antes de
+ * mover el mes y recortando despues al ultimo dia disponible.
  */
 export function addMonths(date: Date, months: number): Date {
   const result = new Date(date);
+  const day = result.getDate();
+
+  result.setDate(1);
   result.setMonth(result.getMonth() + months);
+
+  const lastDayOfTargetMonth = new Date(
+    result.getFullYear(),
+    result.getMonth() + 1,
+    0,
+  ).getDate();
+
+  result.setDate(Math.min(day, lastDayOfTargetMonth));
   return result;
 }
 
@@ -163,12 +189,47 @@ export function calculateTaskDeadlines(
 /**
  * Calculate key case-level deadlines.
  */
+/**
+ * Plazos legales del expediente. FUENTE UNICA: cualquier modulo que necesite
+ * el plazo del ISD debe llamar aqui.
+ *
+ * Antes habia calculos duplicados por todo el codigo — `setMonth(+6)` suelto,
+ * `180 * 24 * 60 * 60 * 1000` como aproximacion de seis meses, `22` dias
+ * naturales — que daban resultados distintos entre si para el mismo caso.
+ */
+export const ISD_DEADLINE_MONTHS = 6;
+export const ISD_EXTENSION_REQUEST_MONTHS = 5;
+export const CERTIFICATES_BUSINESS_DAYS = 15;
+
 export function getCaseDeadlines(deathDate: Date) {
   return {
-    certificatesAvailable: addBusinessDays(deathDate, 15),
-    isdDeadline: addMonths(deathDate, 6),
-    isdExtensionRequestDeadline: addMonths(deathDate, 5),
+    certificatesAvailable: addBusinessDays(deathDate, CERTIFICATES_BUSINESS_DAYS),
+    isdDeadline: isdDeadlineFor(deathDate),
+    isdExtensionRequestDeadline: isdExtensionRequestDeadlineFor(deathDate),
   };
+}
+
+/** Plazo de presentacion del ISD: 6 meses desde el fallecimiento. */
+export function isdDeadlineFor(deathDate: Date): Date {
+  return addMonths(deathDate, ISD_DEADLINE_MONTHS);
+}
+
+/**
+ * Ultimo dia para SOLICITAR la prorroga: dentro de los 5 primeros meses.
+ * Pasado ese plazo, la prorroga ya no se puede pedir.
+ */
+export function isdExtensionRequestDeadlineFor(deathDate: Date): Date {
+  return addMonths(deathDate, ISD_EXTENSION_REQUEST_MONTHS);
+}
+
+/**
+ * ¿Sigue siendo posible solicitar la prorroga del ISD?
+ *
+ * Existe porque el producto recomendaba solicitarla tambien cuando el plazo
+ * para pedirla ya habia vencido: un consejo que no se puede seguir.
+ */
+export function canStillRequestIsdExtension(deathDate: Date, now: Date = new Date()): boolean {
+  return now.getTime() <= isdExtensionRequestDeadlineFor(deathDate).getTime();
 }
 
 /**

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
+import { isdDeadlineFor, isdExtensionRequestDeadlineFor } from "@/lib/deadline-engine";
 
 export const dynamic = "force-dynamic";
 
@@ -125,8 +126,7 @@ export async function GET(req: NextRequest) {
   for (const c of isdCases) {
     if (!c.deceased?.deathDate) continue;
     const deathDate = new Date(c.deceased.deathDate);
-    const isdDeadline = new Date(deathDate);
-    isdDeadline.setMonth(isdDeadline.getMonth() + 6);
+    const isdDeadline = isdDeadlineFor(deathDate);
 
     if (isdDeadline < new Date(now.getTime() - 90 * 86400000)) continue;
 

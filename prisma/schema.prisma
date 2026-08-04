@@ -108,6 +108,13 @@ model Organization {
 
   // Onboarding guiado. Se oculta al marcarse dismiss o al completar los 5 pasos.
   onboardingDismissedAt DateTime?
+
+  /// Uso de IA con proveedor externo (Anthropic). DESACTIVADO por defecto:
+  /// enviar datos de un expediente a un tercero es una decision del
+  /// responsable del tratamiento — la gestoria o funeraria —, no del
+  /// proveedor del software. Antes se hacia sin que nadie lo decidiera.
+  aiEnabled   Boolean   @default(false)
+  aiEnabledAt DateTime?
 }
 
 // ─── USER & MEMBERSHIP ──────────────────────────────────
@@ -214,6 +221,14 @@ model Case {
 
   deletedAt DateTime?
   closedAt  DateTime?
+
+  /// Ciclo de retencion, separado en fases para que "eliminado" signifique algo.
+  /// `deletedAt` es solo borrado logico: el expediente sigue en PostgreSQL y
+  /// sus documentos en S3.
+  purgeScheduledAt DateTime? // cuando toca purgar de verdad
+  purgedAt         DateTime? // purga completada
+  purgeError       String?   // ultimo fallo, para reintento
+  purgeAttempts    Int       @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -422,19 +437,27 @@ model TemplateVersion {
 // ─── AUTOPILOT / IA ─────────────────────────────────────
 
 model PromptLog {
-  id       String  @id @default(cuid())
-  caseId   String?
-  userId   String
-  action   String // "generate_checklist" | "generate_draft" | etc
-  prompt   String
-  response String
-  model    String?
-  tokens   Int?
+  id     String  @id @default(cuid())
+  caseId String?
+  userId String
+  action String // "generate_checklist" | "generate_draft" | etc
+
+  /// El prompt integro YA NO se guarda: contenia el contexto del expediente
+  /// con nombres, DNI, telefonos y emails, duplicando la PII y conservandola
+  /// sin plazo. Se guarda su huella para poder correlacionar una respuesta
+  /// con su entrada sin almacenarla.
+  contextHash String?
+  /// Respuesta ya minimizada (sin identificadores directos).
+  response    String
+  model       String?
+  tokens      Int?
 
   createdAt DateTime @default(now())
 
   case Case? @relation(fields: [caseId], references: [id])
   user User  @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
 }
 
 model Approval {

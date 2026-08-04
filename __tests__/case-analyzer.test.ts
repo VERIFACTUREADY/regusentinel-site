@@ -29,8 +29,20 @@ describe("heuristicAnalysis", () => {
       buildCase({ deceased: { fullName: "X", deathDate: new Date(Date.now() - 160 * aDay) } })
     );
     expect(result.criticalIssues.some((i) => i.title.includes("ISD"))).toBe(true);
-    expect(result.suggestedActions.some((a) => a.title.includes("prorroga"))).toBe(true);
     expect(result.healthScore).toBeLessThan(80);
+  });
+
+  it("NO recomienda solicitar prorroga cuando la ventana ya se cerro", () => {
+    // A los 160 dias del fallecimiento han pasado los 5 meses en los que la
+    // prorroga puede pedirse. Recomendarla entonces era aconsejar algo
+    // imposible de hacer; ademas el mensaje debe decirlo explicitamente.
+    const result = heuristicAnalysis(
+      buildCase({ deceased: { fullName: "X", deathDate: new Date(Date.now() - 160 * aDay) } })
+    );
+    expect(result.suggestedActions.some((a) => a.title.includes("prorroga"))).toBe(false);
+    expect(
+      result.criticalIssues.some((i) => i.description.includes("ya ha vencido")),
+    ).toBe(true);
   });
 
   it("flags blocked tasks when 3+ are blocked", () => {

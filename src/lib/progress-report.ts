@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 
+import { contextHash } from "./ai-privacy";
 const HAS_AI = !!process.env.ANTHROPIC_API_KEY;
 const MODEL = "claude-sonnet-4-6";
 
@@ -226,7 +227,7 @@ export async function generateProgressReport(caseId: string, userId: string): Pr
       caseId,
       userId,
       action: "progress_report",
-      prompt: ctx.text,
+      contextHash: contextHash(ctx.text),
       response: JSON.stringify({ subject, body, completedItems, pendingItems, nextSteps }),
       model: modelUsed,
       tokens: null,

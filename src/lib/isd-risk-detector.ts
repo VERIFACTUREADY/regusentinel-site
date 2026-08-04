@@ -1,3 +1,4 @@
+import { isdDeadlineFor, isdExtensionRequestDeadlineFor } from "./deadline-engine";
 /**
  * Detector deterministico de riesgos ISD para un expediente.
  *
@@ -142,10 +143,10 @@ export function detectISDRisks(input: RiskInput): ISDRisk[] {
   const death = new Date(input.deathDate);
   const now = Date.now();
   const daysSinceDeath = Math.floor((now - death.getTime()) / MS_PER_DAY);
-  const isdDeadline = new Date(death);
-  isdDeadline.setMonth(isdDeadline.getMonth() + 6);
-  const extensionDeadline = new Date(death);
-  extensionDeadline.setMonth(extensionDeadline.getMonth() + 5);
+  // Fuente unica: lib/deadline-engine. Antes cada modulo recalculaba el plazo
+  // por su cuenta con setMonth, que desborda a fin de mes.
+  const isdDeadline = isdDeadlineFor(death);
+  const extensionDeadline = isdExtensionRequestDeadlineFor(death);
   const daysUntilISD = Math.ceil((isdDeadline.getTime() - now) / MS_PER_DAY);
   const daysUntilExtension = Math.ceil((extensionDeadline.getTime() - now) / MS_PER_DAY);
 

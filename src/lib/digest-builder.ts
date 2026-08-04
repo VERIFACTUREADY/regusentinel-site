@@ -1,3 +1,4 @@
+import { isdDeadlineFor, isdExtensionRequestDeadlineFor } from "./deadline-engine";
 export interface DigestCase {
   id: string;
   ref: string;
@@ -98,7 +99,8 @@ export function classifyCases(
   const result: DigestCase[] = [];
   for (const c of cases) {
     if (!c.deceased?.deathDate) continue;
-    const isdDeadline = new Date(c.deceased.deathDate.getTime() + 180 * 24 * 60 * 60 * 1000);
+    // 180 dias fijos no son seis meses: dependia del mes de fallecimiento.
+    const isdDeadline = isdDeadlineFor(c.deceased.deathDate);
     const daysRemaining = Math.ceil((isdDeadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     if (daysRemaining < 0 || daysRemaining > upcomingDays) continue;
     const urgency: DigestCase["urgency"] = daysRemaining <= 30 ? "critical" : daysRemaining <= 60 ? "warning" : "upcoming";

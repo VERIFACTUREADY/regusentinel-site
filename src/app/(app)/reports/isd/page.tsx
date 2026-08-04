@@ -5,6 +5,7 @@ import { hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { isdDeadlineFor, isdExtensionRequestDeadlineFor } from "@/lib/deadline-engine";
 
 export const metadata: Metadata = {
   title: "Análisis ISD — Heredia",
@@ -17,7 +18,7 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 
 function isdDeadline(deathDate: Date): Date {
   const d = new Date(deathDate);
-  d.setMonth(d.getMonth() + 6);
+  return isdDeadlineFor(deathDate);
   return d;
 }
 

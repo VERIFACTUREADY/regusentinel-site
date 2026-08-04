@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 
+import { contextHash } from "./ai-privacy";
 const HAS_AI = !!process.env.ANTHROPIC_API_KEY;
 const MODEL = "claude-sonnet-4-6";
 
@@ -126,7 +127,7 @@ export async function generateHandoffBriefing(
       caseId,
       userId,
       action: "handoff_briefing",
-      prompt: context.slice(0, 500),
+      contextHash: contextHash(context.slice(0, 500)),
       response: JSON.stringify(result),
       model: result.model,
     },

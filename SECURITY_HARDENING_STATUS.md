@@ -116,7 +116,7 @@ Cada entrada está confirmada leyendo el fichero indicado. No son sospechas.
 | 4 — Stripe y límites de plan | ✅ completada | `fix(billing): make Stripe processing retryable and enforce plan limits` |
 | 5 — SSRF y secretos outbound | ✅ completada | `fix(integrations): prevent SSRF and encrypt outbound secrets` |
 | 6 — Notificaciones y workflows | ✅ completada | `fix(notifications): make delivery idempotent retryable and preference-aware` |
-| 7 — Retención, IA y plazos | ⬜ pendiente | — |
+| 7 — Retención, IA y plazos | ✅ completada | `fix(privacy): implement real retention AI minimization and unified deadlines` |
 | 8 — Copy y documentación honesta | ⬜ pendiente | — |
 | 9 — Tests reales y CI | ⬜ pendiente | — |
 
@@ -423,12 +423,81 @@ como `SKIPPED` con su motivo.
   si se añade el encadenamiento.
 - La validación de email es sintáctica: no comprueba que el buzón exista.
 
+---
+
+## Fase 7 — decisiones técnicas
+
+**Retención real** (`src/lib/retention.ts`). El cron hacía
+`case.updateMany({ deletedAt })` y lo llamaba "limpieza": el expediente seguía
+íntegro en PostgreSQL y todos sus documentos en S3, mientras la política de
+privacidad afirmaba que los datos se eliminaban.
+
+Ciclo con fases explícitas: cierre → `deletedAt` → `purgeScheduledAt` (30 días
+de gracia) → purga → `purgedAt`. La purga borra **primero S3 y después la base
+de datos**: al revés se perderían las claves de los objetos y quedarían
+huérfanos para siempre. **Si S3 falla, la fila NO se borra** y queda con
+`purgeError` y `purgeAttempts` para reintento — decir "eliminado" con el
+fichero aún almacenado sería falso. Es idempotente.
+
+La auditoría **se conserva anonimizada**, no se borra: se desvincula del
+expediente y se le retira el texto libre (que contenía nombres de fichero y de
+tarea) y la IP.
+
+**IA.** `Organization.aiEnabled`, **desactivado por defecto**. Antes bastaba
+con que Heredia tuviera `ANTHROPIC_API_KEY` para que los datos de cualquier
+cliente salieran hacia un tercero sin que el responsable del tratamiento lo
+hubiera decidido. Cuando está desactivado, los módulos caen al comportamiento
+determinista local que ya existía.
+
+`src/lib/ai-privacy.ts` elimina emails, DNI/NIE, teléfonos e IBAN, y
+pseudonimiza nombres (completo y apellidos sueltos, porque las notas dicen "la
+Sra. Pérez"). **`PromptLog.prompt` desaparece**: guardaba el contexto íntegro
+con PII, duplicando el dato y conservándolo sin plazo. Se sustituye por
+`contextHash`, y hay retención (`PROMPT_LOG_RETENTION_DAYS`, 90 por defecto).
+
+Esto **no convierte el tratamiento en anónimo** — un expediente sigue siendo
+identificable por su contexto — pero cumple la minimización del art. 5.1.c.
+
+**Plazos: fuente única.** `addMonths` usaba `setMonth`, que desborda: 31-ene
++ 1 mes daba el 3 de marzo. En el plazo de 6 meses del ISD, un fallecimiento el
+31 de agosto daba el 3 de marzo en vez del 28 de febrero — **tres días de más
+en un plazo legal**, en el sentido peligroso. Corregido según el criterio de
+fecha a fecha con recorte al último día del mes.
+
+Se han unificado los cálculos duplicados de 9 ficheros: `setMonth(+6)` suelto,
+`180 * 24 * 60 * 60 * 1000` como aproximación de seis meses y `22` días
+naturales como aproximación de los 15 hábiles. Todos usan ya
+`isdDeadlineFor` / `getCaseDeadlines`.
+
+**Prórroga fuera de plazo.** `case-analyzer` recomendaba solicitarla cuando
+quedaban menos de 30 días para el plazo de 6 meses — momento en que la ventana
+de los 5 meses **ya está cerrada**. Ahora se comprueba con
+`canStillRequestIsdExtension` y, si venció, el mensaje lo dice y sugiere
+presentar en plazo con datos provisionales.
+
+**Días hábiles.** El motor cuenta lunes a viernes **sin calendario de
+festivos**, y así está documentado. El copy se corrige en la Fase 8.
+
+### Riesgo residual de Fase 7
+
+- **La auditoría NO es inmutable a nivel de base de datos.** La aplicación no
+  expone edición ni borrado, pero usa el mismo usuario de PostgreSQL para todo,
+  así que técnicamente puede escribir sobre `AuditLog` — de hecho lo hace, para
+  anonimizar en la purga. No se ha añadido trigger ni usuario restringido
+  porque entraría en conflicto con esa anonimización legítima. **La decisión es
+  cambiar el lenguaje comercial** a "registro de actividad append-only a nivel
+  de aplicación" (Fase 8), no afirmar inmutabilidad que no existe.
+- Los días hábiles siguen sin festivos: los plazos calculados son optimistas.
+- Las reglas fiscales no están verificadas a 2026; se presentan como estimación
+  orientativa (Fase 8).
+
 ## Migraciones creadas
 
 | Migración | Contenido | Probada |
 |---|---|---|
 | `20260805000000_case_ref_unique_per_org` | Deduplica refs existentes y crea `@@unique([orgId, ref])` | Sí: sobre base vacía y sobre base con 3 duplicados reales |
 | `20260804225123_portal_consent_document_visibility` | `Document.visibleToFamily` + estado de borrado, `PortalConsent`, rotación/revocación/caducidad del token. Backfill: documentos del portal → visibles; consentimientos previos → fila heredada | Sí: aplicada sobre base vacía y sobre base ya migrada |
+| `20260804234500_retention_ai_privacy` | `Organization.aiEnabled`, fases de purga en `Case`, `PromptLog.prompt` → `contextHash`. Los prompts históricos se descartan a propósito | Sí: aplicada y verificada con 11 pruebas de integración |
 | `20260804232000_notification_delivery_dedupe` | `NotificationLog.dedupeKey` único + índice por (caso, tipo, canal, destinatario). Backfill con `DISTINCT ON` de las entregas correctas ya registradas | Sí |
 | `20260804230440_stripe_event_retryable` | `StripeEvent` a máquina de estados. Migración **sin pérdida**: las filas existentes pasan a `PROCESSED` conservando su fecha (la generada por Prisma borraba `processedAt`) | Sí: verificada con 2 eventos previos reales |
 
@@ -438,6 +507,7 @@ como `SKIPPED` con su motivo.
 |---|---|---|---|
 | `MAX_UPLOAD_MB` | No | `20` | Tamaño máximo por archivo subido (tope duro de 200) |
 | `SECRETS_ENCRYPTION_KEY` | Sí, si se usan webhooks propios | — | Clave AES-256-GCM (32 bytes en base64 o hex) para cifrar `customWebhookSecret`. Sin ella, guardar un secreto se rechaza con 503 |
+| `PROMPT_LOG_RETENTION_DAYS` | No | `90` | Días que se conservan los registros de IA antes de purgarse |
 
 ## Pendientes conocidos
 
@@ -448,3 +518,4 @@ como `SKIPPED` con su motivo.
 - Fase 4: los eventos que agoten los reintentos de Stripe quedan en `FAILED` sin recuperación automática.
 - Fase 5: ventana teórica de DNS rebinding (se conecta por nombre tras validar la resolución).
 - Fase 6: las acciones de workflow no encadenan; validación de email sólo sintáctica.
+- Fase 7: auditoría append-only a nivel de aplicación, **no** inmutable en base de datos; días hábiles sin festivos.

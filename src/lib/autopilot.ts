@@ -2,6 +2,7 @@ import { prisma } from "./prisma";
 import { getChecklistForCategories } from "./checklist-rules";
 import type { TaskCategory } from "@prisma/client";
 
+import { contextHash } from "./ai-privacy";
 interface CaseData {
   id: string;
   categories: TaskCategory[];
@@ -47,7 +48,7 @@ Solo responde con el JSON array, sin explicación.`;
 
       const response = await callAI(prompt);
       await prisma.promptLog.create({
-        data: { caseId: caseData.id, userId, action: "generate_checklist", prompt, response, model: "claude-sonnet-4-20250514" },
+        data: { caseId: caseData.id, userId, action: "generate_checklist", contextHash: contextHash(prompt), response, model: "claude-sonnet-4-20250514" },
       });
       const parsed = JSON.parse(response);
       if (Array.isArray(parsed)) return parsed;
@@ -61,7 +62,7 @@ Solo responde con el JSON array, sin explicación.`;
       caseId: caseData.id,
       userId,
       action: "generate_checklist",
-      prompt: `[STUB] categories=${caseData.categories.join(",")}`,
+      contextHash: contextHash(`[STUB] categories=${caseData.categories.join(",")}`),
       response: JSON.stringify(stubResult),
       model: "stub",
     },
@@ -107,7 +108,7 @@ Responde SOLO con el texto mejorado, sin comentarios adicionales.`;
 
       const response = await callAI(prompt);
       await prisma.promptLog.create({
-        data: { caseId: caseData.id, userId, action: "generate_draft", prompt, response, model: "claude-sonnet-4-20250514" },
+        data: { caseId: caseData.id, userId, action: "generate_draft", contextHash: contextHash(prompt), response, model: "claude-sonnet-4-20250514" },
       });
       return response;
     } catch {
@@ -120,7 +121,7 @@ Responde SOLO con el texto mejorado, sin comentarios adicionales.`;
       caseId: caseData.id,
       userId,
       action: "generate_draft",
-      prompt: `[STUB] template render`,
+      contextHash: contextHash(`[STUB] template render`),
       response: rendered,
       model: "stub",
     },

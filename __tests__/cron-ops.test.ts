@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("../src/lib/s3", () => ({ deleteFile: vi.fn() }));
 vi.mock("../src/lib/prisma", () => ({
   prisma: {
     organization: { findMany: vi.fn(), findUnique: vi.fn() },
-    case: { updateMany: vi.fn(), findMany: vi.fn() },
-    promptLog: { findMany: vi.fn() },
+    case: { updateMany: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), delete: vi.fn() },
+    promptLog: { findMany: vi.fn(), deleteMany: vi.fn() },
+    $transaction: vi.fn(),
     membership: { findMany: vi.fn() },
     user: { findUnique: vi.fn() },
   },
@@ -34,6 +36,7 @@ vi.mock("../src/lib/cron-auth", () => ({
 }));
 
 import { prisma } from "../src/lib/prisma";
+import { deleteFile } from "../src/lib/s3";
 import { sendEmail } from "../src/lib/email";
 import { logAudit } from "../src/lib/audit";
 import { analyzeCase } from "../src/lib/case-analyzer";
@@ -48,6 +51,12 @@ const orgFindMany = prisma.organization.findMany as unknown as ReturnType<typeof
 const orgFindUnique = prisma.organization.findUnique as unknown as ReturnType<typeof vi.fn>;
 const caseUpdateMany = prisma.case.updateMany as unknown as ReturnType<typeof vi.fn>;
 const caseFindMany = prisma.case.findMany as unknown as ReturnType<typeof vi.fn>;
+const caseFindUnique = prisma.case.findUnique as unknown as ReturnType<typeof vi.fn>;
+const caseUpdate = prisma.case.update as unknown as ReturnType<typeof vi.fn>;
+const caseDelete = prisma.case.delete as unknown as ReturnType<typeof vi.fn>;
+const promptDeleteMany = prisma.promptLog.deleteMany as unknown as ReturnType<typeof vi.fn>;
+const txMock = prisma.$transaction as unknown as ReturnType<typeof vi.fn>;
+const deleteFileMock = deleteFile as unknown as ReturnType<typeof vi.fn>;
 const promptFindMany = prisma.promptLog.findMany as unknown as ReturnType<typeof vi.fn>;
 const memFindMany = prisma.membership.findMany as unknown as ReturnType<typeof vi.fn>;
 const userFindUnique = prisma.user.findUnique as unknown as ReturnType<typeof vi.fn>;
@@ -67,7 +76,7 @@ function reqWith(query: Record<string, string> = {}): any {
 }
 
 function resetAll() {
-  for (const m of [orgFindMany, orgFindUnique, caseUpdateMany, caseFindMany, promptFindMany, memFindMany, userFindUnique, emailMock, auditMock, analyzeMock, resetMock, authMock]) {
+  for (const m of [orgFindMany, orgFindUnique, caseUpdateMany, caseFindMany, caseFindUnique, caseUpdate, caseDelete, promptDeleteMany, txMock, deleteFileMock, promptFindMany, memFindMany, userFindUnique, emailMock, auditMock, analyzeMock, resetMock, authMock]) {
     m.mockReset();
   }
   authMock.mockReturnValue(true);
@@ -81,6 +90,9 @@ describe("cron /retention-cleanup", () => {
   beforeEach(() => {
     resetAll();
     delete process.env.LEADS_NOTIFY_EMAIL;
+    // Sin expedientes pendientes de purga salvo que la prueba diga lo contrario.
+    caseFindMany.mockResolvedValue([]);
+    promptDeleteMany.mockResolvedValue({ count: 0 });
   });
 
   it("rechaza 401 si el secret no es valido", async () => {
@@ -90,76 +102,106 @@ describe("cron /retention-cleanup", () => {
     expect(orgFindMany).not.toHaveBeenCalled();
   });
 
-  it("no archiva nada si ninguna org tiene cases pasados de retencion", async () => {
-    orgFindMany.mockResolvedValueOnce([
-      { id: "org1", name: "Despacho A", retentionDays: 90 },
-    ]);
+  it("no purga nada si ninguna org tiene expedientes vencidos", async () => {
+    orgFindMany.mockResolvedValueOnce([{ id: "org1", name: "Despacho A", retentionDays: 90 }]);
     caseUpdateMany.mockResolvedValue({ count: 0 });
 
     const res = await retentionGET(reqWith());
     const body = await res.json();
 
-    expect(body.totalCleaned).toBe(0);
-    expect(body.processed).toBe(1);
-    expect(auditMock).not.toHaveBeenCalled();
+    expect(body.purged).toBe(0);
+    expect(body.scheduledForPurge).toBe(0);
     expect(emailMock).not.toHaveBeenCalled();
   });
 
-  it("archiva cases viejos y loguea audit por cada org afectada", async () => {
-    orgFindMany.mockResolvedValueOnce([
-      { id: "org1", name: "Despacho A", retentionDays: 90 },
-      { id: "org2", name: "Despacho B", retentionDays: 365 },
-    ]);
-    caseUpdateMany
-      .mockResolvedValueOnce({ count: 3 })
-      .mockResolvedValueOnce({ count: 0 });
+  it("programa la purga en dos fases: borrado logico y fecha de purga", async () => {
+    // El borrado logico ya no es el final del proceso: es la primera fase.
+    orgFindMany.mockResolvedValueOnce([{ id: "org1", name: "Despacho A", retentionDays: 30 }]);
+    caseUpdateMany.mockResolvedValueOnce({ count: 2 });
 
     const res = await retentionGET(reqWith());
     const body = await res.json();
 
-    expect(body.totalCleaned).toBe(3);
-    expect(body.details).toHaveLength(1); // solo org1 en details
-    expect(body.details[0]).toMatchObject({ name: "Despacho A", cleaned: 3 });
-    expect(auditMock).toHaveBeenCalledOnce();
-    expect(auditMock).toHaveBeenCalledWith(expect.objectContaining({
-      orgId: "org1",
-      action: "retention.cleanup",
-    }));
-  });
-
-  it("respeta el retentionDays distinto por org (cutoff = now - retentionDays)", async () => {
-    orgFindMany.mockResolvedValueOnce([
-      { id: "org1", name: "Despacho A", retentionDays: 30 },
-    ]);
-    caseUpdateMany.mockResolvedValueOnce({ count: 1 });
-
-    await retentionGET(reqWith());
+    expect(body.scheduledForPurge).toBe(2);
 
     const call = caseUpdateMany.mock.calls[0][0];
     expect(call.where.orgId).toBe("org1");
     expect(call.where.status).toBe("CLOSED");
     expect(call.where.deletedAt).toBe(null);
-    // cutoff debe ser aproximadamente ahora - 30 dias
+    // Ahora ademas se fija la fecha de purga real.
+    expect(call.data.deletedAt).toBeInstanceOf(Date);
+    expect(call.data.purgeScheduledAt).toBeInstanceOf(Date);
+
     const cutoff = call.where.closedAt.lt as Date;
-    const expectedDelta = 30 * 24 * 60 * 60 * 1000;
-    const actualDelta = Date.now() - cutoff.getTime();
-    expect(Math.abs(actualDelta - expectedDelta)).toBeLessThan(60 * 1000); // 1 min slack
+    const esperado = 30 * 24 * 60 * 60 * 1000;
+    expect(Math.abs(Date.now() - cutoff.getTime() - esperado)).toBeLessThan(60 * 1000);
   });
 
-  it("envia digest a LEADS_NOTIFY_EMAIL si se archivo algo", async () => {
-    process.env.LEADS_NOTIFY_EMAIL = "ops@heredia.app";
-    orgFindMany.mockResolvedValueOnce([
-      { id: "org1", name: "Despacho A", retentionDays: 90 },
-    ]);
-    caseUpdateMany.mockResolvedValueOnce({ count: 5 });
-
-    await retentionGET(reqWith());
-
-    expect(emailMock).toHaveBeenCalledOnce();
-    expect(emailMock.mock.calls[0][0]).toMatchObject({
-      to: "ops@heredia.app",
-      subject: expect.stringContaining("5 expediente"),
+  it("purga de verdad los expedientes cuya fecha de purga ha llegado", async () => {
+    orgFindMany.mockResolvedValueOnce([{ id: "org1", name: "Despacho A", retentionDays: 90 }]);
+    caseUpdateMany.mockResolvedValue({ count: 0 });
+    caseFindMany.mockResolvedValueOnce([{ id: "case-1" }]);
+    caseFindUnique.mockResolvedValueOnce({
+      id: "case-1",
+      ref: "EXP-2026-0001",
+      orgId: "org1",
+      purgedAt: null,
+      documents: [{ id: "d1", fileKey: "k/1" }],
     });
+    deleteFileMock.mockResolvedValue(undefined);
+    txMock.mockImplementation(async (cb: any) =>
+      cb({
+        promptLog: { deleteMany: vi.fn() },
+        auditLog: { updateMany: vi.fn() },
+        notificationLog: { deleteMany: vi.fn() },
+        case: { delete: vi.fn() },
+      }),
+    );
+
+    const res = await retentionGET(reqWith());
+    const body = await res.json();
+
+    // El objeto de S3 se borra DE VERDAD: antes solo se ponia deletedAt y el
+    // fichero seguia en el bucket indefinidamente.
+    expect(deleteFileMock).toHaveBeenCalledWith("k/1");
+    expect(body.purged).toBe(1);
+    expect(caseDelete).not.toHaveBeenCalled(); // se borra dentro de la transaccion
+  });
+
+  it("si S3 falla, NO marca el expediente como purgado", async () => {
+    orgFindMany.mockResolvedValueOnce([{ id: "org1", name: "Despacho A", retentionDays: 90 }]);
+    caseUpdateMany.mockResolvedValue({ count: 0 });
+    caseFindMany.mockResolvedValueOnce([{ id: "case-1" }]);
+    caseFindUnique.mockResolvedValueOnce({
+      id: "case-1",
+      ref: "EXP-2026-0002",
+      orgId: "org1",
+      purgedAt: null,
+      documents: [{ id: "d1", fileKey: "k/1" }],
+    });
+    deleteFileMock.mockRejectedValue(new Error("S3 caido"));
+    caseUpdate.mockResolvedValue({});
+
+    const res = await retentionGET(reqWith());
+    const body = await res.json();
+
+    expect(body.purgeFailed).toBe(1);
+    // Se registra el error para reintento y NO se borra la fila: decir que el
+    // dato esta eliminado mientras sigue en S3 seria falso.
+    expect(caseUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ purgeAttempts: { increment: 1 } }),
+      }),
+    );
+    expect(txMock).not.toHaveBeenCalled();
+  });
+
+  it("purga tambien los PromptLog vencidos", async () => {
+    orgFindMany.mockResolvedValueOnce([]);
+    promptDeleteMany.mockResolvedValueOnce({ count: 7 });
+
+    const res = await retentionGET(reqWith());
+    expect((await res.json()).promptLogsPurged).toBe(7);
   });
 });
 

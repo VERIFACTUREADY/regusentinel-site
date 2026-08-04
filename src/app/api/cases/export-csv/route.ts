@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { CATEGORY_LABELS } from "@/lib/constants";
+import { isdDeadlineFor, isdExtensionRequestDeadlineFor } from "@/lib/deadline-engine";
 
 function escapeCsv(value: string | null | undefined): string {
   if (!value) return "";
@@ -109,11 +110,7 @@ export async function GET(req: NextRequest) {
     String(c._count.tasks),
     String(c._count.documents),
     c.deceased?.deathDate
-      ? (() => {
-          const d = new Date(c.deceased!.deathDate!);
-          d.setMonth(d.getMonth() + 6);
-          return d.toLocaleDateString("es-ES");
-        })()
+      ? isdDeadlineFor(new Date(c.deceased.deathDate)).toLocaleDateString("es-ES")
       : "",
     "",
     new Date(c.createdAt).toLocaleDateString("es-ES"),

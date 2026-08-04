@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 
+import { contextHash } from "./ai-privacy";
 const HAS_AI = !!process.env.ANTHROPIC_API_KEY;
 const MODEL = "claude-sonnet-4-6";
 const MAX_HISTORY_MESSAGES = 10;
@@ -154,7 +155,7 @@ export async function sendChatMessage({ caseId, userId, message }: ChatInput): P
       caseId,
       userId,
       action: "case_chat",
-      prompt: trimmedMessage,
+      contextHash: contextHash(trimmedMessage),
       response: JSON.stringify({ userMessage: trimmedMessage, assistantMessage }),
       model: modelUsed,
       tokens: tokenCount,

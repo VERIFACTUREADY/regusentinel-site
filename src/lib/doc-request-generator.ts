@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 
+import { contextHash } from "./ai-privacy";
 const HAS_AI = !!process.env.ANTHROPIC_API_KEY;
 const MODEL = "claude-sonnet-4-6";
 
@@ -192,7 +193,7 @@ El email debe:
         caseId,
         userId,
         action: "doc_request",
-        prompt: ctx.text,
+        contextHash: contextHash(ctx.text),
         response: JSON.stringify({ emailSubject, emailBody, documentList: ctx.documentList }),
         model: modelUsed,
         tokens: msg.usage ? msg.usage.input_tokens + msg.usage.output_tokens : null,
@@ -209,7 +210,7 @@ El email debe:
         caseId,
         userId,
         action: "doc_request",
-        prompt: ctx.text,
+        contextHash: contextHash(ctx.text),
         response: JSON.stringify({ emailSubject, emailBody, documentList: ctx.documentList }),
         model: modelUsed,
         tokens: null,

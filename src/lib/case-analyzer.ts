@@ -1,5 +1,7 @@
 import { prisma } from "./prisma";
+import { getCaseDeadlines, isdDeadlineFor, canStillRequestIsdExtension } from "./deadline-engine";
 
+import { contextHash, minimizeContext, PLACEHOLDERS, aiAllowedForCase } from "./ai-privacy";
 export interface CaseAnalysisResult {
   healthScore: number; // 0-100
   status: "excellent" | "good" | "warning" | "critical";
@@ -32,21 +34,28 @@ function buildContext(caseData: any): string {
 
   if (caseData.deceased) {
     parts.push(`\n## Fallecido`);
-    parts.push(`Nombre: ${caseData.deceased.fullName}`);
+    // El nombre NO se envia: el modelo no lo necesita para analizar el estado
+    // del expediente, y era un identificador directo saliendo a un tercero.
+    parts.push(`Nombre: ${PLACEHOLDERS.deceased}`);
     if (caseData.deceased.deathDate) {
       const days = Math.floor((Date.now() - new Date(caseData.deceased.deathDate).getTime()) / (1000 * 60 * 60 * 24));
       parts.push(`Fecha fallecimiento: ${new Date(caseData.deceased.deathDate).toLocaleDateString("es-ES")} (hace ${days} dias)`);
-      const isdDays = 180 - days;
+      // Dias reales hasta el plazo, no la aproximacion de 180.
+      const isdDays = Math.ceil(
+        (isdDeadlineFor(new Date(caseData.deceased.deathDate)).getTime() - Date.now()) / 86400000,
+      );
       parts.push(`Plazo ISD restante: ${isdDays} dias ${isdDays < 30 ? "*** CRITICO ***" : isdDays < 60 ? "*** ATENCION ***" : ""}`);
     }
   }
 
   if (caseData.contact) {
     parts.push(`\n## Solicitante`);
-    parts.push(`Nombre: ${caseData.contact.fullName}, Relacion: ${caseData.contact.relationship || "no especificada"}`);
+    parts.push(`Nombre: ${PLACEHOLDERS.contact}, Relacion: ${caseData.contact.relationship || "no especificada"}`);
   }
 
   if (caseData.notes) {
+    // Las notas internas son texto libre: pueden contener nombres, DNI,
+    // telefonos, IBAN. Se minimizan antes de salir.
     parts.push(`\n## Notas internas\n${caseData.notes}`);
   }
 
@@ -148,12 +157,11 @@ export async function analyzeCase({ caseId, userId }: AnalysisInput): Promise<Ca
   const enriched: any = { ...caseData };
   if (caseData.deceased?.deathDate) {
     const death = new Date(caseData.deceased.deathDate);
-    const certificatesAvailable = new Date(death);
-    certificatesAvailable.setDate(certificatesAvailable.getDate() + 22);
-    const isdDeadline = new Date(death);
-    isdDeadline.setMonth(isdDeadline.getMonth() + 6);
-    const isdExtensionRequestDeadline = new Date(death);
-    isdExtensionRequestDeadline.setMonth(isdExtensionRequestDeadline.getMonth() + 5);
+    // Fuente unica: lib/deadline-engine. Los 22 dias naturales eran una
+    // aproximacion propia de este modulo a los 15 dias habiles del motor, y
+    // daba una fecha distinta a la que veia el usuario en el expediente.
+    const { certificatesAvailable, isdDeadline, isdExtensionRequestDeadline } =
+      getCaseDeadlines(death);
     enriched.caseDeadlines = {
       certificatesAvailable: certificatesAvailable.toISOString(),
       isdExtensionRequestDeadline: isdExtensionRequestDeadline.toISOString(),
@@ -161,9 +169,20 @@ export async function analyzeCase({ caseId, userId }: AnalysisInput): Promise<Ca
     };
   }
 
-  const context = buildContext(enriched);
+  // Minimizacion final: aunque buildContext ya usa marcadores para los
+  // nombres, el texto libre (notas, titulos de tarea) puede traer emails, DNI,
+  // telefonos o IBAN. Esta pasada los elimina antes de que el contexto salga.
+  const context = minimizeContext(buildContext(enriched), {
+    deceased: enriched.deceased?.fullName,
+    contact: enriched.contact?.fullName,
+  });
 
-  if (!HAS_AI) {
+  // La IA requiere clave del proveedor Y activacion explicita de la
+  // organizacion. Antes bastaba con la clave: los datos de cualquier cliente
+  // salian hacia un tercero sin que el responsable lo hubiera decidido.
+  const aiAllowed = await aiAllowedForCase(caseId, prisma);
+
+  if (!aiAllowed) {
     // Heuristic stub when no AI key available
     const result = heuristicAnalysis(enriched);
     await prisma.promptLog.create({
@@ -171,7 +190,7 @@ export async function analyzeCase({ caseId, userId }: AnalysisInput): Promise<Ca
         caseId,
         userId,
         action: "analyze_case",
-        prompt: `[STUB] heuristic analysis`,
+        contextHash: contextHash(`[STUB] heuristic analysis`),
         response: JSON.stringify(result),
         model: "stub",
       },
@@ -223,7 +242,7 @@ export async function analyzeCase({ caseId, userId }: AnalysisInput): Promise<Ca
       caseId,
       userId,
       action: "analyze_case",
-      prompt: context,
+      contextHash: contextHash(context),
       response: JSON.stringify(result),
       model: MODEL,
       tokens: msg.usage ? msg.usage.input_tokens + msg.usage.output_tokens : null,
@@ -279,23 +298,38 @@ export function heuristicAnalysis(caseData: any): CaseAnalysisResult {
 
   let isdDays: number | null = null;
   if (caseData.deceased?.deathDate) {
-    const days = Math.floor((Date.now() - new Date(caseData.deceased.deathDate).getTime()) / (1000 * 60 * 60 * 24));
-    isdDays = 180 - days;
+    const deathDate = new Date(caseData.deceased.deathDate);
+    // Dias reales hasta el plazo, no la aproximacion `180 - dias`.
+    isdDays = Math.ceil((isdDeadlineFor(deathDate).getTime() - Date.now()) / 86400000);
+
+    // La prorroga solo puede pedirse dentro de los 5 primeros meses. Cuando
+    // quedan menos de 30 dias para el plazo de 6 meses, esa ventana YA se
+    // cerro: recomendarla entonces era aconsejar algo imposible de hacer.
+    const prorrogaDisponible = canStillRequestIsdExtension(deathDate);
+
     if (isdDays < 30) {
       criticalIssues.push({
         title: "Plazo ISD critico",
-        description: `Quedan ${isdDays} dias para presentar el Modelo 650. Considera solicitar prorroga si no esta lista la documentacion.`,
+        description: prorrogaDisponible
+          ? `Quedan ${isdDays} dias para presentar el Modelo 650. Considera solicitar prorroga si no esta lista la documentacion.`
+          : `Quedan ${isdDays} dias para presentar el Modelo 650. El plazo para solicitar prorroga ya ha vencido.`,
         severity: "high",
       });
-      suggestedActions.push({
-        title: "Solicitar prorroga ISD",
-        description: "Si faltan documentos clave, presenta solicitud de prorroga inmediatamente.",
-        priority: "high",
-      });
+
+      if (prorrogaDisponible) {
+        suggestedActions.push({
+          title: "Solicitar prorroga ISD",
+          description: "Si faltan documentos clave, presenta solicitud de prorroga inmediatamente.",
+          priority: "high",
+        });
+      }
+
       risks.push({
         category: "fiscal",
         description: "Riesgo de sancion AEAT por presentacion fuera de plazo",
-        mitigation: "Solicitar prorroga de 6 meses adicionales antes del dia 150 desde el fallecimiento",
+        mitigation: prorrogaDisponible
+          ? "Solicitar prorroga de 6 meses adicionales antes de que se cierre la ventana de los 5 primeros meses"
+          : "La ventana de prorroga ya se cerro: priorizar la presentacion en plazo, aunque sea con datos provisionales a completar despues",
       });
     } else if (isdDays < 60) {
       criticalIssues.push({

@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { isdDeadlineFor, isdExtensionRequestDeadlineFor } from "@/lib/deadline-engine";
 
 export const metadata = {
   title: "Resumen del día — Heredia",
@@ -27,7 +28,7 @@ function daysUntil(deadline: Date, now: Date): number {
 
 function isdDeadline(deathDate: Date): Date {
   const d = new Date(deathDate);
-  d.setMonth(d.getMonth() + 6);
+  return isdDeadlineFor(deathDate);
   return d;
 }
 

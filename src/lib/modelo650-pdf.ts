@@ -1,3 +1,4 @@
+import { isdDeadlineFor, isdExtensionRequestDeadlineFor, addMonths } from "./deadline-engine";
 /**
  * Generador de borrador del Modelo 650 (ISD) en formato PDF.
  *
@@ -339,12 +340,9 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
 
   if (input.deceased.deathDate) {
     const d = new Date(input.deceased.deathDate);
-    const pres = new Date(d);
-    pres.setMonth(pres.getMonth() + 6);
-    const pror = new Date(d);
-    pror.setMonth(pror.getMonth() + 12);
-    const ext = new Date(d);
-    ext.setMonth(ext.getMonth() + 5);
+    const pres = isdDeadlineFor(d);
+    const pror = addMonths(d, 12);
+    const ext = isdExtensionRequestDeadlineFor(d);
 
     plazoPresent = formatDate(pres);
     plazoProrrog = formatDate(pror);
