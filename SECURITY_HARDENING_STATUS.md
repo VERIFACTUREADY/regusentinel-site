@@ -115,7 +115,7 @@ Cada entrada está confirmada leyendo el fichero indicado. No son sospechas.
 | 3 — Portal, consentimiento y archivos | ✅ completada | `fix(portal): protect family access consent and document visibility` |
 | 4 — Stripe y límites de plan | ✅ completada | `fix(billing): make Stripe processing retryable and enforce plan limits` |
 | 5 — SSRF y secretos outbound | ✅ completada | `fix(integrations): prevent SSRF and encrypt outbound secrets` |
-| 6 — Notificaciones y workflows | ⬜ pendiente | — |
+| 6 — Notificaciones y workflows | ✅ completada | `fix(notifications): make delivery idempotent retryable and preference-aware` |
 | 7 — Retención, IA y plazos | ⬜ pendiente | — |
 | 8 — Copy y documentación honesta | ⬜ pendiente | — |
 | 9 — Tests reales y CI | ⬜ pendiente | — |
@@ -377,12 +377,59 @@ peticiones salientes bajo demanda.
   módulo; el riesgo es bajo porque el destino lo configura un OWNER autenticado
   del plan Firma, no un anónimo.
 
+---
+
+## Fase 6 — decisiones técnicas
+
+**Deduplicación por entrega** (`src/lib/notification-dedupe.ts`). La unidad
+pasa de (expediente, tipo) a **(expediente, tipo, canal, destinatario,
+ventana)**, con `NotificationLog.dedupeKey` único en base de datos.
+
+La clave **sólo se escribe en las entregas correctas**. Un fallo se registra
+sin clave, así que el siguiente intento lo reintenta — para ese destinatario y
+ese canal, sin tocar a los demás. Antes, si el email llegaba a uno y fallaba en
+otro, la siguiente ejecución saltaba el expediente entero y el segundo no lo
+recibía nunca; y un email enviado bloqueaba también Slack, Teams y el webhook.
+
+`dedupeKey` es nullable a propósito: en PostgreSQL un índice único admite
+múltiples `NULL`, así que las filas anteriores y las fallidas conviven sin
+colisionar. El backfill usa `DISTINCT ON` porque el histórico puede contener
+duplicados de la misma entrega (el bug permitía reintentos parciales).
+
+**Preferencias.** `internalRecipientsFor` respeta ya `Membership.notifPrefs`;
+antes se ignoraba por completo y quien desactivaba una categoría la seguía
+recibiendo. Los valores ausentes toman el defecto de `DEFAULT_PREFS`.
+
+**Recordatorios a la familia.** Ya no se envían cuando: no hay consentimiento
+vigente; el enlace del portal está revocado o caducado; el email de contacto no
+es sintácticamente plausible; o **las tareas ya tienen documento adjunto**
+(antes se contaban todas las tareas con `docTag`, así que se seguía pidiendo a
+la familia lo que el equipo ya había subido). Ventana semanal ISO.
+
+**Workflows.** `conditions` y `actionConfig` se validan con Zod (`.strict()`);
+antes se casteaban con `as` y `newStatus` llegaba como string arbitrario hasta
+`prisma.case.update`. El expediente se carga **filtrando por la organización
+del evento** — antes `findUnique({ id })` sin `orgId`. `SEND_EMAIL_TEAM` ya no
+se registra como SUCCESS si fallan todos los envíos. El cambio de estado es
+condicional al estado leído, se omite si ya está en el destino, y hay contador
+de profundidad (`MAX_WORKFLOW_DEPTH`). Las ejecuciones omitidas se registran
+como `SKIPPED` con su motivo.
+
+### Riesgo residual de Fase 6
+
+- Las acciones **no encadenan**: `CHANGE_CASE_STATUS` escribe directamente y no
+  vuelve a disparar workflows. Es el comportamiento actual, no una regresión, y
+  por eso hoy no puede haber bucles. El contador de profundidad queda listo por
+  si se añade el encadenamiento.
+- La validación de email es sintáctica: no comprueba que el buzón exista.
+
 ## Migraciones creadas
 
 | Migración | Contenido | Probada |
 |---|---|---|
 | `20260805000000_case_ref_unique_per_org` | Deduplica refs existentes y crea `@@unique([orgId, ref])` | Sí: sobre base vacía y sobre base con 3 duplicados reales |
 | `20260804225123_portal_consent_document_visibility` | `Document.visibleToFamily` + estado de borrado, `PortalConsent`, rotación/revocación/caducidad del token. Backfill: documentos del portal → visibles; consentimientos previos → fila heredada | Sí: aplicada sobre base vacía y sobre base ya migrada |
+| `20260804232000_notification_delivery_dedupe` | `NotificationLog.dedupeKey` único + índice por (caso, tipo, canal, destinatario). Backfill con `DISTINCT ON` de las entregas correctas ya registradas | Sí |
 | `20260804230440_stripe_event_retryable` | `StripeEvent` a máquina de estados. Migración **sin pérdida**: las filas existentes pasan a `PROCESSED` conservando su fecha (la generada por Prisma borraba `processedAt`) | Sí: verificada con 2 eventos previos reales |
 
 ## Variables de entorno nuevas
@@ -400,3 +447,4 @@ peticiones salientes bajo demanda.
 - Fase 3: sin antivirus; documentos internos previos quedan privados.
 - Fase 4: los eventos que agoten los reintentos de Stripe quedan en `FAILED` sin recuperación automática.
 - Fase 5: ventana teórica de DNS rebinding (se conecta por nombre tras validar la resolución).
+- Fase 6: las acciones de workflow no encadenan; validación de email sólo sintáctica.

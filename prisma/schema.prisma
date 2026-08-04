@@ -534,15 +534,26 @@ model NotificationLog {
   status    String              @default("sent") // sent | failed
   error     String?
 
+  /// Clave de deduplicación por ENTREGA:
+  /// `<caseId>:<kind>:<channel>:<recipient>:<ventana>`.
+  ///
+  /// Antes la deduplicación era por (expediente, tipo): si un destinatario
+  /// recibía el email y otro fallaba, la siguiente ejecución saltaba el
+  /// expediente entero y el segundo no lo recibía nunca. Y un email enviado
+  /// bloqueaba también Slack, Teams y el webhook.
+  ///
+  /// Sólo se rellena en los envíos correctos, así que un fallo se puede
+  /// reintentar de forma independiente. Nullable por las filas anteriores.
+  dedupeKey String? @unique
+
   createdAt DateTime @default(now())
 
   org  Organization @relation(fields: [orgId], references: [id])
   case Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
-  // One notification of each kind per case (ISD alerts) — family reminders use
-  // a rolling 7-day window handled in application logic.
   @@index([caseId, kind])
   @@index([orgId, createdAt])
+  @@index([caseId, kind, channel, recipient])
 }
 
 // ─── CASE TASK TEMPLATES ────────────────────────────────

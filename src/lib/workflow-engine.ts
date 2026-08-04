@@ -1,6 +1,12 @@
 import { prisma } from "./prisma";
 import { sendEmail } from "./email";
 import { logAudit } from "./audit";
+import { z } from "zod";
+import {
+  CaseStatus as CaseStatusEnum,
+  TaskStatus as TaskStatusEnum,
+  TaskCategory as TaskCategoryEnum,
+} from "@prisma/client";
 import type {
   CaseStatus,
   TaskCategory,
@@ -20,44 +26,113 @@ export interface WorkflowEvent {
   taskId?: string;
   taskStatus?: TaskStatus;
   taskCategory?: TaskCategory;
+  /** Profundidad de encadenamiento; ver MAX_WORKFLOW_DEPTH. */
+  depth?: number;
 }
 
-interface RuleConditions {
-  toStatus?: string;
-  fromStatus?: string;
-  taskStatus?: string;
-  taskCategory?: string;
-}
+/**
+ * `conditions` y `actionConfig` son columnas JSON: lo que hay dentro puede ser
+ * cualquier cosa. Antes se casteaban con `as` y `newStatus` llegaba como
+ * string arbitrario hasta `prisma.case.update`, que fallaba en tiempo de
+ * ejecucion con un valor fuera del enum.
+ */
+const ruleConditionsSchema = z
+  .object({
+    toStatus: z.nativeEnum(CaseStatusEnum).optional(),
+    fromStatus: z.nativeEnum(CaseStatusEnum).optional(),
+    taskStatus: z.nativeEnum(TaskStatusEnum).optional(),
+    taskCategory: z.nativeEnum(TaskCategoryEnum).optional(),
+  })
+  .strict();
 
-interface ActionConfig {
-  subject?: string;
-  body?: string;
-  comment?: string;
-  newStatus?: string;
-}
+const actionConfigSchema = z
+  .object({
+    subject: z.string().max(300).optional(),
+    body: z.string().max(20000).optional(),
+    comment: z.string().max(2000).optional(),
+    newStatus: z.nativeEnum(CaseStatusEnum).optional(),
+  })
+  .strict();
+
+export type RuleConditions = z.infer<typeof ruleConditionsSchema>;
+export type ActionConfig = z.infer<typeof actionConfigSchema>;
+
+export { ruleConditionsSchema, actionConfigSchema };
+
+/**
+ * Profundidad maxima de encadenamiento. Hoy `CHANGE_CASE_STATUS` escribe
+ * directamente y NO vuelve a disparar workflows, asi que no hay cascada; el
+ * contador esta para que, si alguna vez se anade, un par de reglas A->B / B->A
+ * no pueda girar indefinidamente.
+ */
+const MAX_WORKFLOW_DEPTH = 3;
 
 type CaseWithRelations = Prisma.CaseGetPayload<{
   include: { deceased: true; contact: true; org: true };
 }>;
 
 export async function triggerWorkflow(event: WorkflowEvent): Promise<void> {
+  if ((event.depth ?? 0) >= MAX_WORKFLOW_DEPTH) {
+    console.warn(`Workflow detenido por profundidad maxima en el caso ${event.caseId}`);
+    return;
+  }
+
   const rules = await prisma.workflowRule.findMany({
     where: { orgId: event.orgId, isActive: true, trigger: event.type },
   });
   if (rules.length === 0) return;
 
-  const caseData = await prisma.case.findUnique({
-    where: { id: event.caseId },
+  // El expediente se carga filtrando por la organizacion DEL EVENTO. Antes era
+  // `findUnique({ id: event.caseId })` sin mas: una regla podia actuar sobre
+  // un expediente de otra organizacion si el caseId no correspondia.
+  const caseData = await prisma.case.findFirst({
+    where: { id: event.caseId, orgId: event.orgId, deletedAt: null },
     include: { deceased: true, contact: true, org: true },
   });
   if (!caseData) return;
 
   await Promise.allSettled(
     rules.map(async (rule) => {
-      if (!evaluateConditions(rule.conditions as RuleConditions, event)) return;
+      // Configuracion invalida: se registra el motivo en vez de fallar en
+      // tiempo de ejecucion dentro del handler.
+      const conditions = ruleConditionsSchema.safeParse(rule.conditions ?? {});
+      const config = actionConfigSchema.safeParse(rule.actionConfig ?? {});
+
+      if (!conditions.success || !config.success) {
+        await prisma.workflowLog.create({
+          data: {
+            ruleId: rule.id,
+            caseId: event.caseId,
+            status: "SKIPPED",
+            error: "Configuracion de la regla no valida",
+            details: {
+              reason: "invalid_config",
+              conditions: conditions.success ? null : conditions.error.issues.map((i) => i.message),
+              actionConfig: config.success ? null : config.error.issues.map((i) => i.message),
+            },
+          },
+        }).catch(console.error);
+        return;
+      }
+
+      if (!evaluateConditions(conditions.data, event)) {
+        return;
+      }
 
       try {
-        await executeAction(rule.action, rule.actionConfig as ActionConfig, event, caseData);
+        const outcome = await executeAction(rule.action, config.data, event, caseData);
+
+        if (outcome?.skipped) {
+          await prisma.workflowLog.create({
+            data: {
+              ruleId: rule.id,
+              caseId: event.caseId,
+              status: "SKIPPED",
+              details: { action: rule.action, ruleName: rule.name, reason: outcome.reason },
+            },
+          }).catch(console.error);
+          return;
+        }
         await Promise.all([
           prisma.workflowRule.update({
             where: { id: rule.id },
@@ -90,15 +165,23 @@ function evaluateConditions(conditions: RuleConditions, event: WorkflowEvent): b
   return true;
 }
 
+/** Resultado de una accion: `skipped` marca una ejecucion omitida con motivo. */
+interface ActionOutcome {
+  skipped?: boolean;
+  reason?: string;
+}
+
 async function executeAction(
   action: WorkflowAction,
   config: ActionConfig,
   event: WorkflowEvent,
   caseData: CaseWithRelations
-): Promise<void> {
+): Promise<ActionOutcome | void> {
   switch (action) {
     case "SEND_EMAIL_CONTACT": {
-      if (!caseData.contact?.email) return;
+      if (!caseData.contact?.email) {
+        return { skipped: true, reason: "el expediente no tiene email de contacto" };
+      }
       const subject = interpolate(config.subject || "Actualización de su expediente", caseData);
       const body = interpolate(config.body || "", caseData);
       await sendEmail({ to: caseData.contact.email, subject, html: buildHtml(subject, body) });
@@ -110,13 +193,25 @@ async function executeAction(
         where: { orgId: event.orgId, role: { in: ["OWNER", "MANAGER"] } },
         include: { user: { select: { email: true } } },
       });
+      if (members.length === 0) {
+        return { skipped: true, reason: "la organizacion no tiene destinatarios internos" };
+      }
+
       const subject = interpolate(config.subject || "Actualización de expediente", caseData);
       const body = interpolate(config.body || "", caseData);
-      await Promise.all(
-        members.map((m) =>
-          sendEmail({ to: m.user.email, subject, html: buildHtml(subject, body) }).catch(console.error)
-        )
+
+      // Antes cada envio llevaba `.catch(console.error)`: si fallaban TODOS,
+      // el workflow se registraba igualmente como SUCCESS y nadie se enteraba.
+      const results = await Promise.allSettled(
+        members.map((m) => sendEmail({ to: m.user.email, subject, html: buildHtml(subject, body) })),
       );
+      const enviados = results.filter((r) => r.status === "fulfilled").length;
+
+      if (enviados === 0) {
+        const primero = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+        const motivo = primero?.reason instanceof Error ? primero.reason.message : "error de envio";
+        throw new Error(`No se pudo enviar a ningun destinatario del equipo: ${motivo}`);
+      }
       break;
     }
 
@@ -132,12 +227,27 @@ async function executeAction(
     }
 
     case "CHANGE_CASE_STATUS": {
-      if (!config.newStatus) return;
-      const newStatus = config.newStatus as CaseStatus;
-      await prisma.case.update({
-        where: { id: event.caseId },
+      // `newStatus` ya viene validado contra el enum por actionConfigSchema.
+      if (!config.newStatus) {
+        return { skipped: true, reason: "la regla no define newStatus" };
+      }
+      const newStatus = config.newStatus;
+
+      // No-op: si el expediente ya esta en ese estado no se escribe nada. Es
+      // la primera barrera contra un par de reglas A->B / B->A girando entre si.
+      if (caseData.status === newStatus) {
+        return { skipped: true, reason: `el expediente ya esta en ${newStatus}` };
+      }
+
+      // Escritura condicional al estado leido: si otra ejecucion lo cambio
+      // entretanto, no lo pisamos.
+      const changed = await prisma.case.updateMany({
+        where: { id: event.caseId, orgId: event.orgId, status: caseData.status },
         data: { status: newStatus, ...(newStatus === "CLOSED" && { closedAt: new Date() }) },
       });
+      if (changed.count === 0) {
+        return { skipped: true, reason: "el estado del expediente cambio mientras se ejecutaba" };
+      }
       await logAudit({
         orgId: event.orgId,
         caseId: event.caseId,
