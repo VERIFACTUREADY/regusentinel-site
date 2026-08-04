@@ -5,6 +5,8 @@ vi.mock("../src/lib/prisma", () => ({
     case: { findFirst: vi.fn(), update: vi.fn() },
     portalMessage: { findMany: vi.fn(), create: vi.fn() },
     document: { findMany: vi.fn(), create: vi.fn() },
+    // El portal exige consentimiento vigente para toda accion.
+    portalConsent: { findFirst: vi.fn(), create: vi.fn() },
     task: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
   },
 }));
@@ -12,6 +14,7 @@ vi.mock("../src/lib/prisma", () => ({
 vi.mock("../src/lib/s3", () => ({
   uploadFile: vi.fn().mockResolvedValue(undefined),
   getPresignedUrl: vi.fn().mockResolvedValue("https://signed-url"),
+  deleteFile: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../src/lib/audit", () => ({
@@ -35,6 +38,7 @@ import { uploadFile, getPresignedUrl } from "../src/lib/s3";
 import { logAudit } from "../src/lib/audit";
 import { matchDocumentToTag } from "../src/lib/doc-task-matching";
 import { triggerWorkflow } from "../src/lib/workflow-engine";
+import { PORTAL_CONSENT_VERSION } from "../src/lib/portal-consent";
 
 import { GET as portalGET } from "../src/app/api/portal/[token]/route";
 import { GET as messagesGET, POST as messagesPOST } from "../src/app/api/portal/[token]/messages/route";
@@ -55,6 +59,29 @@ const presignedMock = getPresignedUrl as unknown as ReturnType<typeof vi.fn>;
 const auditMock = logAudit as unknown as ReturnType<typeof vi.fn>;
 const matchMock = matchDocumentToTag as unknown as ReturnType<typeof vi.fn>;
 const workflowMock = triggerWorkflow as unknown as ReturnType<typeof vi.fn>;
+const consentFindFirst = prisma.portalConsent.findFirst as unknown as ReturnType<typeof vi.fn>;
+const consentCreate = prisma.portalConsent.create as unknown as ReturnType<typeof vi.fn>;
+
+/** Consentimiento vigente: lo exigen subida, descarga y mensajes. */
+function grantConsent() {
+  consentFindFirst.mockResolvedValue({
+    version: PORTAL_CONSENT_VERSION,
+    textHash: "hash",
+    acceptedAt: new Date("2026-02-01"),
+  });
+}
+
+/** Sin aceptacion registrada. */
+function denyConsent() {
+  consentFindFirst.mockResolvedValue(null);
+}
+
+/** Cabecera PDF valida: la politica de archivos verifica los magic bytes. */
+function pdfBytes(extra = "contenido"): ArrayBuffer {
+  const header = [0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a];
+  const body = Array.from(Buffer.from(extra, "utf8"));
+  return new Uint8Array([...header, ...body]).buffer;
+}
 
 // Cada test usa una IP distinta para evitar contaminacion del rate-limit
 // in-memory entre tests (los buckets son globales en el modulo).
@@ -95,13 +122,20 @@ function fakeCase(overrides: any = {}) {
 }
 
 function resetAll() {
-  for (const m of [caseFindFirst, caseUpdate, msgFindMany, msgCreate, docFindMany, docCreate, taskFindFirst, taskFindUnique, taskUpdate, uploadMock, presignedMock, auditMock, matchMock, workflowMock]) {
+  for (const m of [caseFindFirst, caseUpdate, msgFindMany, msgCreate, docFindMany, docCreate, taskFindFirst, taskFindUnique, taskUpdate, uploadMock, presignedMock, auditMock, matchMock, workflowMock, consentFindFirst, consentCreate]) {
     m.mockReset();
   }
   uploadMock.mockResolvedValue(undefined);
   presignedMock.mockResolvedValue("https://signed-url");
   auditMock.mockResolvedValue(undefined);
   workflowMock.mockResolvedValue(undefined);
+  // Por defecto hay consentimiento: cada bloque que pruebe su ausencia lo
+  // anula explicitamente con denyConsent().
+  grantConsent();
+  consentCreate.mockImplementation(async ({ data }: any) => ({
+    id: "consent-1", ...data, acceptedAt: new Date("2026-02-01"),
+  }));
+  docFindMany.mockResolvedValue([]);
 }
 
 // ─── GET /api/portal/[token] ───────────────────────────────
@@ -116,7 +150,7 @@ describe("GET /api/portal/[token] — vista principal del expediente", () => {
   });
 
   it("filtra por portalEnabled=true y deletedAt=null (no expone disabled ni borrados)", async () => {
-    caseFindFirst.mockResolvedValueOnce(fakeCase());
+    caseFindFirst.mockResolvedValue(fakeCase());
     await portalGET(fakeReq(), { params: { token: "tok123" } });
 
     const where = caseFindFirst.mock.calls[0][0].where;
@@ -126,28 +160,28 @@ describe("GET /api/portal/[token] — vista principal del expediente", () => {
   });
 
   it("plan INICIA muestra 'Powered by Heredia' (showPoweredBy=true)", async () => {
-    caseFindFirst.mockResolvedValueOnce(fakeCase({ org: { ...fakeCase().org, subscription: { plan: "INICIA" } } }));
+    caseFindFirst.mockResolvedValue(fakeCase({ org: { ...fakeCase().org, subscription: { plan: "INICIA" } } }));
     const res = await portalGET(fakeReq(), { params: { token: "tok123" } });
     const body = await res.json();
     expect(body.branding.showPoweredBy).toBe(true);
   });
 
   it("plan DESPACHO oculta 'Powered by Heredia' (white-label)", async () => {
-    caseFindFirst.mockResolvedValueOnce(fakeCase({ org: { ...fakeCase().org, subscription: { plan: "DESPACHO" } } }));
+    caseFindFirst.mockResolvedValue(fakeCase({ org: { ...fakeCase().org, subscription: { plan: "DESPACHO" } } }));
     const res = await portalGET(fakeReq(), { params: { token: "tok123" } });
     const body = await res.json();
     expect(body.branding.showPoweredBy).toBe(false);
   });
 
   it("plan FIRMA tambien oculta 'Powered by Heredia'", async () => {
-    caseFindFirst.mockResolvedValueOnce(fakeCase({ org: { ...fakeCase().org, subscription: { plan: "FIRMA" } } }));
+    caseFindFirst.mockResolvedValue(fakeCase({ org: { ...fakeCase().org, subscription: { plan: "FIRMA" } } }));
     const res = await portalGET(fakeReq(), { params: { token: "tok123" } });
     const body = await res.json();
     expect(body.branding.showPoweredBy).toBe(false);
   });
 
   it("detecta pendingDocs: tareas con docTag, no DONE, sin documento vinculado", async () => {
-    caseFindFirst.mockResolvedValueOnce(fakeCase({
+    caseFindFirst.mockResolvedValue(fakeCase({
       tasks: [
         { id: "t1", title: "Subir DNI heredero", status: "PENDING", category: "DOCS", docTag: "DNI", deadline: null, blockedUntil: null, sortOrder: 1 },
         { id: "t2", title: "Tarea sin tag", status: "PENDING", category: "DOCS", docTag: null, deadline: null, blockedUntil: null, sortOrder: 2 },
@@ -164,7 +198,7 @@ describe("GET /api/portal/[token] — vista principal del expediente", () => {
   });
 
   it("no incluye en pendingDocs tareas DONE aunque tengan docTag", async () => {
-    caseFindFirst.mockResolvedValueOnce(fakeCase({
+    caseFindFirst.mockResolvedValue(fakeCase({
       tasks: [
         { id: "t1", title: "X", status: "DONE", category: "DOCS", docTag: "DNI", deadline: null, blockedUntil: null, sortOrder: 1 },
         { id: "t2", title: "Y", status: "SKIPPED", category: "DOCS", docTag: "TASA", deadline: null, blockedUntil: null, sortOrder: 2 },
@@ -190,8 +224,9 @@ describe("POST /api/portal/[token]/consent — aceptacion RGPD del heredero", ()
     expect(caseUpdate).not.toHaveBeenCalled();
   });
 
-  it("acepta consent y guarda fecha + autor", async () => {
-    caseFindFirst.mockResolvedValueOnce({ id: "case_abc", consentAccepted: false });
+  it("registra evidencia con version, hash, IP y user-agent", async () => {
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1", ref: "EXP", portalEnabled: true });
+    denyConsent(); // aun no ha aceptado
     caseUpdate.mockResolvedValueOnce({});
 
     const res = await consentPOST(fakeReq({ body: { authorName: "Andrea Martin" } }), { params: { token: "tok123" } });
@@ -199,25 +234,40 @@ describe("POST /api/portal/[token]/consent — aceptacion RGPD del heredero", ()
 
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
-    expect(caseUpdate).toHaveBeenCalledWith({
-      where: { id: "case_abc" },
+
+    // La evidencia va a PortalConsent, no a un booleano sobrescribible.
+    expect(consentCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        consentAccepted: true,
-        consentDate: expect.any(Date),
-        legitimationNote: "Andrea Martin",
+        caseId: "case_abc",
+        version: PORTAL_CONSENT_VERSION,
+        textHash: expect.any(String),
+        purpose: "PORTAL_FAMILIA",
+        declaredName: "Andrea Martin",
+        ip: expect.any(String),
       }),
     });
   });
 
+  it("no duplica la evidencia si ya hay una aceptacion vigente", async () => {
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1", ref: "EXP", portalEnabled: true });
+    grantConsent();
+
+    const res = await consentPOST(fakeReq({ body: { authorName: "Andrea" } }), { params: { token: "tok123" } });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.alreadyAccepted).toBe(true);
+    expect(consentCreate).not.toHaveBeenCalled();
+  });
+
   it("ignora authorName vacio o solo espacios", async () => {
-    caseFindFirst.mockResolvedValueOnce({ id: "case_abc", consentAccepted: false });
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1", ref: "EXP", portalEnabled: true });
+    denyConsent();
     caseUpdate.mockResolvedValueOnce({});
 
     await consentPOST(fakeReq({ body: { authorName: "   " } }), { params: { token: "tok123" } });
 
-    const data = caseUpdate.mock.calls[0][0].data;
-    expect(data.legitimationNote).toBeUndefined(); // no se actualiza si vacio
-    expect(data.consentAccepted).toBe(true);
+    expect(consentCreate.mock.calls[0][0].data.declaredName).toBeNull();
   });
 });
 
@@ -320,8 +370,10 @@ describe("GET /api/portal/[token]/documents — listar documentos", () => {
 describe("POST /api/portal/[token]/documents — subir documento", () => {
   beforeEach(resetAll);
 
+  // La politica de archivos valida el CONTENIDO, no el Content-Type: los
+  // ficheros de prueba llevan la cabecera %PDF real.
   function fakeFile(name: string, mimeType = "application/pdf", size = 1024): File {
-    const blob = new Blob(["x".repeat(size)], { type: mimeType });
+    const blob = new Blob([pdfBytes("x".repeat(size))], { type: mimeType });
     return new File([blob], name, { type: mimeType });
   }
 
@@ -354,7 +406,7 @@ describe("POST /api/portal/[token]/documents — subir documento", () => {
     matchMock.mockReturnValueOnce("DNI"); // doc se identifica como DNI
     taskFindFirst.mockResolvedValueOnce({ id: "t1", title: "Subir DNI heredero" });
     docCreate.mockResolvedValueOnce({ id: "doc_new", fileName: "dni.pdf" });
-    taskFindUnique.mockResolvedValueOnce({ id: "t1", title: "Subir DNI heredero", status: "PENDING" });
+    taskFindFirst.mockResolvedValueOnce({ id: "t1", title: "Subir DNI heredero", status: "PENDING" });
     taskUpdate.mockResolvedValueOnce({});
 
     const res = await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: { token: "tok123" } });
@@ -366,7 +418,10 @@ describe("POST /api/portal/[token]/documents — subir documento", () => {
     // S3 upload
     expect(uploadMock).toHaveBeenCalledOnce();
     const [fileKey, , mimeType] = uploadMock.mock.calls[0];
-    expect(fileKey).toMatch(/^org1\/case_abc\/portal\/\d+-dni\.pdf$/);
+    // Clave aleatoria: la anterior era `${Date.now()}-${file.name}`, adivinable
+    // y con el nombre proporcionado por el usuario dentro de la ruta.
+    expect(fileKey).toMatch(/^org1\/case_abc\/portal\/[0-9a-f]{32}\.pdf$/);
+    expect(fileKey).not.toContain("dni.pdf");
     expect(mimeType).toBe("application/pdf");
 
     // Document vinculado a la tarea

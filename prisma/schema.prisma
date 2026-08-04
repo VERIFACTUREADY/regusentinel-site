@@ -163,6 +163,16 @@ model Case {
   portalToken   String  @unique @default(cuid())
   portalEnabled Boolean @default(true)
 
+  /// Rotación y revocación del enlace del portal. Antes el token era
+  /// permanente: si se filtraba (WhatsApp reenviado, buzón comprometido) no
+  /// había forma de invalidarlo sin desactivar el portal entero.
+  portalTokenRotatedAt DateTime?
+  portalTokenExpiresAt DateTime?
+  portalTokenRevokedAt DateTime?
+
+  /// Consentimiento vigente. Se mantienen para compatibilidad y consulta
+  /// rápida, pero la EVIDENCIA está en PortalConsent: estos campos por sí
+  /// solos no acreditan qué texto se aceptó ni desde dónde.
   consentAccepted  Boolean   @default(false)
   consentDate      DateTime?
   legitimationNote String?
@@ -219,6 +229,7 @@ model Case {
   notifications  NotificationLog[]
   workflowLogs   WorkflowLog[]
   portalMessages PortalMessage[]
+  portalConsents PortalConsent[]
 
   /// La referencia se generaba con `count + 1` fuera de transacción: dos altas
   /// simultáneas producían la misma. Esta restricción hace que la segunda
@@ -245,6 +256,43 @@ model CaseContact {
   relationship String?
 
   case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+// ─── PORTAL CONSENT ─────────────────────────────────────
+//
+// El consentimiento era un booleano en Case que se sobrescribía en cada
+// aceptación. Eso no es evidencia: no acredita QUÉ texto se aceptó, ni cuándo,
+// ni desde dónde, y una segunda aceptación borraba la anterior.
+//
+// Cada aceptación crea una fila nueva e inmutable a nivel de aplicación. Si
+// cambia el texto legal, cambia `version` y `textHash`, y se requiere una
+// aceptación nueva en lugar de reutilizar la vieja.
+
+model PortalConsent {
+  id     String @id @default(cuid())
+  caseId String
+
+  /// Versión del texto legal aceptado (p. ej. "2026-08-v1").
+  version String
+  /// SHA-256 del texto exacto que se mostró. Permite demostrar años después
+  /// qué leyó exactamente la persona, sin guardar copias del texto por caso.
+  textHash String
+  /// Finalidad del consentimiento; hoy sólo el acceso al portal familiar.
+  purpose  String @default("PORTAL_FAMILIA")
+
+  /// Nombre que la persona declaró al aceptar.
+  declaredName String?
+  ip           String?
+  userAgent    String?
+
+  acceptedAt DateTime @default(now())
+  /// Retirada del consentimiento. Una fila retirada deja de habilitar acceso.
+  withdrawnAt DateTime?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, acceptedAt])
+  @@index([caseId, version])
 }
 
 // ─── PORTAL MESSAGE ─────────────────────────────────────
@@ -320,10 +368,25 @@ model Document {
   uploadedBy     String?
   isPortalUpload Boolean @default(false)
 
+  /// Visibilidad en el portal familia. Privado por defecto: antes el portal
+  /// devolvía TODOS los documentos del expediente, incluidos los internos, con
+  /// URL de descarga prefirmada. Los que sube la propia familia se marcan
+  /// visibles al crearse (es su propio documento).
+  visibleToFamily Boolean @default(false)
+
+  /// Estado de borrado del objeto en S3. Si el borrado en S3 falla, la fila NO
+  /// se elimina y queda marcada aquí para reintento: borrar la referencia
+  /// silenciosamente dejaría el fichero huérfano en el bucket para siempre.
+  deletionState  String?   // null | PENDING_S3_DELETE | S3_DELETE_FAILED
+  deletionError  String?
+  deletionAt     DateTime?
+
   createdAt DateTime @default(now())
 
   case Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
   task Task? @relation("TaskDocuments", fields: [taskId], references: [id])
+
+  @@index([caseId, visibleToFamily])
 }
 
 // ─── TEMPLATE ───────────────────────────────────────────

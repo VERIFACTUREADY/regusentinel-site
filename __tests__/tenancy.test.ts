@@ -34,6 +34,9 @@ function fakeDb(data: {
   const cases = data.cases ?? [];
 
   return {
+    // nextCaseRef toma un advisory lock por organizacion antes de leer el
+    // maximo; el doble tiene que ofrecerlo aunque aqui no haya concurrencia.
+    $executeRaw: vi.fn(async () => 1),
     task: {
       findFirst: vi.fn(async ({ where, select }: any) => {
         const found = tasks.find((t) => {

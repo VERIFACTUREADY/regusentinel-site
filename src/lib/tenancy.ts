@@ -226,6 +226,19 @@ export async function nextCaseRef(
   const year = now.getFullYear();
   const prefix = `EXP-${year}-`;
 
+  // Serializa la asignación de referencia POR ORGANIZACIÓN.
+  //
+  // Sin esto, la restricción única evita los duplicados pero no la contienda:
+  // diez altas simultáneas leen el mismo máximo, nueve fallan con P2002 y al
+  // reintentar vuelven a chocar en tropel, agotando los reintentos y
+  // devolviendo errores al usuario. Se comprobó con la prueba de integración
+  // de 10 altas concurrentes.
+  //
+  // El lock es a nivel de transacción: PostgreSQL lo libera solo al hacer
+  // commit o rollback. Sólo bloquea a otras altas de la MISMA organización, y
+  // sólo durante la lectura del máximo y la inserción.
+  await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`;
+
   const last = await db.case.findFirst({
     where: { orgId, ref: { startsWith: prefix } },
     orderBy: { ref: "desc" },

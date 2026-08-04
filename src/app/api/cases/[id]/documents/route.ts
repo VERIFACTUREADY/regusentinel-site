@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { uploadFile, getPresignedUrl } from "@/lib/s3";
+import { uploadFile, getPresignedUrl, deleteFile } from "@/lib/s3";
 import { logAudit } from "@/lib/audit";
 import { matchDocumentToTag, DOC_MATCH_RULES } from "@/lib/doc-task-matching";
 import { findTaskInCase } from "@/lib/tenancy";
+import { validateFile, sanitizeFileName, buildFileKey, MAX_FILE_BYTES, MAX_FILE_MB } from "@/lib/file-policy";
 import { triggerWorkflow } from "@/lib/workflow-engine";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -38,14 +39,42 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   try {
     const formData = await req.formData();
-    const file = formData.get("file") as File;
+    const file = formData.get("file");
     const manualTaskId = formData.get("taskId") as string | null;
-    if (!file) return NextResponse.json({ error: "No se encontro archivo" }, { status: 400 });
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: "No se encontro archivo" }, { status: 400 });
+    }
+
+    // Tamaño ANTES de leer el contenido: un archivo enorme no llega a cargarse
+    // en memoria ni a subirse a S3.
+    if (file.size > MAX_FILE_BYTES) {
+      return NextResponse.json(
+        { error: `El archivo supera el máximo de ${MAX_FILE_MB} MB.` },
+        { status: 413 },
+      );
+    }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const fileKey = `${session.user.orgId}/${params.id}/${Date.now()}-${file.name}`;
+    const verdict = validateFile({
+      fileName: file.name,
+      size: buffer.length,
+      declaredMime: file.type,
+      head: buffer.subarray(0, 4096),
+    });
+    if (!verdict.ok) {
+      return NextResponse.json({ error: verdict.message }, { status: 400 });
+    }
 
-    await uploadFile(fileKey, buffer, file.type);
+    const safeName = sanitizeFileName(file.name);
+    // Clave aleatoria: la anterior incluía el nombre original del usuario
+    // (con su posible path traversal) y era adivinable por marca de tiempo.
+    const fileKey = buildFileKey({
+      orgId: session.user.orgId,
+      caseId: params.id,
+      fileName: safeName,
+    });
+
+    await uploadFile(fileKey, buffer, verdict.detectedType ?? "application/octet-stream");
 
     // El taskId enviado por el cliente sólo vale si la tarea pertenece a ESTE
     // expediente y a esta organización. Antes se usaba tal cual, y más abajo
@@ -64,7 +93,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     if (!linkedTaskId) {
-      const docTag = matchDocumentToTag(file.name);
+      const docTag = matchDocumentToTag(safeName);
       if (docTag) {
         // Find a PENDING task with this docTag in this case
         const matchingTask = await prisma.task.findFirst({
@@ -79,17 +108,30 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     }
 
-    const doc = await prisma.document.create({
-      data: {
-        caseId: params.id,
-        taskId: linkedTaskId,
-        fileName: file.name,
-        fileKey,
-        mimeType: file.type,
-        fileSize: buffer.length,
-        uploadedBy: session.user.id,
-      },
-    });
+    let doc;
+    try {
+      doc = await prisma.document.create({
+        data: {
+          caseId: params.id,
+          taskId: linkedTaskId,
+          fileName: safeName,
+          fileKey,
+          mimeType: verdict.detectedType,
+          fileSize: buffer.length,
+          uploadedBy: session.user.id,
+          // Documento interno: privado para la familia salvo que alguien lo
+          // comparta explícitamente desde la aplicación.
+          visibleToFamily: false,
+        },
+      });
+    } catch (dbError) {
+      // Compensación: el objeto ya está en S3 pero la fila no existe. Sin esto
+      // el bucket acumulaba huérfanos que nadie podía encontrar ni borrar.
+      await deleteFile(fileKey).catch((e) =>
+        console.error("No se pudo limpiar el objeto huérfano en S3:", fileKey, e),
+      );
+      throw dbError;
+    }
 
     // Auto-update task status to READY when document is linked.
     // La relectura vuelve a filtrar por expediente y organización: aunque
@@ -110,7 +152,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           userId: session.user.id,
           caseId: params.id,
           action: "task.auto_updated",
-          details: `Tarea "${task.title}" actualizada a READY por documento "${file.name}"`,
+          details: `Tarea "${task.title}" actualizada a READY por documento "${safeName}"`,
         });
       }
     }
@@ -120,7 +162,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       userId: session.user.id,
       caseId: params.id,
       action: "document.uploaded",
-      details: `Archivo "${file.name}" subido${linkedTaskId ? ` (vinculado a tarea)` : ""}`,
+      details: `Archivo "${safeName}" subido${linkedTaskId ? ` (vinculado a tarea)` : ""}`,
     });
 
     // If no task was linked, return naming suggestions from pending tasks

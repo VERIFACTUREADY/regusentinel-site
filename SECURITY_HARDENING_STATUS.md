@@ -112,7 +112,7 @@ Cada entrada está confirmada leyendo el fichero indicado. No son sospechas.
 | 0 — Baseline y mapa de riesgos | ✅ completada | `chore(security): establish hardening baseline` |
 | 1 — Sesiones, membresías y RBAC | ✅ completada | `fix(auth): enforce live membership and subscription authorization` |
 | 2 — Aislamiento multi-tenant | ✅ completada | `fix(tenancy): enforce organization boundaries on all relations` |
-| 3 — Portal, consentimiento y archivos | ⬜ pendiente | — |
+| 3 — Portal, consentimiento y archivos | ✅ completada | `fix(portal): protect family access consent and document visibility` |
 | 4 — Stripe y límites de plan | ⬜ pendiente | — |
 | 5 — SSRF y secretos outbound | ⬜ pendiente | — |
 | 6 — Notificaciones y workflows | ⬜ pendiente | — |
@@ -217,18 +217,84 @@ cuid. Antes llegaban valores arbitrarios hasta Prisma.
   duplicados reales, pero **si producción tiene duplicados, sus referencias
   cambiarán** y eso es visible para el cliente. Está en los pasos de despliegue.
 
+---
+
+## Fase 3 — decisiones técnicas
+
+**P0-3 cerrado.** `Document.visibleToFamily` (por defecto `false`). El portal
+filtra por ese campo tanto en la descarga como en los metadatos del endpoint
+principal. Los documentos que sube la familia se marcan visibles al crearse.
+
+Matiz que evitó una regresión: la lista de "documentos pendientes" se calcula
+sobre **todos** los documentos, no sólo los visibles. Si el equipo ya adjuntó
+internamente el certificado, seguir pidiéndoselo a la familia sería un error —
+y en la Fase 6 generaría recordatorios falsos. Es un hecho de la tarea; ningún
+metadato del documento interno sale en la respuesta.
+
+**Consentimiento con evidencia.** Modelo `PortalConsent`: versión del texto,
+SHA-256 del texto exacto mostrado, finalidad, nombre declarado, IP,
+user-agent, marca temporal y retirada. Nunca se sobrescribe: cada aceptación
+es una fila. Si cambia `PORTAL_CONSENT_VERSION`, las aceptaciones anteriores
+dejan de valer y se pide una nueva.
+
+`resolvePortalAccess` centraliza token + revocación + caducidad + consentimiento.
+Subir, descargar y escribir mensajes lo exigen; sólo el endpoint que presenta
+el consentimiento y la vista principal responden sin él.
+
+**Token del portal.** Rotación y revocación (`POST`/`DELETE`
+`/api/cases/[id]/portal-token`), caducidad opcional, auditadas. El token nuevo
+usa 32 bytes aleatorios en vez de un CUID.
+
+**Política de archivos** (`src/lib/file-policy.ts`): 20 MB configurables por
+`MAX_UPLOAD_MB`, lista de formatos permitidos, verificación por **magic bytes**
+(un ejecutable renombrado a `.pdf` se rechaza aunque declare
+`Content-Type: application/pdf`), rechazo de SVG y de HTML activo en ficheros
+de texto, sanitizado del nombre, clave de S3 **aleatoria** (antes era
+`${Date.now()}-${file.name}`: adivinable y con el nombre del usuario dentro de
+la ruta), y cabeceras de descarga con `nosniff` y `attachment`.
+
+**Consistencia S3 ↔ base de datos.** Si falla el `create` tras subir, se borra
+el objeto de S3. Si falla el borrado en S3, la fila **no** se elimina y queda
+marcada (`deletionState`) para reintento: antes `deleteFile(...).catch(() => {})`
+se tragaba el error y borraba la referencia, dejando el fichero huérfano en el
+bucket y diciéndole al usuario que estaba eliminado.
+
+**NO HAY ANÁLISIS ANTIMALWARE** y así está documentado en el propio módulo. Se
+valida tipo, tamaño y contenido declarado; no se busca contenido malicioso
+dentro de un PDF bien formado. No debe describirse como "archivos analizados".
+
+### Hallazgo durante la Fase 3 (corregido)
+
+La prueba de integración de 10 altas concurrentes de la Fase 2 empezó a fallar
+de forma intermitente: la restricción única evitaba los duplicados, pero los
+reintentos volvían a colisionar en tropel y agotaban los intentos, devolviendo
+errores al usuario. Corregido con `pg_advisory_xact_lock(hashtext(orgId))`, que
+serializa la asignación de referencia **por organización** durante la
+transacción. Verificado en tres ejecuciones consecutivas.
+
+### Riesgo residual de Fase 3
+
+- Sin antivirus. Un PDF bien formado con contenido malicioso se acepta.
+- Los documentos internos **anteriores** a la migración quedan privados. Si
+  alguna familia dependía de ver uno concreto, hay que compartirlo
+  explícitamente desde la aplicación (`PATCH /api/documents/[id]`).
+
 ## Migraciones creadas
 
 | Migración | Contenido | Probada |
 |---|---|---|
 | `20260805000000_case_ref_unique_per_org` | Deduplica refs existentes y crea `@@unique([orgId, ref])` | Sí: sobre base vacía y sobre base con 3 duplicados reales |
+| `20260804225123_portal_consent_document_visibility` | `Document.visibleToFamily` + estado de borrado, `PortalConsent`, rotación/revocación/caducidad del token. Backfill: documentos del portal → visibles; consentimientos previos → fila heredada | Sí: aplicada sobre base vacía y sobre base ya migrada |
 
 ## Variables de entorno nuevas
 
-Ninguna todavía.
+| Variable | Obligatoria | Por defecto | Para qué |
+|---|---|---|---|
+| `MAX_UPLOAD_MB` | No | `20` | Tamaño máximo por archivo subido (tope duro de 200) |
 
 ## Pendientes conocidos
 
 - Fase 0: nada omitido (sólo inventario).
 - Fase 1: ver "Riesgo residual" arriba.
 - Fase 2: ver "Riesgo residual" arriba (renombrado de refs duplicadas).
+- Fase 3: sin antivirus; documentos internos previos quedan privados.
