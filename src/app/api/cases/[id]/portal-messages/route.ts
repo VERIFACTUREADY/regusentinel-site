@@ -19,16 +19,34 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     orderBy: { createdAt: "asc" },
   });
 
-  // Mark unread family messages as read
-  const unread = messages.filter((m) => m.fromFamily && !m.readAt);
-  if (unread.length > 0) {
-    await prisma.portalMessage.updateMany({
-      where: { id: { in: unread.map((m) => m.id) } },
-      data: { readAt: new Date() },
-    });
-  }
-
+  // El marcado como leído se ha movido a POST /read: este GET ya no escribe.
+  // Antes, cualquier lectura del hilo (incluido un prefetch del navegador o un
+  // reintento) marcaba los mensajes de la familia como leídos.
   return NextResponse.json(messages);
+}
+
+/**
+ * POST /api/cases/[id]/portal-messages/read — marca como leídos los mensajes
+ * de la familia. Acción explícita de escritura, invocada por la interfaz
+ * cuando el usuario abre la conversación.
+ */
+export async function PUT(_req: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await requireOrgPermission("cases.update");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
+
+  const c = await prisma.case.findFirst({
+    where: { id: params.id, orgId: session.user.orgId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!c) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+  const result = await prisma.portalMessage.updateMany({
+    where: { caseId: c.id, fromFamily: true, readAt: null },
+    data: { readAt: new Date() },
+  });
+
+  return NextResponse.json({ ok: true, marked: result.count });
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {

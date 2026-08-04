@@ -524,12 +524,17 @@ El equipo de gestión`;
     if (res.ok) setCaseTemplates(await res.json());
   }
 
-  async function fetchPortalMessages() {
+  async function fetchPortalMessages(markRead = false) {
     const res = await fetch(`/api/cases/${caseId}/portal-messages`);
     if (res.ok) {
       const data = await res.json();
       setPortalMessages(data);
       setPortalUnread(data.filter((m: any) => m.fromFamily && !m.readAt).length);
+      // Marcar como leido es una escritura explicita (PUT); el GET ya no muta.
+      if (markRead && data.some((m: any) => m.fromFamily && !m.readAt)) {
+        await fetch(`/api/cases/${caseId}/portal-messages`, { method: "PUT" }).catch(() => {});
+        setPortalUnread(0);
+      }
     }
   }
 
@@ -1149,7 +1154,12 @@ El equipo de gestión`;
 
       <div className="flex border-b mb-6 gap-1">
         {tabs.map((t) => (
-          <button key={t} onClick={() => setTab(t)}
+          <button key={t} onClick={() => {
+              setTab(t);
+              // Abrir la pestana del portal es la accion explicita que marca
+              // los mensajes de la familia como leidos (antes lo hacia el GET).
+              if (t === "portal") fetchPortalMessages(true);
+            }}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
               tab === t ? "border-primary text-primary" : "border-transparent text-gray-500 hover:text-gray-700"
             }`}>

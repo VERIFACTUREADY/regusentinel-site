@@ -67,6 +67,9 @@ function ThreadPanel({
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => {
         setMessages(data);
+        // El marcado como leido es ahora una escritura explicita: el GET del
+        // hilo ya no muta la base de datos.
+        fetch(`/api/cases/${conv.caseId}/portal-messages`, { method: "PUT" }).catch(() => {});
         onMarkRead(conv.caseId);
       })
       .catch(() => {})

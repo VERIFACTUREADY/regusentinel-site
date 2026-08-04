@@ -5,6 +5,10 @@
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/cron/unblock-tasks",
+      "schedule": "0 5 * * *"
+    },
+    {
       "path": "/api/cron/demo-reset",
       "schedule": "0 3 * * *"
     },

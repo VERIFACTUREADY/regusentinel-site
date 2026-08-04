@@ -36,50 +36,25 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   if (!c) return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
 
-  // Auto-unblock tasks whose blockedUntil date has passed
+  // El desbloqueo de tareas vencidas ya NO ocurre aquí. Este GET escribía en
+  // la base de datos (`task.updateMany`), lo que significaba que una simple
+  // lectura mutaba estado, sin auditoría y sin disparar los workflows de
+  // cambio de estado. Ahora lo hace el cron `unblock-tasks`, que sí audita.
+  //
+  // Para que la interfaz no muestre como bloqueada una tarea cuyo plazo ya ha
+  // pasado, se calcula la condición al vuelo y se expone como campo derivado,
+  // sin persistir nada.
   const now = new Date();
-  const tasksToUnblock = c.tasks.filter(
-    (t) => t.status === "BLOCKED" && t.blockedUntil && new Date(t.blockedUntil) <= now
-  );
-  if (tasksToUnblock.length > 0) {
-    await prisma.task.updateMany({
-      where: { id: { in: tasksToUnblock.map((t) => t.id) } },
-      data: { status: "PENDING", blockReason: null },
-    });
-    // Re-fetch with updated statuses
-    const updated = await prisma.case.findFirst({
-      where: { id: params.id, orgId: session.user.orgId, deletedAt: null },
-      include: {
-        deceased: true,
-        contact: true,
-        tasks: {
-          orderBy: { sortOrder: "asc" },
-          include: {
-            documents: { select: { id: true, fileName: true } },
-            assignee: { select: { id: true, name: true, email: true } },
-            _count: { select: { notes: true } },
-            dependsOn: { select: { id: true, title: true, status: true } },
-          },
-        },
-        documents: { include: { task: { select: { id: true, title: true, category: true } } } },
-        approvals: true,
-        auditLogs: {
-        orderBy: { createdAt: "desc" },
-        take: 50,
-        include: { user: { select: { name: true, email: true } } },
-      },
-      },
-    });
-    // Add case-level deadlines
-    const deathDate = updated?.deceased?.deathDate;
-    const caseDeadlines = deathDate ? getCaseDeadlines(new Date(deathDate)) : null;
-    return NextResponse.json({ ...updated, caseDeadlines });
-  }
+  const tasks = c.tasks.map((t) => ({
+    ...t,
+    unblockDue:
+      t.status === "BLOCKED" && t.blockedUntil ? new Date(t.blockedUntil) <= now : false,
+  }));
 
   // Add case-level deadlines
   const deathDate = c.deceased?.deathDate;
   const caseDeadlines = deathDate ? getCaseDeadlines(new Date(deathDate)) : null;
-  return NextResponse.json({ ...c, caseDeadlines });
+  return NextResponse.json({ ...c, tasks, caseDeadlines });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {

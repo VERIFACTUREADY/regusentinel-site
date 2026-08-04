@@ -13,7 +13,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:integration": "./scripts/test-db.sh",
+    "test:all": "npm run test && npm run test:integration"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

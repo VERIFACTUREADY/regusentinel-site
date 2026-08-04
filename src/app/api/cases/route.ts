@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { nextCaseRef } from "@/lib/tenancy";
+
+/**
+ * P2002 sobre el indice (orgId, ref): otra alta simultanea se quedo con la
+ * referencia que habiamos elegido. Es reintentable.
+ */
+function isUniqueRefConflict(err: unknown): boolean {
+  const e = err as { code?: string; meta?: { target?: unknown } };
+  if (e?.code !== "P2002") return false;
+  const target = e.meta?.target;
+  const fields = Array.isArray(target) ? target.join(",") : String(target ?? "");
+  return fields.includes("ref");
+}
 import { createCaseSchema } from "@/lib/validations";
 import { getChecklistForCategories } from "@/lib/checklist-rules";
 import { logAudit } from "@/lib/audit";
@@ -117,11 +130,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Generate ref
-    const count = await prisma.case.count({ where: { orgId: session.user.orgId } });
-    const ref = `EXP-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
-
-    const newCase = await prisma.$transaction(async (tx) => {
+    // La referencia se genera DENTRO de la transaccion, a partir del maximo ya
+    // existente para el anyo en curso. Antes se hacia `count + 1` fuera de la
+    // transaccion, asi que dos altas simultaneas producian la misma referencia
+    // y nada en la base de datos lo impedia.
+    //
+    // La restriccion @@unique([orgId, ref]) cierra la ventana que queda: si dos
+    // transacciones eligen el mismo numero, una falla con P2002 y reintentamos.
+    const createCaseTransaction = () =>
+      prisma.$transaction(async (tx) => {
+      const ref = await nextCaseRef(session.user.orgId, tx);
       const c = await tx.case.create({
         data: {
           orgId: session.user.orgId!,
@@ -217,6 +235,29 @@ export async function POST(req: NextRequest) {
 
       return c;
     });
+
+    // Reintento acotado ante colisión de referencia con un alta simultánea.
+    const MAX_REF_ATTEMPTS = 5;
+    let newCase: Awaited<ReturnType<typeof createCaseTransaction>> | null = null;
+
+    for (let attempt = 0; attempt < MAX_REF_ATTEMPTS; attempt++) {
+      try {
+        newCase = await createCaseTransaction();
+        break;
+      } catch (err) {
+        if (isUniqueRefConflict(err) && attempt < MAX_REF_ATTEMPTS - 1) continue;
+        throw err;
+      }
+    }
+
+    if (!newCase) {
+      return NextResponse.json(
+        { error: "No se pudo asignar una referencia única al expediente. Inténtalo de nuevo." },
+        { status: 409 },
+      );
+    }
+
+    const ref = newCase.ref;
 
     await logAudit({
       orgId: session.user.orgId,

@@ -111,7 +111,7 @@ Cada entrada está confirmada leyendo el fichero indicado. No son sospechas.
 |---|---|---|
 | 0 — Baseline y mapa de riesgos | ✅ completada | `chore(security): establish hardening baseline` |
 | 1 — Sesiones, membresías y RBAC | ✅ completada | `fix(auth): enforce live membership and subscription authorization` |
-| 2 — Aislamiento multi-tenant | ⬜ pendiente | — |
+| 2 — Aislamiento multi-tenant | ✅ completada | `fix(tenancy): enforce organization boundaries on all relations` |
 | 3 — Portal, consentimiento y archivos | ⬜ pendiente | — |
 | 4 — Stripe y límites de plan | ⬜ pendiente | — |
 | 5 — SSRF y secretos outbound | ⬜ pendiente | — |
@@ -168,9 +168,60 @@ sin significado para satisfacer el tipo habría sido peor.
   recuento se hace dentro de la transacción, pero **no está verificada con dos
   transacciones reales simultáneas**. Esa prueba llega en la Fase 9.
 
+---
+
+## Fase 2 — decisiones técnicas
+
+**Módulo `src/lib/tenancy.ts`.** Helpers de pertenencia que resuelven la
+condición **en la consulta** (filtrando por `orgId` y `caseId`) en vez de leer
+y comparar después. Aceptan tanto el cliente Prisma normal como el
+transaccional, para poder usarse dentro de `$transaction`.
+
+**P0-2 cerrado.** `manualTaskId` de la subida de documentos se valida contra
+expediente + organización, y la escritura posterior (`task.update` a READY)
+vuelve a filtrar en lugar de confiar en la validación previa.
+
+**Ciclos de dependencias.** `validateTaskDependency` recorre la cadena
+`dependsOn` hacia arriba con profundidad acotada (64) y conjunto de visitados,
+así que detecta ciclos directos e indirectos y no se cuelga si la base ya
+contiene una cadena circular.
+
+**GET sin efectos secundarios.** Dos rutas escribían desde un GET:
+- `cases/[id]`: el desbloqueo automático de tareas se ha movido al cron
+  `unblock-tasks` (nuevo, en `vercel.json`, protegido por `CRON_SECRET`), que
+  además audita y dispara los workflows que antes no se disparaban. El GET
+  expone ahora un campo derivado `unblockDue` calculado al vuelo, sin persistir.
+- `cases/[id]/portal-messages`: marcar como leído pasa a ser un `PUT` explícito
+  que la interfaz invoca al abrir la pestaña del portal.
+
+Los dos GET con escritura que quedan son crons (`retention-cleanup`,
+`trial-expired`, más el nuevo `unblock-tasks`): Vercel Cron sólo emite GET. Es
+la excepción documentada.
+
+**Referencia de expediente.** `count + 1` fuera de transacción sustituido por
+el máximo existente del año leído **dentro** de la transacción, más
+`@@unique([orgId, ref])` y un reintento acotado ante P2002.
+
+Verificado empíricamente contra PostgreSQL real: con la implementación antigua,
+10 altas simultáneas producían **4 referencias y 6 colisiones**; con la nueva,
+10 de 10 referencias distintas.
+
+**Validación Zod** en crear/actualizar/lote de tareas: `status` y `category`
+contra los enums reales, `title` acotado, fechas verificadas, ids con formato
+cuid. Antes llegaban valores arbitrarios hasta Prisma.
+
+### Riesgo residual de Fase 2
+
+- La migración de deduplicación renombra los duplicados preexistentes a
+  `<ref>-D2`, `-D3`… conservando el más antiguo. Se ha probado contra datos
+  duplicados reales, pero **si producción tiene duplicados, sus referencias
+  cambiarán** y eso es visible para el cliente. Está en los pasos de despliegue.
+
 ## Migraciones creadas
 
-Ninguna todavía.
+| Migración | Contenido | Probada |
+|---|---|---|
+| `20260805000000_case_ref_unique_per_org` | Deduplica refs existentes y crea `@@unique([orgId, ref])` | Sí: sobre base vacía y sobre base con 3 duplicados reales |
 
 ## Variables de entorno nuevas
 
@@ -180,3 +231,4 @@ Ninguna todavía.
 
 - Fase 0: nada omitido (sólo inventario).
 - Fase 1: ver "Riesgo residual" arriba.
+- Fase 2: ver "Riesgo residual" arriba (renombrado de refs duplicadas).

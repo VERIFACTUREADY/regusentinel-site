@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { uploadFile, getPresignedUrl } from "@/lib/s3";
 import { logAudit } from "@/lib/audit";
 import { matchDocumentToTag, DOC_MATCH_RULES } from "@/lib/doc-task-matching";
+import { findTaskInCase } from "@/lib/tenancy";
 import { triggerWorkflow } from "@/lib/workflow-engine";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -46,8 +47,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     await uploadFile(fileKey, buffer, file.type);
 
-    // Auto-match document to a task
-    let linkedTaskId: string | null = manualTaskId || null;
+    // El taskId enviado por el cliente sólo vale si la tarea pertenece a ESTE
+    // expediente y a esta organización. Antes se usaba tal cual, y más abajo
+    // se actualizaba con `findUnique({ where: { id } })` sin filtrar por
+    // organización: se podía marcar como READY una tarea de otro tenant.
+    let linkedTaskId: string | null = null;
+    if (manualTaskId) {
+      const manualTask = await findTaskInCase(manualTaskId, params.id, session.user.orgId);
+      if (!manualTask) {
+        return NextResponse.json(
+          { error: "La tarea indicada no pertenece a este expediente" },
+          { status: 404 },
+        );
+      }
+      linkedTaskId = manualTask.id;
+    }
 
     if (!linkedTaskId) {
       const docTag = matchDocumentToTag(file.name);
@@ -77,13 +91,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
     });
 
-    // Auto-update task status to READY when document is linked
+    // Auto-update task status to READY when document is linked.
+    // La relectura vuelve a filtrar por expediente y organización: aunque
+    // `linkedTaskId` ya viene validado, este `update` es la escritura que
+    // antes cruzaba tenants y no debe depender de una validación remota.
     let taskUpdated = false;
     if (linkedTaskId) {
-      const task = await prisma.task.findUnique({ where: { id: linkedTaskId } });
+      const task = await findTaskInCase(linkedTaskId, params.id, session.user.orgId);
       if (task && (task.status === "PENDING" || task.status === "IN_PROGRESS")) {
         await prisma.task.update({
-          where: { id: linkedTaskId },
+          where: { id: task.id },
           data: { status: "READY" },
         });
         taskUpdated = true;

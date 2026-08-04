@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
+import { batchTaskSchema } from "@/lib/validations";
+import { findActiveMember } from "@/lib/tenancy";
 import { logAudit } from "@/lib/audit";
 import { triggerWorkflow } from "@/lib/workflow-engine";
 
@@ -12,11 +15,26 @@ export async function PATCH(req: NextRequest) {
   const orgId = session.user.orgId;
   const userId = session.user.id;
 
-  const body = await req.json();
-  const { taskIds, status, assigneeId } = body;
+  const parsed = batchTaskSchema.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Datos no válidos" },
+      { status: 400 },
+    );
+  }
+  const { taskIds, status, assigneeId } = parsed.data;
 
-  if (!Array.isArray(taskIds) || taskIds.length === 0 || taskIds.length > 100) {
-    return NextResponse.json({ error: "1-100 tareas requeridas" }, { status: 400 });
+  // El asignado debe ser miembro vivo de esta organización. Antes `assigneeId`
+  // se escribía sin comprobar nada y permitía asignar tareas en bloque a un
+  // usuario de otro tenant.
+  if (assigneeId) {
+    const member = await findActiveMember(assigneeId, orgId);
+    if (!member) {
+      return NextResponse.json(
+        { error: "El usuario asignado no pertenece a esta organización" },
+        { status: 400 },
+      );
+    }
   }
 
   const tasks = await prisma.task.findMany({
@@ -28,9 +46,9 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "No se encontraron tareas validas" }, { status: 404 });
   }
 
-  const data: Record<string, unknown> = {};
+  const data: Prisma.TaskUncheckedUpdateManyInput = {};
   if (status) data.status = status;
-  if (assigneeId !== undefined) data.assigneeId = assigneeId || null;
+  if (assigneeId !== undefined) data.assigneeId = assigneeId ?? null;
 
   await prisma.task.updateMany({
     where: { id: { in: tasks.map((t) => t.id) } },

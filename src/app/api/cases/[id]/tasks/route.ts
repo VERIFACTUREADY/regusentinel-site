@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { createTaskSchema, updateTaskSchema } from "@/lib/validations";
+import { findCaseInOrg, findTaskInCase, findActiveMember, validateTaskDependency } from "@/lib/tenancy";
 import { logAudit } from "@/lib/audit";
 import { sendEmail } from "@/lib/email";
 import { triggerWorkflow } from "@/lib/workflow-engine";
@@ -24,19 +26,40 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!auth.ok) return auth.response;
   const session = auth.session;
 
-  const c = await prisma.case.findFirst({ where: { id: params.id, orgId: session.user.orgId } });
+  const c = await findCaseInOrg(params.id, session.user.orgId);
   if (!c) return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
 
-  const body = await req.json();
+  const parsed = createTaskSchema.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Datos no válidos", details: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+  const data = parsed.data;
+
+  // El asignado debe ser miembro vivo de ESTA organización. Antes se guardaba
+  // el id sin comprobar nada: se podía asignar la tarea a un usuario de otro
+  // tenant, que además recibía el email con el nombre del fallecido.
+  if (data.assigneeId) {
+    const member = await findActiveMember(data.assigneeId, session.user.orgId);
+    if (!member) {
+      return NextResponse.json(
+        { error: "El usuario asignado no pertenece a esta organización" },
+        { status: 400 },
+      );
+    }
+  }
+
   const task = await prisma.task.create({
     data: {
       caseId: params.id,
-      category: body.category,
-      title: body.title,
-      description: body.description,
-      dueDate: body.dueDate ? new Date(body.dueDate) : null,
-      assigneeId: body.assigneeId,
-      sortOrder: body.sortOrder || 0,
+      category: data.category,
+      title: data.title,
+      description: data.description ?? null,
+      dueDate: data.dueDate ?? null,
+      assigneeId: data.assigneeId ?? null,
+      sortOrder: data.sortOrder ?? 0,
     },
   });
 
@@ -48,32 +71,68 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!auth.ok) return auth.response;
   const session = auth.session;
 
-  const body = await req.json();
-  const { taskId, status, assigneeId, blockReason, blockedUntil, dependsOnId, deadline, dueDate, title, description } = body;
+  const parsed = updateTaskSchema.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Datos no válidos", details: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+  const {
+    taskId, status, assigneeId, blockReason, blockedUntil,
+    dependsOnId, deadline, dueDate, title, description,
+  } = parsed.data;
 
-  const task = await prisma.task.findFirst({
-    where: { id: taskId, caseId: params.id, case: { orgId: session.user.orgId } },
-  });
+  const task = await findTaskInCase(taskId, params.id, session.user.orgId);
   if (!task) return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
 
+  // El asignado debe ser miembro vivo de esta organización.
+  if (assigneeId) {
+    const member = await findActiveMember(assigneeId, session.user.orgId);
+    if (!member) {
+      return NextResponse.json(
+        { error: "El usuario asignado no pertenece a esta organización" },
+        { status: 400 },
+      );
+    }
+  }
+
+  // La dependencia debe ser otra tarea del MISMO expediente, no puede ser la
+  // propia tarea y no puede cerrar un ciclo. Antes no se comprobaba ninguna de
+  // las tres cosas: `dependsOnId` podía apuntar a una tarea de otro tenant.
+  if (dependsOnId) {
+    const check = await validateTaskDependency(
+      taskId, dependsOnId, params.id, session.user.orgId,
+    );
+    if (!check.ok) {
+      const message =
+        check.reason === "self_dependency"
+          ? "Una tarea no puede depender de sí misma"
+          : check.reason === "cycle"
+            ? "Esa dependencia crearía un ciclo entre tareas"
+            : "La tarea de la que quieres depender no pertenece a este expediente";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+  }
+
   const updated = await prisma.task.update({
-    where: { id: taskId },
+    where: { id: task.id },
     data: {
       ...(status && { status }),
-      ...(assigneeId !== undefined && { assigneeId }),
+      ...(assigneeId !== undefined && { assigneeId: assigneeId ?? null }),
       ...(status === "BLOCKED" && {
         blockReason: blockReason ?? null,
-        blockedUntil: blockedUntil ? new Date(blockedUntil) : null,
+        blockedUntil: blockedUntil ?? null,
       }),
       ...(status && status !== "BLOCKED" && {
         blockReason: null,
         blockedUntil: null,
       }),
-      ...(dependsOnId !== undefined && { dependsOnId: dependsOnId || null }),
-      ...(deadline !== undefined && { deadline: deadline ? new Date(deadline) : null }),
-      ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
-      ...(title !== undefined && title.trim() && { title: title.trim() }),
-      ...(description !== undefined && { description: description || null }),
+      ...(dependsOnId !== undefined && { dependsOnId: dependsOnId ?? null }),
+      ...(deadline !== undefined && { deadline: deadline ?? null }),
+      ...(dueDate !== undefined && { dueDate: dueDate ?? null }),
+      ...(title !== undefined && { title }),
+      ...(description !== undefined && { description: description ?? null }),
     },
   });
 
