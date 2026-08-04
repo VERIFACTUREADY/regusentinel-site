@@ -113,7 +113,7 @@ Cada entrada está confirmada leyendo el fichero indicado. No son sospechas.
 | 1 — Sesiones, membresías y RBAC | ✅ completada | `fix(auth): enforce live membership and subscription authorization` |
 | 2 — Aislamiento multi-tenant | ✅ completada | `fix(tenancy): enforce organization boundaries on all relations` |
 | 3 — Portal, consentimiento y archivos | ✅ completada | `fix(portal): protect family access consent and document visibility` |
-| 4 — Stripe y límites de plan | ⬜ pendiente | — |
+| 4 — Stripe y límites de plan | ✅ completada | `fix(billing): make Stripe processing retryable and enforce plan limits` |
 | 5 — SSRF y secretos outbound | ⬜ pendiente | — |
 | 6 — Notificaciones y workflows | ⬜ pendiente | — |
 | 7 — Retención, IA y plazos | ⬜ pendiente | — |
@@ -279,12 +279,59 @@ transacción. Verificado en tres ejecuciones consecutivas.
   alguna familia dependía de ver uno concreto, hay que compartirlo
   explícitamente desde la aplicación (`PATCH /api/documents/[id]`).
 
+---
+
+## Fase 4 — decisiones técnicas
+
+**P0-4 cerrado.** `StripeEvent` pasa de "visto" a máquina de estados
+(`RECEIVED` → `PROCESSING` → `PROCESSED` | `FAILED`) con `attempts`,
+`lastError`, `startedAt`, `receivedAt` y `completedAt`. **Sólo `PROCESSED`
+descarta un reintento.** Un evento fallido queda `FAILED` y el reintento de
+Stripe vuelve a ejecutarlo.
+
+**Reclamación sin bloqueo largo.** Se usa una actualización condicional atómica
+(`updateMany` con el estado esperado en el `where`): si dos entregas del mismo
+evento llegan a la vez, sólo una ve `count === 1`. No se mantiene una
+transacción abierta durante las llamadas de red a Stripe, que son lentas.
+
+**Ejecuciones colgadas.** Un `PROCESSING` con más de 5 minutos se considera
+muerto y se puede volver a reclamar; si no, un proceso caído a mitad dejaría el
+evento bloqueado para siempre.
+
+**Códigos de respuesta.** La ruta distingue firma inválida (400, permanente) de
+fallo al procesar (500, transitorio → Stripe reintenta). Antes ambos eran 400
+y además se devolvía el mensaje de error crudo.
+
+**`invoice.payment_succeeded`** no estaba manejado: un pago que recuperaba una
+suscripción en `past_due` sólo surtía efecto si además llegaba
+`customer.subscription.updated`. Si no llegaba, la organización seguía
+suspendida estando al corriente.
+
+**Límites de plan** (`src/lib/plan-limits.ts`), fuente única `PLAN_PRICING`:
+- Tope duro en **los tres planes**. Antes sólo INICIA, con el `15` a mano;
+  DESPACHO y FIRMA anunciaban 50 y 200 y no tenían ningún tope.
+- **Decisión: no se factura por excedentes.** El copy se alinea en la Fase 8.
+- Recuento y creación en la **misma transacción**, serializados por
+  organización con advisory lock.
+
+Verificado con PostgreSQL real: la prueba `sin el lock, el mismo escenario
+superaría el tope` demuestra que la implementación antigua permite pasarse, y
+la de al lado que la nueva no.
+
+### Riesgo residual de Fase 4
+
+- Los eventos que queden en `FAILED` tras agotar los reintentos de Stripe (3
+  días) **no se reprocesan solos**. Quedan visibles en la tabla con su
+  `lastError`, pero no hay panel ni cron que los recupere: hay que mirarlos a
+  mano. Anotado como revisión manual pendiente.
+
 ## Migraciones creadas
 
 | Migración | Contenido | Probada |
 |---|---|---|
 | `20260805000000_case_ref_unique_per_org` | Deduplica refs existentes y crea `@@unique([orgId, ref])` | Sí: sobre base vacía y sobre base con 3 duplicados reales |
 | `20260804225123_portal_consent_document_visibility` | `Document.visibleToFamily` + estado de borrado, `PortalConsent`, rotación/revocación/caducidad del token. Backfill: documentos del portal → visibles; consentimientos previos → fila heredada | Sí: aplicada sobre base vacía y sobre base ya migrada |
+| `20260804230440_stripe_event_retryable` | `StripeEvent` a máquina de estados. Migración **sin pérdida**: las filas existentes pasan a `PROCESSED` conservando su fecha (la generada por Prisma borraba `processedAt`) | Sí: verificada con 2 eventos previos reales |
 
 ## Variables de entorno nuevas
 
@@ -298,3 +345,4 @@ transacción. Verificado en tres ejecuciones consecutivas.
 - Fase 1: ver "Riesgo residual" arriba.
 - Fase 2: ver "Riesgo residual" arriba (renombrado de refs duplicadas).
 - Fase 3: sin antivirus; documentos internos previos quedan privados.
+- Fase 4: los eventos que agoten los reintentos de Stripe quedan en `FAILED` sin recuperación automática.

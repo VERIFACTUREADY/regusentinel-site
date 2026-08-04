@@ -2,6 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { nextCaseRef } from "@/lib/tenancy";
+import { checkCaseLimit, planOf, lockOrgForLimits } from "@/lib/plan-limits";
+
+import { createCaseSchema } from "@/lib/validations";
+import { getChecklistForCategories } from "@/lib/checklist-rules";
+import { logAudit } from "@/lib/audit";
+import { calculateTaskDeadlines } from "@/lib/deadline-engine";
+import { triggerWorkflow } from "@/lib/workflow-engine";
+
+/** Tope de plan alcanzado. Aborta la transaccion y se traduce a 403. */
+class PlanLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlanLimitError";
+  }
+}
 
 /**
  * P2002 sobre el indice (orgId, ref): otra alta simultanea se quedo con la
@@ -14,11 +29,6 @@ function isUniqueRefConflict(err: unknown): boolean {
   const fields = Array.isArray(target) ? target.join(",") : String(target ?? "");
   return fields.includes("ref");
 }
-import { createCaseSchema } from "@/lib/validations";
-import { getChecklistForCategories } from "@/lib/checklist-rules";
-import { logAudit } from "@/lib/audit";
-import { calculateTaskDeadlines } from "@/lib/deadline-engine";
-import { triggerWorkflow } from "@/lib/workflow-engine";
 
 export async function GET(req: NextRequest) {
   const auth = await requireOrgPermission("cases.read");
@@ -115,20 +125,10 @@ export async function POST(req: NextRequest) {
     const { caseTemplateId } = body;
     const data = createCaseSchema.parse(body);
 
-    // Check plan limits (includedCases per mes; excedentes facturados aparte).
-    const sub = await prisma.subscription.findUnique({ where: { orgId: session.user.orgId } });
-    if (sub?.plan === "INICIA") {
-      const month = new Date().toISOString().slice(0, 7);
-      const usage = await prisma.usageRecord.findUnique({
-        where: { orgId_month: { orgId: session.user.orgId, month } },
-      });
-      if (usage && usage.casesCreated >= 15) {
-        return NextResponse.json(
-          { error: "Limite de expedientes alcanzado para el plan Inicia (15/mes). Actualiza a Despacho." },
-          { status: 403 }
-        );
-      }
-    }
+    // El limite de plan se comprueba DENTRO de la transaccion (mas abajo),
+    // no aqui: contar fuera y crear despues deja una ventana en la que varias
+    // peticiones simultaneas ven el mismo recuento y todas pasan el tope.
+    const plan = await planOf(session.user.orgId);
 
     // La referencia se genera DENTRO de la transaccion, a partir del maximo ya
     // existente para el anyo en curso. Antes se hacia `count + 1` fuera de la
@@ -139,6 +139,13 @@ export async function POST(req: NextRequest) {
     // transacciones eligen el mismo numero, una falla con P2002 y reintentamos.
     const createCaseTransaction = () =>
       prisma.$transaction(async (tx) => {
+      // Serializa por organizacion la comprobacion de limite y la asignacion
+      // de referencia.
+      await lockOrgForLimits(session.user.orgId, tx);
+
+      const limit = await checkCaseLimit(session.user.orgId, plan, tx);
+      if (!limit.allowed) throw new PlanLimitError(limit.message!);
+
       const ref = await nextCaseRef(session.user.orgId, tx);
       const c = await tx.case.create({
         data: {
@@ -245,6 +252,9 @@ export async function POST(req: NextRequest) {
         newCase = await createCaseTransaction();
         break;
       } catch (err) {
+        if (err instanceof PlanLimitError) {
+          return NextResponse.json({ error: err.message }, { status: 403 });
+        }
         if (isUniqueRefConflict(err) && attempt < MAX_REF_ATTEMPTS - 1) continue;
         throw err;
       }

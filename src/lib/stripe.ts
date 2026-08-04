@@ -157,6 +157,75 @@ export async function createPortalSession(
 /**
  * Process Stripe webhook events.
  */
+/**
+ * Tiempo tras el cual una ejecución en PROCESSING se considera colgada (el
+ * proceso murió a mitad) y otro reintento puede tomarla.
+ */
+const PROCESSING_STALE_MS = 5 * 60 * 1000;
+
+/**
+ * Reclama el evento para procesarlo, o indica que no hay que hacerlo.
+ *
+ * La reclamación es una **actualización condicional atómica**: `updateMany`
+ * con el estado esperado en el `where`. Si dos entregas simultáneas del mismo
+ * evento llegan a la vez, sólo una verá `count === 1` y la otra se retira. No
+ * hace falta bloquear ni mantener una transacción abierta durante las llamadas
+ * de red a Stripe, que son lentas.
+ */
+async function claimEvent(
+  eventId: string,
+  eventType: string,
+): Promise<"claimed" | "already_processed" | "in_progress"> {
+  // Alta idempotente: si ya existe, seguimos con la lógica de reclamación.
+  try {
+    await prisma.stripeEvent.create({
+      data: { id: eventId, type: eventType, status: "RECEIVED" },
+    });
+  } catch (err: unknown) {
+    if ((err as { code?: string })?.code !== "P2002") throw err;
+  }
+
+  const existing = await prisma.stripeEvent.findUnique({ where: { id: eventId } });
+  if (!existing) return "in_progress"; // carrera improbable; que Stripe reintente
+
+  // Sólo PROCESSED descarta un reintento. Este es el cambio que impide perder
+  // cobros: antes bastaba con que la fila existiera.
+  if (existing.status === "PROCESSED") return "already_processed";
+
+  const stale =
+    existing.status === "PROCESSING" &&
+    existing.startedAt !== null &&
+    Date.now() - existing.startedAt.getTime() > PROCESSING_STALE_MS;
+
+  const claimable: Array<typeof existing.status> = ["RECEIVED", "FAILED"];
+  if (!claimable.includes(existing.status) && !stale) {
+    return "in_progress";
+  }
+
+  const claim = await prisma.stripeEvent.updateMany({
+    where: { id: eventId, status: existing.status },
+    data: {
+      status: "PROCESSING",
+      startedAt: new Date(),
+      attempts: { increment: 1 },
+    },
+  });
+
+  return claim.count === 1 ? "claimed" : "in_progress";
+}
+
+/**
+ * Procesa un webhook de Stripe de forma reintentable.
+ *
+ * ANTES: `stripeEvent.create` se ejecutaba antes del `switch`. Si un handler
+ * lanzaba, la fila ya existía; el reintento de Stripe chocaba con P2002 y se
+ * respondía `duplicate: true` sin volver a aplicar nada. Una activación de
+ * suscripción podía perderse para siempre: dinero cobrado y plan no activado.
+ *
+ * AHORA: el evento se marca PROCESSED sólo si la lógica termina bien. Si
+ * falla, queda FAILED con el error, se responde con error para que Stripe
+ * reintente, y el reintento vuelve a ejecutarlo.
+ */
 export async function handleWebhookEvent(
   body: string | Buffer,
   sig: string
@@ -165,21 +234,41 @@ export async function handleWebhookEvent(
 
   const event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
 
-  // Idempotencia: Stripe reintenta hasta 3 dias si no respondes 200 rapido.
-  // Si ya procesamos este event.id antes, devolvemos OK sin ejecutar handlers
-  // (evita duplicar emails, mutaciones de subscription, etc.).
+  const claim = await claimEvent(event.id, event.type);
+
+  if (claim === "already_processed") {
+    return { received: true, type: event.type, duplicate: true };
+  }
+  if (claim === "in_progress") {
+    // Otra entrega lo está procesando ahora mismo. No lo duplicamos.
+    return { received: true, type: event.type, duplicate: true };
+  }
+
   try {
-    await prisma.stripeEvent.create({
-      data: { id: event.id, type: event.type },
-    });
-  } catch (err: any) {
-    // P2002 = unique constraint violation → ya procesado.
-    if (err?.code === "P2002") {
-      return { received: true, type: event.type, duplicate: true };
-    }
+    await processEvent(event);
+  } catch (err) {
+    await prisma.stripeEvent.update({
+      where: { id: event.id },
+      data: {
+        status: "FAILED",
+        lastError: err instanceof Error ? err.message.slice(0, 1000) : String(err).slice(0, 1000),
+        completedAt: null,
+      },
+    }).catch(console.error);
+
+    // Se propaga para que la ruta responda != 2xx y Stripe reintente.
     throw err;
   }
 
+  await prisma.stripeEvent.update({
+    where: { id: event.id },
+    data: { status: "PROCESSED", completedAt: new Date(), lastError: null },
+  });
+
+  return { received: true, type: event.type };
+}
+
+async function processEvent(event: Stripe.Event): Promise<void> {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -318,9 +407,35 @@ export async function handleWebhookEvent(
       }
       break;
     }
-  }
 
-  return { received: true, type: event.type };
+    case "invoice.payment_succeeded": {
+      // Faltaba: un pago que recupera una suscripción en past_due sólo se
+      // reflejaba si además llegaba `customer.subscription.updated`. Si no
+      // llegaba, la organización seguía suspendida pese a estar al corriente.
+      const invoice = event.data.object as Stripe.Invoice;
+      const customerId =
+        typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+      if (!customerId) break;
+
+      const existingSub = await prisma.subscription.findFirst({
+        where: { stripeCustomerId: customerId },
+      });
+      if (!existingSub) break;
+
+      if (existingSub.status !== "active") {
+        await prisma.subscription.update({
+          where: { id: existingSub.id },
+          data: { status: "active" },
+        });
+        await logAudit({
+          orgId: existingSub.orgId,
+          action: "subscription.reactivated",
+          details: `Pago recibido; ${existingSub.status} → active`,
+        }).catch(console.error);
+      }
+      break;
+    }
+  }
 }
 
 function mapStripeStatus(stripeStatus: string): string {

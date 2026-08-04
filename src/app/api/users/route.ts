@@ -5,8 +5,16 @@ import { inviteUserSchema } from "@/lib/validations";
 import { checkRoleAssignment } from "@/lib/rbac";
 import { sendEmail } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
-import { PLAN_PRICING } from "@/lib/stripe";
+import { checkUserLimit, planOf, lockOrgForLimits } from "@/lib/plan-limits";
 import crypto from "crypto";
+
+/** Rechazo de invitacion con codigo HTTP; aborta la transaccion. */
+class InviteError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "InviteError";
+  }
+}
 
 export async function GET(_req: NextRequest) {
   const auth = await requireOrgPermission("org.members");
@@ -43,32 +51,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: denial }, { status: 403 });
     }
 
-    // Plan-level user cap: la tabla /precios promete "Hasta N usuarios"
-    // por plan. Antes de crear la membership, contamos los activos y
-    // bloqueamos si ya se alcanzó el cap.
-    const sub = await prisma.subscription.findUnique({
-      where: { orgId: session.user.orgId },
-      select: { plan: true },
-    });
-    const plan = sub?.plan ?? "INICIA";
-    const maxUsers = PLAN_PRICING[plan].maxUsers;
-    const currentMembers = await prisma.membership.count({
-      where: { orgId: session.user.orgId },
-    });
-    if (currentMembers >= maxUsers) {
-      const nextPlan = plan === "INICIA" ? "Despacho" : plan === "DESPACHO" ? "Firma" : null;
-      const upgradeHint = nextPlan
-        ? ` Actualiza a ${nextPlan} para añadir más miembros.`
-        : "";
-      return NextResponse.json(
-        {
-          error: `Límite de usuarios alcanzado para el plan ${PLAN_PRICING[plan].label} (${maxUsers} usuarios).${upgradeHint}`,
-        },
-        { status: 403 },
-      );
-    }
+    const plan = await planOf(session.user.orgId);
 
-    // Check if user exists
+    // Check if user exists. El alta del usuario va fuera de la transacción a
+    // propósito: es idempotente por email y no debe reintentarse si el tope
+    // de plan aborta.
     let user = await prisma.user.findUnique({ where: { email: data.email } });
     const magicToken = crypto.randomBytes(32).toString("hex");
 
@@ -82,18 +69,34 @@ export async function POST(req: NextRequest) {
         },
       });
     }
+    const invitedUser = user;
 
-    // Check existing membership
-    const existing = await prisma.membership.findUnique({
-      where: { userId_orgId: { userId: user.id, orgId: session.user.orgId } },
-    });
-    if (existing) {
-      return NextResponse.json({ error: "El usuario ya es miembro" }, { status: 400 });
+    // Tope de usuarios del plan. Antes se contaba fuera y se creaba después:
+    // dos invitaciones simultáneas leían el mismo recuento y ambas pasaban,
+    // superando el tope. Ahora el recuento y la creación van en la misma
+    // transacción, serializada por organización.
+    try {
+      await prisma.$transaction(async (tx) => {
+        await lockOrgForLimits(session.user.orgId, tx);
+
+        const existing = await tx.membership.findUnique({
+          where: { userId_orgId: { userId: invitedUser.id, orgId: session.user.orgId } },
+        });
+        if (existing) throw new InviteError("El usuario ya es miembro", 400);
+
+        const limit = await checkUserLimit(session.user.orgId, plan, tx);
+        if (!limit.allowed) throw new InviteError(limit.message!, 403);
+
+        await tx.membership.create({
+          data: { userId: invitedUser.id, orgId: session.user.orgId, role: data.role },
+        });
+      });
+    } catch (err) {
+      if (err instanceof InviteError) {
+        return NextResponse.json({ error: err.message }, { status: err.status });
+      }
+      throw err;
     }
-
-    await prisma.membership.create({
-      data: { userId: user.id, orgId: session.user.orgId, role: data.role },
-    });
 
     // Send invite email
     try {

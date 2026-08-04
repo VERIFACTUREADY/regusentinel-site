@@ -667,10 +667,34 @@ model DemoRequest {
 // rapido. Cacheamos el event.id para no duplicar emails ni mutaciones de
 // suscripcion en reintentos.
 
-model StripeEvent {
-  id          String   @id // Stripe event.id (evt_xxx)
-  type        String
-  processedAt DateTime @default(now())
+enum StripeEventStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
 
-  @@index([processedAt])
+model StripeEvent {
+  id   String @id // Stripe event.id (evt_xxx)
+  type String
+
+  /// Antes sólo existía `processedAt`, escrito ANTES de ejecutar la lógica: si
+  /// el handler fallaba, el evento quedaba marcado y el reintento de Stripe se
+  /// descartaba como duplicado. La mutación de suscripción se perdía para
+  /// siempre — un cobro cobrado y no aplicado.
+  ///
+  /// Ahora sólo PROCESSED descarta un reintento. FAILED y PROCESSING caducado
+  /// vuelven a intentarse.
+  status StripeEventStatus @default(RECEIVED)
+
+  attempts  Int       @default(0)
+  lastError String?
+  /// Momento en que se tomó el evento para procesarlo. Sirve para detectar
+  /// ejecuciones colgadas (proceso muerto a mitad).
+  startedAt   DateTime?
+  receivedAt  DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([status, receivedAt])
+  @@index([receivedAt])
 }
