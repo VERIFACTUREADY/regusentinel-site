@@ -730,8 +730,42 @@ No añade funcionalidad: sólo cierra los hallazgos.
 | `0d51568` | fix(privacy): make retention recoverable and complete AI minimization | 7, 8 |
 | `b11ff73` | fix(workflows): record per-recipient deliveries and close audit leftovers | 9 + menores |
 | `64c65f0` | test(ci): execute Playwright and MinIO integration in Actions | 10, 11 |
+| `631a8cd` | chore(repo): remove artifacts and close remaining audit findings | documentación |
+| `6062ed3` | ci: ejecutar el workflow tambien en las ramas de trabajo | 10 |
+| `cd48727` | fix(deps): eliminar las criticas de produccion y arreglar MinIO en CI | 10 |
+| `13c7d76` | fix(test): hacer hermetica la suite unitaria | 10 |
 
 Rama: `claude/heredia-security-hardening-v1`. Sin merge.
+
+## GitHub Actions
+
+Run **#4** (`13c7d76`) — los **seis jobs en verde**:
+https://github.com/VERIFACTUREADY/regusentinel-site/actions/runs/31052444328
+
+| Job | Resultado | Qué demuestra |
+|---|---|---|
+| Tipos, unitarias y build | ✅ | tsc, 1.044 unitarias, build sin `DATABASE_URL` |
+| Migraciones (base vacía y actualización) | ✅ | los dos caminos + guarda de `--accept-data-loss` |
+| Integración PostgreSQL | ✅ | 111 pruebas contra base real |
+| Integración S3 (MinIO real) | ✅ | 9 pruebas contra MinIO, con guarda anti-omisión |
+| E2E Playwright | ✅ | Chromium real contra la app construida |
+| Auditoría de dependencias | ✅ | 0 críticas en producción |
+
+### Los tres fallos que la CI destapó y el "verde en local" no
+
+El workflow sólo se disparaba en `main` y en pull requests, así que la rama
+acumuló 22 commits **sin ejecutarse ni una vez**. Al hacerlo por fin salieron
+tres fallos reales:
+
+1. **Críticas de producción**: `next@14.1.0` arrastraba un bypass de
+   autorización en el middleware (`GHSA-f82v-jwr5-mffw`), dos SSRF y varias de
+   envenenamiento de caché; `next-auth@4.24.5` no ligaba las cookies de
+   `state`/`nonce`/PKCE al proveedor que las creó. Actualizados a 14.2.35 y
+   4.24.15.
+2. **MinIO no arrancaba**: `bitnami/minio:latest` dejó de publicarse.
+3. **La suite unitaria abortaba**: los 62 ficheros pasaban y *después* el motor
+   de Prisma tiraba el proceso (`exit 134`) por falta de `DATABASE_URL`. En
+   local no se veía porque el entorno de desarrollo suele tenerla exportada.
 
 ## Hallazgos corregidos
 
