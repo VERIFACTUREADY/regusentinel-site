@@ -709,3 +709,222 @@ código con el esquema nuevo funciona salvo en Stripe y PromptLog.
 - Verificar región y contrato de cada proveedor contratado.
 - Probar la restauración de las copias de seguridad.
 - Revisar las reglas fiscales frente a la normativa vigente.
+
+---
+
+# Fase 10 — Remediación de auditoría independiente
+
+Una auditoría independiente del código resultante de las fases 0–9 identificó
+once bloqueos que impedían fusionar o desplegar la rama. Esta fase los corrige.
+No añade funcionalidad: sólo cierra los hallazgos.
+
+## Commits
+
+| SHA | Título | Bloqueos |
+|---|---|---|
+| `ceb4140` | fix(migrations): restore incremental history and remove destructive deploy | 1 |
+| `a6b70b7` | fix(auth): serialize owner policy and fail closed on subscription | 2, 3 |
+| `63890c8` | fix(billing): recover Stripe events and correlate invoice subscriptions | 4 |
+| `dd1e95e` | fix(integrations): pin validated outbound addresses and close SSRF gaps | 5 |
+| `a4ba389` | fix(notifications): claim deliveries atomically across all channels | 6 |
+| `0d51568` | fix(privacy): make retention recoverable and complete AI minimization | 7, 8 |
+| `b11ff73` | fix(workflows): record per-recipient deliveries and close audit leftovers | 9 + menores |
+| `64c65f0` | test(ci): execute Playwright and MinIO integration in Actions | 10, 11 |
+
+Rama: `claude/heredia-security-hardening-v1`. Sin merge.
+
+## Hallazgos corregidos
+
+### 1. Migraciones y deploy sin pérdida de datos
+
+`scripts/migrate-deploy.mjs` ejecutaba `prisma db push --accept-data-loss
+--skip-generate` cuando `migrate deploy` fallaba con P3005 — dentro del build,
+contra producción y sin revisión humana. La causa raíz era que el historial de
+migraciones había sido **reemplazado** por un baseline nuevo, borrando las 8
+migraciones que una base existente ya tenía aplicadas.
+
+- Restauradas las 7 migraciones históricas nombradas por la auditoría, más
+  `20260524105000_notification_channel_prerequisites` (idempotente) porque la
+  cadena original nunca había sido aplicable desde cero.
+- `20260530000000_align_schema_with_models`: migración reconciliadora de 213
+  líneas, **cero operaciones destructivas**, que cubre las 75 columnas que el
+  historial había perdido.
+- `npm run build` pasa a ser `prisma generate && next build`: no toca la base.
+  El despliegue usa un paso separado, `npm run db:deploy`.
+- Ante P3005 el script **falla** e imprime el procedimiento manual. Nunca
+  ejecuta `db push` ni `migrate reset`.
+- `__tests__/migration-history.test.ts` congela las 19 migraciones por huella
+  SHA-256 y falla si alguna se borra, se modifica, se añade sin registrar o
+  contiene un `DROP`/`TRUNCATE` no justificado.
+
+### 2. Último OWNER y límites con concurrencia real
+
+El recuento de OWNER y la mutación viajaban en una transacción READ COMMITTED
+normal: dos peticiones simultáneas leían ambas `ownerCount = 2` y la
+organización se quedaba con **cero** titulares.
+
+- `lockOrgForOwnership(orgId, tx)` — advisory lock por organización, aplicado
+  antes de contar en las tres vías que pueden vaciar la titularidad.
+- El alta de invitado (usuario + membresía + lectura del plan + tope) pasa a
+  ser una sola transacción. Antes el `User` se creaba fuera: una invitación
+  rechazada por el tope dejaba una cuenta con `magicToken` válido siete días.
+
+### 3. Sesiones y suscripción fail-closed
+
+- Una organización sin fila `Subscription` queda **suspendida**. Antes
+  `isSuspended` empezaba con `if (!status) return false`.
+- Los ocho estados de Stripe se enumeran con decisión explícita (lista blanca).
+  `incomplete` y `paused` daban acceso completo; un estado desconocido también.
+- Si el JWT nombra una organización sin membresía viva, la sesión se invalida
+  (401 `ORG_CONTEXT_LOST`) en vez de cambiar en silencio a otra organización.
+
+### 4. Stripe reintentable y correlacionado
+
+- El webhook responde **409** cuando el evento no se ha aplicado, en vez de 200:
+  el reintento de Stripe sigue vivo.
+- Recuperador propio en `/api/cron/stripe-recovery` (cada 10 min): libera
+  PROCESSING colgados, reprocesa FAILED, y al agotar 8 intentos pasa a
+  `NEEDS_INTERVENTION` con aviso operativo. Reintento manual disponible.
+- `invoice.payment_succeeded` exige `invoice.subscription`, correlaciona por
+  `stripeSubId`, recupera la suscripción de Stripe y aplica **su** estado real.
+  La misma corrección se extiende a los otros tres eventos de suscripción.
+
+### 5. SSRF con la IP fijada
+
+- `safeFetch` deja de usar `fetch` (que vuelve a resolver el nombre) y usa
+  `http(s).request` con un `lookup` que devuelve la dirección ya validada. Se
+  conservan `Host`, SNI y validación del certificado contra el nombre.
+- Clasificación con `ipaddr.js` y lista blanca. Se cierran: todo `fe80::/10`
+  (antes sólo `fe80::/16`), `fec0::/10`, IPv4 mapeada en sus tres
+  representaciones, 6to4, Teredo y las formas equivalentes de los metadatos.
+- Un único plazo cubre conexión, TLS, cabeceras y lectura del cuerpo.
+- `/api/settings/integrations/test` comprueba el plan FIRMA en el momento del
+  envío y añade una segunda ventana de límite por hora.
+
+### 6. Notificaciones con reserva atómica
+
+Máquina de estados PENDING → PROCESSING → SENT/FAILED. La fila se crea **antes**
+de llamar al proveedor; sólo quien obtiene la reserva envía. Aplicada a los
+cinco canales: cada email interno, el recordatorio a la familia, Slack, Teams y
+el webhook propio — los tres últimos no pasaban por deduplicación en absoluto y
+se reenviaban en cada pasada del cron.
+
+### 7. Retención sin abandono silencioso
+
+- Desaparece el tope `purgeAttempts < 5` que dejaba los datos personales
+  abandonados para siempre. Ahora hay backoff creciente y, superado el umbral,
+  reintento **diario** más aviso operativo de alta prioridad.
+- Estados explícitos `PurgeState` y reintento manual por endpoint.
+- Decisión coherente: la fila `Case` **se elimina**; `Case.purgedAt` queda
+  marcado como obsoleto (nunca podía observarse) y la constancia pasa a
+  `PurgeEvidence`, sin ningún dato personal, escrita en la misma transacción.
+
+### 8. Minimización de IA completa
+
+La minimización existía sólo en `case-analyzer.ts`; los otros siete puntos
+enviaban el contexto en crudo. Se introduce `lib/ai-gateway.ts` como única
+salida —es el único fichero que instancia el SDK— y la puerta lee de la base de
+datos los nombres a sustituir, incluidos los de los empleados asignados
+(`[RESPONSABLE_ASIGNADO]`). Un barrido estático falla si algún fichero vuelve a
+importar el SDK por su cuenta.
+
+### 9. Workflow con éxito parcial
+
+Cada destinatario deja su fila `WorkflowDelivery`; el estado agregado es
+SUCCESS / **PARTIAL** / FAILED. Antes bastaba con que uno de diez destinatarios
+funcionara para registrar la ejecución como exitosa. Reintento individual de los
+fallidos, sin duplicar el envío a quien ya lo recibió.
+
+### 10. CI real
+
+Seis jobs separados: `calidad`, `migraciones` (base vacía **y** actualización
+desde el historial antiguo), `integracion-postgres`, `integracion-s3` (MinIO
+real, con guarda que falla si las pruebas se saltan), `e2e` (Chromium instalado,
+suite ejecutada, artefactos subidos) y `dependencias`.
+
+### 11. Limpieza del repositorio
+
+`a.out` eliminado; `.gitignore` ampliado a temporales, artefactos de Playwright,
+volcados, credenciales e informes de CI. Barrido del árbol rastreado sin
+binarios, dumps, bases locales, logs ni secretos.
+
+### Pendientes menores
+
+- `validateTaskDependency` es **fail-closed** al agotar la profundidad máxima
+  (`too_deep`). Antes devolvía `{ ok: true }`: el único caso en el que la
+  comprobación no había concluido era justamente el que se aceptaba.
+- La referencia de expediente usa un contador numérico por organización y año
+  (`CaseCounter`), no el orden lexicográfico de cadenas, que se rompía al pasar
+  de 9.999 (`EXP-2026-10000` < `EXP-2026-9999`).
+
+## Migraciones nuevas de esta fase
+
+| Migración | Contenido | Destructiva |
+|---|---|---|
+| `20260524105000_notification_channel_prerequisites` | Tipos que faltaban en la cadena original | No |
+| `20260530000000_align_schema_with_models` | Reconciliación de 75 columnas perdidas | No |
+| `20260805120000_stripe_event_recovery` | `NEEDS_INTERVENTION`, `alertedAt`, índice | No |
+| `20260805140000_notification_delivery_state` | Máquina de estados de entrega | No |
+| `20260805160000_retention_states_and_evidence` | `PurgeState`, `PurgeEvidence` | No |
+| `20260805180000_workflow_partial_deliveries` | `PARTIAL`, `WorkflowDelivery` | No |
+| `20260805200000_case_counter` | `CaseCounter` sembrado desde el máximo real | No |
+
+Todas aditivas. Ninguna borra ni reescribe datos.
+
+## Variables de entorno nuevas
+
+| Variable | Para qué | Si falta |
+|---|---|---|
+| `OPS_ALERT_EMAIL` | Avisos que exigen intervención humana: eventos de Stripe sin aplicar y purgas de retención bloqueadas | Cae a `LEADS_NOTIFY_EMAIL`; si tampoco, sólo queda en los logs |
+
+## Pasos de despliegue (actualizados)
+
+**El build ya no aplica migraciones.** El paso de esquema es explícito y
+separado, y ése es el cambio que impide que un despliegue destruya datos.
+
+1. **Copia de seguridad de la base de datos.** No es opcional.
+2. `npm run db:check` — informa si hay migraciones pendientes, sin escribir.
+3. `npm run db:deploy` — aplica sólo migraciones incrementales revisadas.
+   Si sale P3005, **se detiene** e imprime el procedimiento manual; no
+   improvisa.
+4. Desplegar el código (`npm run build && npm start`, o la plataforma).
+5. Configurar `OPS_ALERT_EMAIL`.
+6. Comprobar que los crons nuevos están dados de alta: `/api/cron/stripe-recovery`
+   (cada 10 min) ya está en `vercel.json`.
+7. Verificar en el panel que no hay eventos en `NEEDS_INTERVENTION` ni
+   expedientes con la purga bloqueada.
+
+## Plan de rollback
+
+Las migraciones de esta fase son **todas aditivas**, así que revertir el código
+al commit anterior funciona sin restaurar la copia: las columnas y tablas nuevas
+quedan sin usar. Es una diferencia importante respecto a las fases 0–9, donde
+`PromptLog.prompt` y `StripeEvent.processedAt` sí se perdían.
+
+Orden del rollback:
+
+1. Revertir el despliegue de código al commit anterior.
+2. **No** revertir las migraciones. Dejar las tablas nuevas.
+3. Si aun así hay que volver al esquema previo, restaurar la copia del paso 1
+   de despliegue: `migrate deploy` no deshace migraciones y no debe forzarse.
+
+Riesgo conocido del rollback: los eventos de Stripe que hayan quedado en
+`NEEDS_INTERVENTION` no serán reconocidos por el código antiguo, que no conoce
+ese valor del enum. Deben resolverse antes de revertir.
+
+## Riesgos que permanecen
+
+1. **El texto libre del expediente sigue saliendo hacia Anthropic** con los
+   identificadores directos sustituidos. Es el contenido sobre el que el modelo
+   razona; sin él la función no existe. El tratamiento **no es anónimo** y no se
+   presenta como tal: requiere activación expresa de la organización.
+2. **Días hábiles sin festivos** en el cálculo de plazos: siguen siendo
+   optimistas.
+3. **Reglas fiscales sin verificar a 2026**; se presentan como orientativas.
+4. **Textos legales con marcadores** (`[DENOMINACION SOCIAL]`, `[NIF]`…) y
+   contrato de encargado de tratamiento pendiente de redactar y firmar.
+5. **Restauración de copias de seguridad sin probar** en un entorno real.
+6. **Las acciones de workflow no encadenan** (no es una regresión).
+7. El aviso operativo depende del correo saliente: si el proveedor de email
+   está caído, el aviso de "purga bloqueada" también lo está. Queda constancia
+   en auditoría y en los logs del servidor.
