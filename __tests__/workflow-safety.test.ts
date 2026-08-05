@@ -11,7 +11,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../src/lib/prisma", () => ({
   prisma: {
     workflowRule: { findMany: vi.fn(), update: vi.fn() },
-    workflowLog: { create: vi.fn() },
+    workflowLog: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
+    workflowDelivery: { create: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
     case: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     membership: { findMany: vi.fn() },
   },
@@ -32,6 +33,9 @@ const caseFindFirst = prisma.case.findFirst as unknown as ReturnType<typeof vi.f
 const caseFindUnique = prisma.case.findUnique as unknown as ReturnType<typeof vi.fn>;
 const caseUpdateMany = prisma.case.updateMany as unknown as ReturnType<typeof vi.fn>;
 const logCreate = prisma.workflowLog.create as unknown as ReturnType<typeof vi.fn>;
+const logUpdate = prisma.workflowLog.update as unknown as ReturnType<typeof vi.fn>;
+const deliveryCreate = prisma.workflowDelivery.create as unknown as ReturnType<typeof vi.fn>;
+const deliveryFindMany = prisma.workflowDelivery.findMany as unknown as ReturnType<typeof vi.fn>;
 const memberFindMany = prisma.membership.findMany as unknown as ReturnType<typeof vi.fn>;
 const emailMock = sendEmail as unknown as ReturnType<typeof vi.fn>;
 
@@ -66,7 +70,13 @@ const evento = { type: "CASE_STATUS_CHANGED" as const, orgId: "org-1", caseId: "
 
 beforeEach(() => {
   vi.clearAllMocks();
-  logCreate.mockResolvedValue({});
+  // El log se crea reclamado (PROCESSING) y devuelve su id: es lo que el
+  // motor necesita para reclamar cada entrega ANTES de enviar.
+  logCreate.mockResolvedValue({ id: "log-1" });
+  logUpdate.mockResolvedValue({});
+  deliveryCreate.mockResolvedValue({});
+  deliveryFindMany.mockResolvedValue([]);
+  (prisma.workflowDelivery.updateMany as any).mockResolvedValue({ count: 1 });
   (prisma.workflowRule.update as any).mockResolvedValue({});
   caseUpdateMany.mockResolvedValue({ count: 1 });
   emailMock.mockResolvedValue(undefined);
@@ -158,9 +168,13 @@ describe("Prevencion de bucles de estado", () => {
 
     await triggerWorkflow(evento);
 
-    const log = logCreate.mock.calls[0][0].data;
-    expect(log.status).toBe("SKIPPED");
-    expect(log.details.reason).toMatch(/cambio mientras/);
+    // El log se reclama en PROCESSING y, al ver que el efecto no llego a
+    // aplicarse, pasa a SKIPPED con su motivo. Antes se marcaba SUCCESS: decia
+    // que se habia hecho algo que no se hizo.
+    expect(logCreate.mock.calls[0][0].data.status).toBe("PROCESSING");
+    const actualizado = logUpdate.mock.calls.at(-1)![0].data;
+    expect(actualizado.status).toBe("SKIPPED");
+    expect(actualizado.details.reason).toMatch(/cambio mientras/);
   });
 
   it("corta al alcanzar la profundidad maxima", async () => {
@@ -170,61 +184,62 @@ describe("Prevencion de bucles de estado", () => {
   });
 });
 
-describe("SEND_EMAIL_TEAM no miente sobre el resultado", () => {
+describe("SEND_EMAIL_TEAM reserva ANTES de enviar", () => {
   const emailRule = rule({ action: "SEND_EMAIL_TEAM", actionConfig: { subject: "Aviso" } });
 
-  it("si fallan TODOS los envios, el workflow se registra como FAILED", async () => {
+  /**
+   * EL INVARIANTE QUE ANTES NO SE CUMPLIA.
+   *
+   * El diseño anterior enviaba los correos y DESPUES creaba `WorkflowLog` y
+   * `WorkflowDelivery`. Aqui se comprueba el orden real de las llamadas: la
+   * reserva de la ejecucion y la de CADA destinatario ocurren antes de la
+   * primera llamada al proveedor.
+   *
+   * La exclusion mutua de verdad —que dos ejecuciones simultaneas produzcan una
+   * sola llamada— no se puede demostrar con Prisma mockeado, porque no hay dos
+   * transacciones: eso se verifica en
+   * `__tests__/integration/workflow-claim-db.test.ts` contando las llamadas al
+   * proveedor contra PostgreSQL real.
+   */
+  it("crea el log y reclama la entrega antes de la primera llamada al proveedor", async () => {
+    const orden: string[] = [];
     ruleFindMany.mockResolvedValue([emailRule]);
     caseFindFirst.mockResolvedValue(caseRow());
-    memberFindMany.mockResolvedValue([
-      { user: { email: "a@x.es" } },
-      { user: { email: "b@x.es" } },
-    ]);
-    emailMock.mockRejectedValue(new Error("SMTP caido"));
+    memberFindMany.mockResolvedValue([{ user: { email: "a@x.es" } }]);
+
+    logCreate.mockImplementation(async () => {
+      orden.push("reservar-ejecucion");
+      return { id: "log-1" };
+    });
+    deliveryCreate.mockImplementation(async () => {
+      orden.push("reservar-entrega");
+      return {};
+    });
+    emailMock.mockImplementation(async () => {
+      orden.push("enviar");
+    });
 
     await triggerWorkflow(evento);
 
-    const log = logCreate.mock.calls[0][0].data;
-    expect(log.status).toBe("FAILED");
-    expect(log.error).toMatch(/2 de 2 destinatario/i);
-    // Cada destinatario deja su propia fila, para poder reintentarlo solo a el.
-    expect(log.deliveries.create).toHaveLength(2);
-    expect(log.deliveries.create.every((d: any) => d.status === "FAILED")).toBe(true);
+    expect(orden).toEqual(["reservar-ejecucion", "reservar-entrega", "enviar"]);
   });
 
-  it("si falla la MITAD, es PARTIAL — no SUCCESS", async () => {
+  it("el log se crea en PROCESSING y con clave idempotente, no con el resultado final", async () => {
     ruleFindMany.mockResolvedValue([emailRule]);
     caseFindFirst.mockResolvedValue(caseRow());
-    memberFindMany.mockResolvedValue([
-      { user: { email: "a@x.es" } },
-      { user: { email: "b@x.es" } },
-    ]);
-    emailMock
-      .mockRejectedValueOnce(new Error("rebote"))
-      .mockResolvedValueOnce(undefined);
+    memberFindMany.mockResolvedValue([{ user: { email: "a@x.es" } }]);
+    emailMock.mockResolvedValue(undefined);
 
     await triggerWorkflow(evento);
 
-    // ANTES: bastaba con que UNO de los destinatarios funcionara para que la
-    // ejecucion se registrase como SUCCESS. Con diez destinatarios y nueve
-    // fallos, el registro decia "exitoso" y nadie se enteraba de que nueve
-    // personas no habian recibido el aviso.
-    const log = logCreate.mock.calls[0][0].data;
-    expect(log.status).toBe("PARTIAL");
-    expect(log.error).toMatch(/1 de 2 destinatario/i);
-    expect(log.details.entregadas).toBe(1);
-    expect(log.details.fallidas).toBe(1);
-
-    // La entrega fallida queda identificada por destinatario: sin esto no se
-    // sabe A QUIEN reintentar, y reintentar la regla entera duplicaria el
-    // envio al que si lo recibio.
-    const entregas = log.deliveries.create;
-    expect(entregas).toHaveLength(2);
-    expect(entregas.find((d: any) => d.recipient === "a@x.es").status).toBe("FAILED");
-    expect(entregas.find((d: any) => d.recipient === "b@x.es").status).toBe("SENT");
+    const datos = logCreate.mock.calls[0][0].data;
+    expect(datos.status).toBe("PROCESSING");
+    // SHA-256 en hexadecimal: la clave no lleva emails ni nombres.
+    expect(datos.idempotencyKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(datos.startedAt).toBeInstanceOf(Date);
   });
 
-  it("si TODOS llegan, es SUCCESS y no se registra ningun fallo", async () => {
+  it("cada destinatario se reclama por separado", async () => {
     ruleFindMany.mockResolvedValue([emailRule]);
     caseFindFirst.mockResolvedValue(caseRow());
     memberFindMany.mockResolvedValue([
@@ -235,13 +250,30 @@ describe("SEND_EMAIL_TEAM no miente sobre el resultado", () => {
 
     await triggerWorkflow(evento);
 
-    const log = logCreate.mock.calls[0][0].data;
-    expect(log.status).toBe("SUCCESS");
-    expect(log.error).toBeNull();
-    expect(log.deliveries.create.every((d: any) => d.status === "SENT")).toBe(true);
+    const reclamados = deliveryCreate.mock.calls.map((c: any) => c[0].data.recipient).sort();
+    expect(reclamados).toEqual(["a@x.es", "b@x.es"]);
+    expect(
+      deliveryCreate.mock.calls.every((c: any) => c[0].data.status === "PROCESSING"),
+    ).toBe(true);
   });
 
-  it("sin destinatarios internos se omite con motivo", async () => {
+  it("un fallo de envio no impide reclamar ni enviar al resto", async () => {
+    ruleFindMany.mockResolvedValue([emailRule]);
+    caseFindFirst.mockResolvedValue(caseRow());
+    memberFindMany.mockResolvedValue([
+      { user: { email: "a@x.es" } },
+      { user: { email: "b@x.es" } },
+    ]);
+    emailMock.mockImplementation(async ({ to }: { to: string }) => {
+      if (to === "a@x.es") throw new Error("rebote");
+    });
+
+    await triggerWorkflow(evento);
+
+    expect(emailMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("sin destinatarios internos se omite con motivo y no se reserva nada", async () => {
     ruleFindMany.mockResolvedValue([emailRule]);
     caseFindFirst.mockResolvedValue(caseRow());
     memberFindMany.mockResolvedValue([]);
@@ -251,6 +283,7 @@ describe("SEND_EMAIL_TEAM no miente sobre el resultado", () => {
     const log = logCreate.mock.calls[0][0].data;
     expect(log.status).toBe("SKIPPED");
     expect(log.details.reason).toMatch(/destinatarios internos/);
+    expect(deliveryCreate).not.toHaveBeenCalled();
   });
 });
 

@@ -153,9 +153,7 @@ describe("Reintento SOLO de los destinatarios fallidos", () => {
     enviados.length = 0;
     vi.clearAllMocks();
 
-    const r = await reintentarEntregasFallidas(log!.id, (to) =>
-      sendEmail({ to, subject: "Cambio de estado", html: "<p>reintento</p>" }),
-    );
+    const r = await reintentarEntregasFallidas(log!.id);
 
     expect(r.reintentadas).toBe(2);
     expect(r.recuperadas).toBe(2);
@@ -185,9 +183,7 @@ describe("Reintento SOLO de los destinatarios fallidos", () => {
     expect(log!.status).toBe("PARTIAL");
 
     enviados.length = 0;
-    const r = await reintentarEntregasFallidas(log!.id, (to) =>
-      sendEmail({ to, subject: "x", html: "y" }),
-    );
+    const r = await reintentarEntregasFallidas(log!.id);
 
     expect(r.recuperadas).toBe(0);
     expect(r.estado).toBe("PARTIAL");
@@ -205,9 +201,7 @@ describe("Reintento SOLO de los destinatarios fallidos", () => {
     expect(log!.status).toBe("SUCCESS");
 
     enviados.length = 0;
-    const r = await reintentarEntregasFallidas(log!.id, (to) =>
-      sendEmail({ to, subject: "x", html: "y" }),
-    );
+    const r = await reintentarEntregasFallidas(log!.id);
 
     expect(r.reintentadas).toBe(0);
     expect(enviados).toEqual([]);

@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { prisma } from "./prisma";
 import { sendEmail } from "./email";
 import { logAudit } from "./audit";
@@ -29,6 +30,18 @@ export interface WorkflowEvent {
   taskCategory?: TaskCategory;
   /** Profundidad de encadenamiento; ver MAX_WORKFLOW_DEPTH. */
   depth?: number;
+  /**
+   * Identidad del hecho que ha ocurrido, para deduplicar.
+   *
+   * Si quien dispara el evento tiene un identificador natural (el id de la
+   * transición, el del mensaje que lo provocó…) debe pasarlo aquí: dos
+   * llamadas con el mismo `eventKey` son el mismo hecho y se entregan UNA vez.
+   *
+   * Si se omite, se usa la ventana temporal de `VENTANA_EVENTO_MS`: dos
+   * disparos del mismo evento en la misma ventana se consideran duplicados;
+   * una repetición legítima más tarde vuelve a entregarse.
+   */
+  eventKey?: string;
 }
 
 /**
@@ -71,6 +84,220 @@ const MAX_WORKFLOW_DEPTH = 3;
 type CaseWithRelations = Prisma.CaseGetPayload<{
   include: { deceased: true; contact: true; org: true };
 }>;
+
+/**
+ * Ventana de deduplicación cuando el evento no trae `eventKey` propio.
+ *
+ * Dos disparos del mismo evento dentro de la misma ventana son el mismo hecho.
+ * Una repetición legítima más tarde (el expediente vuelve a cambiar de estado
+ * mañana) cae en otra ventana y sí se entrega.
+ */
+const VENTANA_EVENTO_MS = 5 * 60 * 1000;
+
+/** Tras esto, una reclamación en PROCESSING se considera abandonada. */
+export const ENTREGA_WORKFLOW_COLGADA_MS = 10 * 60 * 1000;
+
+/**
+ * Clave idempotente de una ejecución.
+ *
+ * Distingue organización, regla, expediente, evento y ventana. Es un SHA-256
+ * de identificadores: NO contiene emails, nombres ni contenido del expediente,
+ * porque la clave se indexa y se registra y no debe convertirse en otro sitio
+ * donde vivan datos personales.
+ */
+export function claveEjecucion(
+  event: WorkflowEvent,
+  ruleId: string,
+  ahora: Date = new Date(),
+): string {
+  const ventana =
+    event.eventKey ?? `w:${Math.floor(ahora.getTime() / VENTANA_EVENTO_MS)}`;
+
+  const partes = [
+    event.orgId,
+    ruleId,
+    event.caseId,
+    event.type,
+    event.fromStatus ?? "",
+    event.toStatus ?? "",
+    event.taskId ?? "",
+    event.taskStatus ?? "",
+    ventana,
+  ].join("|");
+
+  return createHash("sha256").update(partes).digest("hex");
+}
+
+type ReclamoLog =
+  | { estado: "reclamado"; logId: string }
+  | { estado: "ya_ejecutado"; logId: string };
+
+/**
+ * Crea o recupera el `WorkflowLog` de esta ejecución **antes de llamar a
+ * nadie**.
+ *
+ * La restricción única sobre `idempotencyKey` decide: la primera petición crea
+ * la fila, la segunda choca con P2002 y recupera la existente. A partir de ahí
+ * la exclusión real la hace la reclamación POR DESTINATARIO, que es la que
+ * protege la llamada externa; este nivel evita además duplicar el registro.
+ */
+async function reclamarEjecucion(
+  clave: string,
+  rule: { id: string },
+  event: WorkflowEvent,
+  accion: WorkflowAction,
+  nombreRegla: string,
+): Promise<ReclamoLog> {
+  const ahora = new Date();
+  try {
+    const creado = await prisma.workflowLog.create({
+      data: {
+        ruleId: rule.id,
+        caseId: event.caseId,
+        status: "PROCESSING",
+        idempotencyKey: clave,
+        startedAt: ahora,
+        details: { action: accion, ruleName: nombreRegla },
+      },
+      select: { id: true },
+    });
+    return { estado: "reclamado", logId: creado.id };
+  } catch (err) {
+    if ((err as { code?: string })?.code !== "P2002") throw err;
+  }
+
+  const existente = await prisma.workflowLog.findUnique({
+    where: { idempotencyKey: clave },
+    select: { id: true },
+  });
+  // Carrera improbable: la fila existía al crear y ya no está. Se trata como
+  // ejecutada para no reenviar a ciegas.
+  if (!existente) return { estado: "ya_ejecutado", logId: "" };
+
+  // La ejecución ya existe. NO se vuelve a planificar: las entregas
+  // individuales de esa ejecución son las que deciden si falta alguien, y
+  // reclamarlas es idempotente.
+  return { estado: "ya_ejecutado", logId: existente.id };
+}
+
+export type ReclamoEntrega = "reclamada" | "ya_enviada" | "en_curso";
+
+/**
+ * Reclama la entrega a UN destinatario. **Sólo quien recibe `"reclamada"` puede
+ * llamar al proveedor externo.**
+ *
+ * Dos mecanismos atómicos:
+ *   1. `create` sobre la restricción única `(workflowLogId, recipient)`.
+ *   2. Si ya existe, `updateMany` condicionado al estado observado: sólo una
+ *      transacción ve `count === 1`.
+ *
+ * Reclamable: PENDING, FAILED y PROCESSING abandonada. Nunca SENT — un
+ * destinatario que ya recibió el aviso no vuelve a recibirlo.
+ */
+export async function reclamarEntrega(
+  workflowLogId: string,
+  recipient: string,
+  ahora: Date = new Date(),
+): Promise<ReclamoEntrega> {
+  try {
+    await prisma.workflowDelivery.create({
+      data: {
+        workflowLogId,
+        recipient,
+        status: "PROCESSING",
+        attempts: 1,
+        lastTriedAt: ahora,
+      },
+    });
+    return "reclamada";
+  } catch (err) {
+    if ((err as { code?: string })?.code !== "P2002") throw err;
+  }
+
+  const existente = await prisma.workflowDelivery.findUnique({
+    where: { workflowLogId_recipient: { workflowLogId, recipient } },
+    select: { status: true, lastTriedAt: true },
+  });
+  if (!existente) return "en_curso";
+
+  if (existente.status === "SENT") return "ya_enviada";
+
+  const colgada =
+    existente.status === "PROCESSING" &&
+    existente.lastTriedAt !== null &&
+    ahora.getTime() - existente.lastTriedAt.getTime() > ENTREGA_WORKFLOW_COLGADA_MS;
+
+  const reclamable = existente.status === "PENDING" || existente.status === "FAILED";
+  if (!reclamable && !colgada) return "en_curso";
+
+  const reclamo = await prisma.workflowDelivery.updateMany({
+    where: { workflowLogId, recipient, status: existente.status },
+    data: {
+      status: "PROCESSING",
+      lastTriedAt: ahora,
+      attempts: { increment: 1 },
+      error: null,
+    },
+  });
+
+  return reclamo.count === 1 ? "reclamada" : "en_curso";
+}
+
+/** Confirma una entrega. Sólo debe llamarlo quien obtuvo la reclamación. */
+async function marcarEnviada(workflowLogId: string, recipient: string, ahora = new Date()) {
+  await prisma.workflowDelivery.updateMany({
+    where: { workflowLogId, recipient },
+    data: { status: "SENT", error: null, sentAt: ahora, lastTriedAt: ahora },
+  });
+}
+
+/** Marca una entrega como fallida; queda reclamable para el siguiente intento. */
+async function marcarFallida(
+  workflowLogId: string,
+  recipient: string,
+  error: unknown,
+  ahora = new Date(),
+) {
+  await prisma.workflowDelivery.updateMany({
+    where: { workflowLogId, recipient },
+    data: {
+      status: "FAILED",
+      error: (error instanceof Error ? error.message : String(error)).slice(0, 500),
+      lastTriedAt: ahora,
+    },
+  });
+}
+
+/**
+ * Ejecuta una entrega completa: reclamar -> enviar -> confirmar/fallar.
+ *
+ * Devuelve si esta llamada realizó el envío. El fallo de un destinatario no
+ * interrumpe a los demás porque cada uno pasa por aquí de forma independiente.
+ */
+export async function entregarUnaVez(
+  workflowLogId: string,
+  recipient: string,
+  enviar: () => Promise<unknown>,
+): Promise<EntregaDestinatario> {
+  const reclamo = await reclamarEntrega(workflowLogId, recipient);
+  if (reclamo !== "reclamada") {
+    return { recipient, ok: reclamo === "ya_enviada", omitida: true, motivo: reclamo };
+  }
+
+  try {
+    await enviar();
+  } catch (err) {
+    await marcarFallida(workflowLogId, recipient, err);
+    return {
+      recipient,
+      ok: false,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 500),
+    };
+  }
+
+  await marcarEnviada(workflowLogId, recipient);
+  return { recipient, ok: true };
+}
 
 export async function triggerWorkflow(event: WorkflowEvent): Promise<void> {
   if ((event.depth ?? 0) >= MAX_WORKFLOW_DEPTH) {
@@ -120,80 +347,101 @@ export async function triggerWorkflow(event: WorkflowEvent): Promise<void> {
         return;
       }
 
+      // ── 1. PLANIFICAR SIN ENVIAR ───────────────────────────────────────
+      //
+      // La accion ya no envia nada: devuelve QUE habria que enviar y a quien.
+      // Antes `executeAction` llamaba al proveedor y el registro se escribia
+      // despues, asi que dos ejecuciones simultaneas enviaban dos veces y una
+      // caida entre el envio y la escritura dejaba el correo enviado sin
+      // rastro.
+      let plan: PlanAccion;
       try {
-        const outcome = await executeAction(rule.action, config.data, event, caseData);
-
-        if (outcome?.skipped) {
-          await prisma.workflowLog.create({
-            data: {
-              ruleId: rule.id,
-              caseId: event.caseId,
-              status: "SKIPPED",
-              details: { action: rule.action, ruleName: rule.name, reason: outcome.reason },
-            },
-          }).catch(console.error);
-          return;
-        }
-        // ESTADO AGREGADO A PARTIR DE LAS ENTREGAS INDIVIDUALES.
-        //
-        // Antes se escribia SUCCESS a secas. Ahora:
-        //   todas ok        -> SUCCESS
-        //   algunas ok      -> PARTIAL   (estado nuevo)
-        //   ninguna ok      -> FAILED
-        // y cada destinatario deja su propia fila, para poder reintentar solo
-        // los fallidos sin duplicar el envio a quien si lo recibio.
-        const entregas = outcome?.entregas ?? [];
-        const fallidas = entregas.filter((e) => !e.ok);
-        const status =
-          entregas.length === 0 || fallidas.length === 0
-            ? "SUCCESS"
-            : fallidas.length === entregas.length
-              ? "FAILED"
-              : "PARTIAL";
-
-        const ahora = new Date();
-        await Promise.all([
-          prisma.workflowRule.update({
-            where: { id: rule.id },
-            data: { execCount: { increment: 1 }, lastRunAt: ahora },
-          }),
-          prisma.workflowLog.create({
-            data: {
-              ruleId: rule.id,
-              caseId: event.caseId,
-              status,
-              error:
-                fallidas.length > 0
-                  ? `${fallidas.length} de ${entregas.length} destinatario(s) sin entregar`
-                  : null,
-              details: {
-                action: rule.action,
-                ruleName: rule.name,
-                ...(entregas.length > 0
-                  ? { entregadas: entregas.length - fallidas.length, fallidas: fallidas.length }
-                  : {}),
-              },
-              ...(entregas.length > 0
-                ? {
-                    deliveries: {
-                      create: entregas.map((e) => ({
-                        recipient: e.recipient,
-                        status: e.ok ? ("SENT" as const) : ("FAILED" as const),
-                        error: e.error ?? null,
-                        attempts: 1,
-                        lastTriedAt: ahora,
-                        sentAt: e.ok ? ahora : null,
-                      })),
-                    },
-                  }
-                : {}),
-            },
-          }),
-        ]);
+        plan = await planificarAccion(rule.action, config.data, event, caseData);
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         await prisma.workflowLog
           .create({ data: { ruleId: rule.id, caseId: event.caseId, status: "FAILED", error } })
+          .catch(console.error);
+        return;
+      }
+
+      if (plan.skipped) {
+        await prisma.workflowLog.create({
+          data: {
+            ruleId: rule.id,
+            caseId: event.caseId,
+            status: "SKIPPED",
+            details: { action: rule.action, ruleName: rule.name, reason: plan.reason },
+          },
+        }).catch(console.error);
+        return;
+      }
+
+      // ── 2. RECLAMAR LA EJECUCION ANTES DE TOCAR NADA EXTERNO ───────────
+      const clave = claveEjecucion(event, rule.id);
+      const reclamo = await reclamarEjecucion(clave, rule, event, rule.action, rule.name);
+
+      // Otra ejecucion ya reclamo este evento. Se continua igualmente sobre SU
+      // log: las reclamaciones por destinatario son idempotentes, asi que si
+      // aquella termino no se reenvia nada, y si murio a medias, esta recoge
+      // los destinatarios que quedaron pendientes.
+      const logId = reclamo.logId;
+      if (!logId) return;
+
+      const primeraVez = reclamo.estado === "reclamado";
+
+      try {
+        // ── 3. EFECTOS SIN DESTINATARIO ──────────────────────────────────
+        // Comentarios y cambios de estado no tienen entregas; su idempotencia
+        // viene de la reclamacion del log: solo la primera ejecucion los aplica.
+        if (plan.efecto) {
+          const resultado = primeraVez ? await plan.efecto() : undefined;
+
+          // Un efecto que no llego a aplicarse se registra como OMITIDO con su
+          // motivo. Marcarlo SUCCESS diria que se hizo algo que no se hizo.
+          if (resultado && resultado.aplicado === false) {
+            await prisma.workflowLog.update({
+              where: { id: logId },
+              data: {
+                status: "SKIPPED",
+                details: { action: rule.action, ruleName: rule.name, reason: resultado.reason },
+              },
+            });
+            return;
+          }
+
+          await prisma.workflowLog.update({
+            where: { id: logId },
+            data: { status: "SUCCESS", error: null },
+          });
+          if (primeraVez) {
+            await prisma.workflowRule.update({
+              where: { id: rule.id },
+              data: { execCount: { increment: 1 }, lastRunAt: new Date() },
+            });
+          }
+          return;
+        }
+
+        // ── 4. UNA RECLAMACION POR DESTINATARIO, LUEGO EL ENVIO ──────────
+        const entregas = await Promise.all(
+          (plan.entregas ?? []).map((e) => entregarUnaVez(logId, e.recipient, e.enviar)),
+        );
+
+        await recalcularEstadoLog(logId);
+
+        if (primeraVez) {
+          await prisma.workflowRule.update({
+            where: { id: rule.id },
+            data: { execCount: { increment: 1 }, lastRunAt: new Date() },
+          });
+        }
+
+        void entregas;
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await prisma.workflowLog
+          .update({ where: { id: logId }, data: { status: "FAILED", error } })
           .catch(console.error);
       }
     })
@@ -213,6 +461,38 @@ export interface EntregaDestinatario {
   recipient: string;
   ok: boolean;
   error?: string;
+  /** No se llamó al proveedor: otra ejecución la tenía reclamada o ya enviada. */
+  omitida?: boolean;
+  motivo?: ReclamoEntrega;
+}
+
+/** Una entrega planificada: a quién y cómo, pero todavía sin enviar. */
+export interface EntregaPlanificada {
+  recipient: string;
+  enviar: () => Promise<unknown>;
+}
+
+/**
+ * Lo que una acción va a hacer, SIN haberlo hecho.
+ *
+ * Separar planificar de ejecutar es lo que permite reservar antes de llamar al
+ * proveedor. Mientras `executeAction` enviaba y devolvía el resultado, no había
+ * ningún punto en el que reservar: cuando la función volvía, el correo ya
+ * estaba enviado.
+ */
+export interface PlanAccion {
+  skipped?: boolean;
+  reason?: string;
+  /** Acciones con destinatarios externos (correo). */
+  entregas?: EntregaPlanificada[];
+  /**
+   * Acciones sin destinatario (comentario, cambio de estado).
+   *
+   * Devuelve si llegó a aplicarse. Un efecto que decide no escribir —porque el
+   * expediente cambió de estado mientras tanto— tiene que poder decirlo: si no,
+   * la ejecución se registraría como SUCCESS sin haber hecho nada.
+   */
+  efecto?: () => Promise<{ aplicado: boolean; reason?: string } | void>;
 }
 
 /**
@@ -247,21 +527,36 @@ export async function entregarACadaDestinatario(
   });
 }
 
-async function executeAction(
+/**
+ * Decide QUÉ hay que hacer, sin hacerlo.
+ *
+ * Ninguna rama de esta función llama al proveedor de correo. Devuelve los
+ * destinatarios y una función `enviar` por cada uno; quien decide si esa
+ * función llega a ejecutarse es la reclamación de la entrega, en
+ * `entregarUnaVez`.
+ */
+async function planificarAccion(
   action: WorkflowAction,
   config: ActionConfig,
   event: WorkflowEvent,
   caseData: CaseWithRelations
-): Promise<ActionOutcome | void> {
+): Promise<PlanAccion> {
   switch (action) {
     case "SEND_EMAIL_CONTACT": {
-      if (!caseData.contact?.email) {
+      const destino = caseData.contact?.email;
+      if (!destino) {
         return { skipped: true, reason: "el expediente no tiene email de contacto" };
       }
       const subject = interpolate(config.subject || "Actualización de su expediente", caseData);
       const body = interpolate(config.body || "", caseData);
-      await sendEmail({ to: caseData.contact.email, subject, html: buildHtml(subject, body) });
-      break;
+      const html = buildHtml(subject, body);
+
+      // Antes esta acción enviaba directamente y NO dejaba ninguna
+      // `WorkflowDelivery`: un aviso duplicado a la familia era invisible y no
+      // se podía reintentar. Ahora pasa por la misma reserva que el resto.
+      return {
+        entregas: [{ recipient: destino, enviar: () => sendEmail({ to: destino, subject, html }) }],
+      };
     }
 
     case "SEND_EMAIL_TEAM": {
@@ -277,28 +572,27 @@ async function executeAction(
       const body = interpolate(config.body || "", caseData);
       const html = buildHtml(subject, body);
 
-      // Se devuelve el resultado POR DESTINATARIO. Antes se contaba cuantos
-      // habian funcionado y bastaba con uno para dar la ejecucion por buena:
-      // con diez destinatarios y nueve fallos, el registro decia SUCCESS y no
-      // habia forma de saber quien no lo habia recibido ni de reintentarlo
-      // solo con esos.
-      const entregas = await entregarACadaDestinatario(
-        members.map((m) => m.user.email),
-        (email) => sendEmail({ to: email, subject, html }),
-      );
-
-      return { entregas };
+      return {
+        entregas: members.map((m) => ({
+          recipient: m.user.email,
+          enviar: () => sendEmail({ to: m.user.email, subject, html }),
+        })),
+      };
     }
 
     case "ADD_CASE_COMMENT": {
       const comment = interpolate(config.comment || "Automatización ejecutada", caseData);
-      await logAudit({
-        orgId: event.orgId,
-        caseId: event.caseId,
-        action: "case.comment",
-        details: `[Automatización] ${comment}`,
-      });
-      break;
+      return {
+        efecto: async () => {
+          await logAudit({
+            orgId: event.orgId,
+            caseId: event.caseId,
+            action: "case.comment",
+            details: `[Automatización] ${comment}`,
+          });
+          return { aplicado: true };
+        },
+      };
     }
 
     case "CHANGE_CASE_STATUS": {
@@ -314,24 +608,35 @@ async function executeAction(
         return { skipped: true, reason: `el expediente ya esta en ${newStatus}` };
       }
 
-      // Escritura condicional al estado leido: si otra ejecucion lo cambio
-      // entretanto, no lo pisamos.
-      const changed = await prisma.case.updateMany({
-        where: { id: event.caseId, orgId: event.orgId, status: caseData.status },
-        data: { status: newStatus, ...(newStatus === "CLOSED" && { closedAt: new Date() }) },
-      });
-      if (changed.count === 0) {
-        return { skipped: true, reason: "el estado del expediente cambio mientras se ejecutaba" };
-      }
-      await logAudit({
-        orgId: event.orgId,
-        caseId: event.caseId,
-        action: "case.status_changed",
-        details: `[Auto] -> ${newStatus}`,
-      });
-      break;
+      const estadoLeido = caseData.status;
+      return {
+        efecto: async () => {
+          // Escritura condicional al estado leido: si otra ejecucion lo cambio
+          // entretanto, no lo pisamos.
+          const changed = await prisma.case.updateMany({
+            where: { id: event.caseId, orgId: event.orgId, status: estadoLeido },
+            data: { status: newStatus, ...(newStatus === "CLOSED" && { closedAt: new Date() }) },
+          });
+          if (changed.count === 0) {
+            return {
+              aplicado: false,
+              reason: "el estado del expediente cambio mientras se ejecutaba",
+            };
+          }
+
+          await logAudit({
+            orgId: event.orgId,
+            caseId: event.caseId,
+            action: "case.status_changed",
+            details: `[Auto] -> ${newStatus}`,
+          });
+          return { aplicado: true };
+        },
+      };
     }
   }
+
+  return { skipped: true, reason: "accion desconocida" };
 }
 
 function interpolate(template: string, caseData: CaseWithRelations): string {
@@ -355,53 +660,118 @@ function buildHtml(subject: string, body: string): string {
 }
 
 /**
- * Reintenta SOLO las entregas fallidas de una ejecucion.
+ * Reintenta las entregas pendientes de una ejecución concreta.
  *
- * Reintentar la regla entera habria vuelto a escribir a quien ya lo habia
- * recibido; por eso el reintento tiene que ser por destinatario. Al terminar,
- * el estado agregado del log se recalcula.
+ * QUÉ SE REINTENTA
+ * ----------------
+ * Sólo las que están en FAILED y las que quedaron colgadas en PROCESSING. Las
+ * SENT no se tocan: un destinatario que ya recibió el aviso no vuelve a
+ * recibirlo por mucho que alguien pulse el botón.
+ *
+ * DE DÓNDE SALE EL CONTENIDO
+ * --------------------------
+ * Se reconstruye desde la REGLA y el EXPEDIENTE, leídos de la base de datos.
+ * Nada de asunto, cuerpo ni destinatario viene del cliente: si viniera, este
+ * endpoint sería un relé de correo autenticado — cualquiera con permiso de
+ * automatizaciones podría mandar lo que quisiera a quien quisiera desde el
+ * dominio de la organización.
+ *
+ * CONCURRENCIA
+ * ------------
+ * Cada destinatario se reclama antes de enviar, igual que en la ejecución
+ * normal. Dos reintentos simultáneos producen UNA sola llamada al proveedor.
  */
 export async function reintentarEntregasFallidas(
   workflowLogId: string,
-  enviar: (recipient: string) => Promise<unknown>,
-): Promise<{ reintentadas: number; recuperadas: number; estado: WorkflowLogStatus }> {
-  const fallidas = await prisma.workflowDelivery.findMany({
-    where: { workflowLogId, status: "FAILED" },
-    select: { id: true, recipient: true },
+  opciones: { enviar?: (recipient: string) => Promise<unknown> } = {},
+): Promise<{
+  reintentadas: number;
+  recuperadas: number;
+  estado: WorkflowLogStatus;
+  entregas: EntregaDestinatario[];
+}> {
+  const ahora = new Date();
+
+  // Entregas recuperables: fallidas y reclamaciones abandonadas.
+  const recuperables = await prisma.workflowDelivery.findMany({
+    where: {
+      workflowLogId,
+      OR: [
+        { status: "FAILED" },
+        {
+          status: "PROCESSING",
+          lastTriedAt: { lt: new Date(ahora.getTime() - ENTREGA_WORKFLOW_COLGADA_MS) },
+        },
+      ],
+    },
+    select: { recipient: true },
   });
 
-  const ahora = new Date();
-  let recuperadas = 0;
-
-  for (const entrega of fallidas) {
-    try {
-      await enviar(entrega.recipient);
-      await prisma.workflowDelivery.update({
-        where: { id: entrega.id },
-        data: {
-          status: "SENT",
-          error: null,
-          sentAt: ahora,
-          lastTriedAt: ahora,
-          attempts: { increment: 1 },
-        },
-      });
-      recuperadas++;
-    } catch (err) {
-      await prisma.workflowDelivery.update({
-        where: { id: entrega.id },
-        data: {
-          status: "FAILED",
-          error: (err instanceof Error ? err.message : String(err)).slice(0, 500),
-          lastTriedAt: ahora,
-          attempts: { increment: 1 },
-        },
-      });
-    }
+  if (recuperables.length === 0) {
+    return { reintentadas: 0, recuperadas: 0, estado: await recalcularEstadoLog(workflowLogId), entregas: [] };
   }
 
+  // El contenido se reconstruye desde la regla y el expediente.
+  const enviar = opciones.enviar ?? (await construirEmisorDesdeLog(workflowLogId));
+  if (!enviar) {
+    return {
+      reintentadas: 0,
+      recuperadas: 0,
+      estado: await recalcularEstadoLog(workflowLogId),
+      entregas: [],
+    };
+  }
+
+  const entregas = await Promise.all(
+    recuperables.map((d) =>
+      entregarUnaVez(workflowLogId, d.recipient, () => enviar(d.recipient)),
+    ),
+  );
+
   const estado = await recalcularEstadoLog(workflowLogId);
-  return { reintentadas: fallidas.length, recuperadas, estado };
+  return {
+    reintentadas: recuperables.length,
+    recuperadas: entregas.filter((e) => e.ok && !e.omitida).length,
+    estado,
+    entregas,
+  };
+}
+
+/**
+ * Reconstruye la función de envío a partir de la regla y el expediente del log.
+ * Devuelve `null` si la regla o el expediente ya no existen, o si la acción no
+ * es de correo.
+ */
+async function construirEmisorDesdeLog(
+  workflowLogId: string,
+): Promise<((recipient: string) => Promise<unknown>) | null> {
+  const log = await prisma.workflowLog.findUnique({
+    where: { id: workflowLogId },
+    select: {
+      caseId: true,
+      rule: { select: { action: true, actionConfig: true, orgId: true } },
+    },
+  });
+  if (!log?.rule || !log.caseId) return null;
+  if (log.rule.action !== "SEND_EMAIL_TEAM" && log.rule.action !== "SEND_EMAIL_CONTACT") return null;
+
+  const config = actionConfigSchema.safeParse(log.rule.actionConfig ?? {});
+  if (!config.success) return null;
+
+  const caseData = await prisma.case.findFirst({
+    where: { id: log.caseId, orgId: log.rule.orgId, deletedAt: null },
+    include: { deceased: true, contact: true, org: true },
+  });
+  if (!caseData) return null;
+
+  const porDefecto =
+    log.rule.action === "SEND_EMAIL_CONTACT"
+      ? "Actualización de su expediente"
+      : "Actualización de expediente";
+  const subject = interpolate(config.data.subject || porDefecto, caseData);
+  const html = buildHtml(subject, interpolate(config.data.body || "", caseData));
+
+  return (recipient: string) => sendEmail({ to: recipient, subject, html });
 }
 
 /** Recalcula SUCCESS / PARTIAL / FAILED a partir de las entregas actuales. */
@@ -413,9 +783,13 @@ export async function recalcularEstadoLog(workflowLogId: string): Promise<Workfl
 
   if (entregas.length === 0) return "SUCCESS";
 
-  const fallidas = entregas.filter((e) => e.status === "FAILED").length;
+  // PROCESSING cuenta como pendiente: mientras haya una entrega sin resolver,
+  // la ejecucion no es un exito.
+  const pendientes = entregas.filter((e) => e.status !== "SENT").length;
+  const enviadas = entregas.length - pendientes;
   const estado: WorkflowLogStatus =
-    fallidas === 0 ? "SUCCESS" : fallidas === entregas.length ? "FAILED" : "PARTIAL";
+    pendientes === 0 ? "SUCCESS" : enviadas === 0 ? "FAILED" : "PARTIAL";
+  const fallidas = pendientes;
 
   await prisma.workflowLog.update({
     where: { id: workflowLogId },

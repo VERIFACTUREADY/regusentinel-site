@@ -738,6 +738,10 @@ enum WorkflowAction {
 }
 
 enum WorkflowLogStatus {
+  /// Ejecución reclamada y en curso. La fila se crea en este estado ANTES de
+  /// llamar a ningún proveedor externo; si el proceso muere aquí, la ejecución
+  /// queda visible en vez de desaparecer.
+  PROCESSING
   SUCCESS
   /// Parte de los destinatarios recibió el envío y parte no. Antes este estado
   /// no existía: bastaba con que UNO de diez destinatarios funcionara para que
@@ -751,6 +755,9 @@ enum WorkflowLogStatus {
 /// Estado de la entrega a UN destinatario concreto de una ejecución de workflow.
 enum WorkflowDeliveryStatus {
   PENDING
+  /// Reclamada por un proceso, que está llamando al proveedor externo. Sólo
+  /// quien consigue esta reclamación puede enviar.
+  PROCESSING
   SENT
   FAILED
 }
@@ -785,6 +792,22 @@ model WorkflowLog {
   error     String?
   createdAt DateTime          @default(now())
 
+  /// Clave idempotente de la EJECUCIÓN: identifica de forma estable
+  /// (organización, regla, expediente, evento, ventana del evento).
+  ///
+  /// Es un SHA-256 de esos identificadores, así que no contiene ningún dato
+  /// personal: ni emails, ni nombres, ni contenido del expediente.
+  ///
+  /// Existe porque antes la fila se creaba DESPUÉS de enviar los correos: dos
+  /// ejecuciones simultáneas del mismo evento enviaban dos veces, y si el
+  /// proceso moría entre el envío y la escritura el correo quedaba enviado sin
+  /// registro. Ahora se reclama esta clave ANTES de llamar a nadie.
+  ///
+  /// Nullable por las filas anteriores a esta migración.
+  idempotencyKey String? @unique
+  /// Momento en que se reclamó la ejecución. Detecta ejecuciones colgadas.
+  startedAt DateTime?
+
   rule       WorkflowRule       @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   case       Case?              @relation(fields: [caseId], references: [id], onDelete: SetNull)
   deliveries WorkflowDelivery[]
@@ -803,13 +826,16 @@ model WorkflowDelivery {
   id            String                 @id @default(cuid())
   workflowLogId String
   /// Email del destinatario interno.
-  recipient  String
-  status     WorkflowDeliveryStatus @default(PENDING)
-  error      String?
-  attempts   Int                    @default(0)
+  recipient   String
+  status      WorkflowDeliveryStatus @default(PENDING)
+  error       String?
+  attempts    Int                    @default(0)
+  /// Momento del último intento. Es también la marca de la reclamación: una
+  /// entrega en PROCESSING más antigua que el plazo se considera abandonada y
+  /// se puede volver a reclamar.
   lastTriedAt DateTime?
-  sentAt     DateTime?
-  createdAt  DateTime               @default(now())
+  sentAt      DateTime?
+  createdAt   DateTime               @default(now())
 
   log WorkflowLog @relation(fields: [workflowLogId], references: [id], onDelete: Cascade)
 
