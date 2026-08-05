@@ -70,11 +70,15 @@ jobs:
       - name: Pruebas unitarias
         run: npm test
 
-      # Sin DATABASE_URL: reproduce el build de Vercel en un entorno sin base
-      # de datos, que es como se construyen las previews. Ademas comprueba de
-      # hecho que `npm run build` no toca la base de datos.
-      - name: Build
-        run: npm run build
+      # `npm run build` a secas NO comprobaba que el build no tocara la base de
+      # datos: una consulta durante «Generating static pages» que capture su
+      # error deja el fallo escrito en el log y el build sale con codigo 0.
+      # Asi se colo la consulta de /api/health, que en Vercel —donde
+      # DATABASE_URL si esta definida— se intentaba de verdad contra la base de
+      # produccion desde la maquina de compilacion. El script comprueba las dos
+      # cosas: que compila y que no ha ido a la base.
+      - name: Build sin base de datos
+        run: bash scripts/build-sin-base-de-datos.sh
 
   # ─────────────────────────────────────────────────────────────────────────
   # 2. Migraciones: los DOS caminos que un despliegue real puede tomar.
