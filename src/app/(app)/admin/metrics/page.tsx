@@ -1,6 +1,5 @@
-import { getServerSession } from "next-auth";
+import { getVerifiedUser } from "@/lib/session";
 import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/admin";
 import { OrgTrialActions } from "./org-trial-actions";
@@ -72,7 +71,10 @@ function Stat({
 }
 
 export default async function MetricsPage() {
-  const session = await getServerSession(authOptions);
+  // El email del superadmin salia del JWT: una cuenta borrada conservaba
+  // acceso al panel. Ahora se relee de la base de datos.
+  const verificado = await getVerifiedUser();
+  const session = verificado ? { user: verificado } : null;
   if (!isSuperAdmin(session?.user?.email)) redirect("/dashboard");
 
   const months = lastNMonths(6);

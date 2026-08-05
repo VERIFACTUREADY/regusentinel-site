@@ -19,6 +19,8 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
-    exclude: ["**/node_modules/**", "**/dist/**", "__tests__/integration/**"],
+    // e2e/ son pruebas de Playwright: tienen su propio runner y no deben
+    // recogerse aqui (vitest incluye *.spec.ts por defecto).
+    exclude: ["**/node_modules/**", "**/dist/**", "__tests__/integration/**", "e2e/**"],
   },
 });

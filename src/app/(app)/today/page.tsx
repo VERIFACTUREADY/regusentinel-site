@@ -1,5 +1,4 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession, getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -37,8 +36,12 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 }
 
 export default async function TodayPage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) redirect("/login");
+  const verified = await getVerifiedSession();
+  const session = verified ?? { user: { id: "", email: "", name: null, orgId: null, role: null } };
+  if (!verified) {
+    const u = await getVerifiedUser();
+    if (!u) redirect("/login");
+  }
   // Sesión válida sin organización: al dashboard (que ofrece crearla),
   // no a /login — eso parecía un cierre de sesión por error.
   if (!session.user.orgId || !session.user.role) redirect("/dashboard");

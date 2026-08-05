@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "./scripts/test-db.sh",
-    "test:all": "npm run test && npm run test:integration"
+    "test:all": "npm run test && npm run test:integration && npm run test:e2e",
+    "test:e2e": "./scripts/e2e.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -48,6 +49,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.11.0",
     "@types/nodemailer": "^6.4.14",

@@ -118,7 +118,7 @@ Cada entrada está confirmada leyendo el fichero indicado. No son sospechas.
 | 6 — Notificaciones y workflows | ✅ completada | `fix(notifications): make delivery idempotent retryable and preference-aware` |
 | 7 — Retención, IA y plazos | ✅ completada | `fix(privacy): implement real retention AI minimization and unified deadlines` |
 | 8 — Copy y documentación honesta | ✅ completada | `docs: align product claims with verified capabilities` |
-| 9 — Tests reales y CI | ⬜ pendiente | — |
+| 9 — Tests reales y CI | ✅ completada | `test(ci): add real integration security and browser coverage` |
 
 ---
 
@@ -557,15 +557,41 @@ dentro: comprueba que el fichero **importa** un guard, no que lo llame, ni con
 qué permiso, ni que valide los IDs. Un endpoint puede pasarlo y seguir siendo
 vulnerable.
 
+**Pruebas de navegador (Playwright): 16/16 en verde.** Son E2E de verdad —
+aplicación construida en modo producción, PostgreSQL real, Chromium real, sin
+mockear Prisma ni NextAuth. `npm run test:e2e`.
+
+Cubren: login correcto e incorrecto, redirección sin sesión, **expulsión con
+pérdida inmediata de acceso**, suspensión (pantalla + 402 en API + billing
+accesible), alta de expediente, tres altas concurrentes con referencias
+distintas, RBAC de invitación, cambio de rol, rol inválido, protección del
+último OWNER, portal sin consentimiento, evidencia tras aceptarlo, **documento
+interno nunca expuesto**, token revocado y registro con login posterior.
+
+#### Dos fallos reales que encontraron estas pruebas
+
+**1. Los server components seguían leyendo la organización del JWT.** Migré las
+110 rutas API en la Fase 1, pero **no las 21 páginas**. Un usuario expulsado
+recibía 401 de la API y, aun así, el panel renderizado en servidor le seguía
+mostrando los expedientes de su antigua organización. Corregido: ya no queda
+ningún `getServerSession` en `src/app`.
+
+**2. El arnés daba resultados falsos.** Un `next-server` de una ejecución
+anterior seguía escuchando en el puerto 3000 y la suite corría contra un build
+antiguo; y el `DROP DATABASE` fallaba silenciosamente por conexiones abiertas,
+dejando estado residual entre ejecuciones. `scripts/e2e.sh` ahora **falla
+rápido** si el puerto está ocupado y cierra las conexiones antes del reset.
+Sin esto, la suite habría dado por bueno código que no lo era.
+
 ### Riesgo residual de Fase 9
 
-- **No hay pruebas de navegador (Playwright).** Los 10 flujos pedidos
-  (registro, login, expulsión, portal con consentimiento, suspensión…) están
-  cubiertos a nivel de handler e integración, pero **no en un navegador real**.
-  Es la parte del encargo que queda pendiente; está en "Pendientes conocidos".
 - **No hay integración real con MinIO.** El almacenamiento se mockea incluso en
   las pruebas de integración; lo verificado de S3 es la lógica de compensación,
-  no el cliente contra un servidor real.
+  no el cliente contra un servidor de objetos real. Por eso el smoke test del
+  portal comprueba la exclusión de documentos internos sobre el endpoint que no
+  firma URLs.
+- **El checkout de Stripe no se ejercita en navegador**: requiere claves de
+  prueba reales, que la CI no debe tener. Está cubierto a nivel de handler.
 
 ## Migraciones creadas
 
@@ -596,4 +622,4 @@ vulnerable.
 - Fase 6: las acciones de workflow no encadenan; validación de email sólo sintáctica.
 - Fase 7: auditoría append-only a nivel de aplicación, **no** inmutable en base de datos; días hábiles sin festivos.
 - Fase 8: los textos legales llevan marcadores; hay que rellenarlos antes de operar.
-- **Fase 9 INCOMPLETA: faltan las pruebas de navegador con Playwright y la integración real con MinIO.** Todo lo demás de la fase está hecho.
+- Fase 9: sin integración real con MinIO ni checkout de Stripe en navegador; el resto está hecho y verde.

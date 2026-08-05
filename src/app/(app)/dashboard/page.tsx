@@ -1,5 +1,4 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession, getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { getOnboardingState } from "@/lib/onboarding";
 import { OnboardingPanel } from "@/components/dashboard/onboarding-panel";
@@ -29,14 +28,18 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 }
 
 export default async function DashboardPage() {
-  let session;
-  try {
-    session = await getServerSession(authOptions);
-  } catch {
-    session = null;
-  }
-  if (!session?.user) redirect("/login");
-  const orgId = session.user.orgId;
+  // Sesion verificada contra base de datos: un usuario expulsado dejaba de
+  // pasar los controles de la API pero SEGUIA viendo aqui los datos de su
+  // antigua organizacion, porque el orgId salia del JWT. Lo detecto el smoke
+  // test de expulsion.
+  const verified = await getVerifiedSession();
+  const identidad = verified ?? (await (async () => {
+    const u = await getVerifiedUser();
+    return u ? { user: { id: u.id, email: u.email, name: u.name, orgId: null } } : null;
+  })());
+  if (!identidad) redirect("/login");
+  const session = identidad;
+  const orgId = verified?.orgId ?? null;
   // Usuario autenticado pero sin organización: le ofrecemos crearla
   // en lugar de mostrar un callejón sin salida.
   if (!orgId) return <NoOrgSetup userName={session.user.name} />;

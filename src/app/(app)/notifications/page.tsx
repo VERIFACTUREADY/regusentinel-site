@@ -1,5 +1,4 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession } from "@/lib/session";
 import { hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import { NotificationLogViewer } from "./notification-log-viewer";
@@ -10,8 +9,8 @@ export const metadata = {
 };
 
 export default async function NotificationsPage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) redirect("/login");
+  const session = await getVerifiedSession();
+  if (!session) redirect("/login");
   if (!hasPermission(session.user.role, "audit.read")) redirect("/dashboard");
 
   return (
