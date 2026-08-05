@@ -186,10 +186,13 @@ describe("SEND_EMAIL_TEAM no miente sobre el resultado", () => {
 
     const log = logCreate.mock.calls[0][0].data;
     expect(log.status).toBe("FAILED");
-    expect(log.error).toMatch(/ningun destinatario/i);
+    expect(log.error).toMatch(/2 de 2 destinatario/i);
+    // Cada destinatario deja su propia fila, para poder reintentarlo solo a el.
+    expect(log.deliveries.create).toHaveLength(2);
+    expect(log.deliveries.create.every((d: any) => d.status === "FAILED")).toBe(true);
   });
 
-  it("si al menos uno llega, es SUCCESS", async () => {
+  it("si falla la MITAD, es PARTIAL — no SUCCESS", async () => {
     ruleFindMany.mockResolvedValue([emailRule]);
     caseFindFirst.mockResolvedValue(caseRow());
     memberFindMany.mockResolvedValue([
@@ -202,8 +205,40 @@ describe("SEND_EMAIL_TEAM no miente sobre el resultado", () => {
 
     await triggerWorkflow(evento);
 
+    // ANTES: bastaba con que UNO de los destinatarios funcionara para que la
+    // ejecucion se registrase como SUCCESS. Con diez destinatarios y nueve
+    // fallos, el registro decia "exitoso" y nadie se enteraba de que nueve
+    // personas no habian recibido el aviso.
+    const log = logCreate.mock.calls[0][0].data;
+    expect(log.status).toBe("PARTIAL");
+    expect(log.error).toMatch(/1 de 2 destinatario/i);
+    expect(log.details.entregadas).toBe(1);
+    expect(log.details.fallidas).toBe(1);
+
+    // La entrega fallida queda identificada por destinatario: sin esto no se
+    // sabe A QUIEN reintentar, y reintentar la regla entera duplicaria el
+    // envio al que si lo recibio.
+    const entregas = log.deliveries.create;
+    expect(entregas).toHaveLength(2);
+    expect(entregas.find((d: any) => d.recipient === "a@x.es").status).toBe("FAILED");
+    expect(entregas.find((d: any) => d.recipient === "b@x.es").status).toBe("SENT");
+  });
+
+  it("si TODOS llegan, es SUCCESS y no se registra ningun fallo", async () => {
+    ruleFindMany.mockResolvedValue([emailRule]);
+    caseFindFirst.mockResolvedValue(caseRow());
+    memberFindMany.mockResolvedValue([
+      { user: { email: "a@x.es" } },
+      { user: { email: "b@x.es" } },
+    ]);
+    emailMock.mockResolvedValue(undefined);
+
+    await triggerWorkflow(evento);
+
     const log = logCreate.mock.calls[0][0].data;
     expect(log.status).toBe("SUCCESS");
+    expect(log.error).toBeNull();
+    expect(log.deliveries.create.every((d: any) => d.status === "SENT")).toBe(true);
   });
 
   it("sin destinatarios internos se omite con motivo", async () => {

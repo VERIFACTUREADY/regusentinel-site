@@ -87,6 +87,7 @@ model Organization {
   workflowRules WorkflowRule[]
   caseTemplates CaseTemplate[]
   purgeEvidence PurgeEvidence[]
+  caseCounters  CaseCounter[]
 
   retentionDays Int @default(90)
 
@@ -581,6 +582,26 @@ model PurgeEvidence {
   @@index([orgId, purgedAt])
 }
 
+/// Contador numérico de referencias de expediente, por organización y año.
+///
+/// Antes la siguiente referencia se deducía de `ORDER BY ref DESC`, es decir de
+/// una comparación de CADENAS. Con menos de 10.000 expedientes al año el
+/// relleno a cuatro dígitos hacía que el orden lexicográfico coincidiera con el
+/// numérico, así que funcionaba por accidente. En cuanto se supera esa cifra,
+/// `EXP-2026-10000` es lexicográficamente MENOR que `EXP-2026-9999`: el máximo
+/// leído sería 9999, la siguiente referencia calculada 10000 — ya existente— y
+/// el alta fallaría en bucle con P2002 hasta agotar los reintentos.
+model CaseCounter {
+  orgId String
+  year  Int
+  /// Última referencia asignada. Se incrementa de forma atómica.
+  lastNumber Int @default(0)
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, year])
+}
+
 model UsageRecord {
   id           String @id @default(cuid())
   orgId        String
@@ -718,8 +739,20 @@ enum WorkflowAction {
 
 enum WorkflowLogStatus {
   SUCCESS
+  /// Parte de los destinatarios recibió el envío y parte no. Antes este estado
+  /// no existía: bastaba con que UNO de diez destinatarios funcionara para que
+  /// la ejecución se registrase como SUCCESS, y los nueve fallos quedaban
+  /// invisibles y sin reintento.
+  PARTIAL
   FAILED
   SKIPPED
+}
+
+/// Estado de la entrega a UN destinatario concreto de una ejecución de workflow.
+enum WorkflowDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
 }
 
 model WorkflowRule {
@@ -752,11 +785,36 @@ model WorkflowLog {
   error     String?
   createdAt DateTime          @default(now())
 
-  rule WorkflowRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  case Case?        @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  rule       WorkflowRule       @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  case       Case?              @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  deliveries WorkflowDelivery[]
 
   @@index([ruleId, createdAt])
   @@index([caseId])
+}
+
+/// Entrega individual a un destinatario.
+///
+/// Sin esto, el resultado de una acción con varios destinatarios era un único
+/// booleano: no se sabía QUIÉN no lo había recibido ni se podía reintentar sólo
+/// con esos, porque reintentar la regla entera habría duplicado el envío a los
+/// que sí lo recibieron.
+model WorkflowDelivery {
+  id            String                 @id @default(cuid())
+  workflowLogId String
+  /// Email del destinatario interno.
+  recipient  String
+  status     WorkflowDeliveryStatus @default(PENDING)
+  error      String?
+  attempts   Int                    @default(0)
+  lastTriedAt DateTime?
+  sentAt     DateTime?
+  createdAt  DateTime               @default(now())
+
+  log WorkflowLog @relation(fields: [workflowLogId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowLogId, recipient])
+  @@index([status, lastTriedAt])
 }
 
 // ─── DEMO REQUEST ───────────────────────────────────────

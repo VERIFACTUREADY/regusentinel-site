@@ -13,6 +13,7 @@ import type {
   TaskStatus,
   WorkflowTrigger,
   WorkflowAction,
+  WorkflowLogStatus,
   Prisma,
 } from "@prisma/client";
 
@@ -133,17 +134,59 @@ export async function triggerWorkflow(event: WorkflowEvent): Promise<void> {
           }).catch(console.error);
           return;
         }
+        // ESTADO AGREGADO A PARTIR DE LAS ENTREGAS INDIVIDUALES.
+        //
+        // Antes se escribia SUCCESS a secas. Ahora:
+        //   todas ok        -> SUCCESS
+        //   algunas ok      -> PARTIAL   (estado nuevo)
+        //   ninguna ok      -> FAILED
+        // y cada destinatario deja su propia fila, para poder reintentar solo
+        // los fallidos sin duplicar el envio a quien si lo recibio.
+        const entregas = outcome?.entregas ?? [];
+        const fallidas = entregas.filter((e) => !e.ok);
+        const status =
+          entregas.length === 0 || fallidas.length === 0
+            ? "SUCCESS"
+            : fallidas.length === entregas.length
+              ? "FAILED"
+              : "PARTIAL";
+
+        const ahora = new Date();
         await Promise.all([
           prisma.workflowRule.update({
             where: { id: rule.id },
-            data: { execCount: { increment: 1 }, lastRunAt: new Date() },
+            data: { execCount: { increment: 1 }, lastRunAt: ahora },
           }),
           prisma.workflowLog.create({
             data: {
               ruleId: rule.id,
               caseId: event.caseId,
-              status: "SUCCESS",
-              details: { action: rule.action, ruleName: rule.name },
+              status,
+              error:
+                fallidas.length > 0
+                  ? `${fallidas.length} de ${entregas.length} destinatario(s) sin entregar`
+                  : null,
+              details: {
+                action: rule.action,
+                ruleName: rule.name,
+                ...(entregas.length > 0
+                  ? { entregadas: entregas.length - fallidas.length, fallidas: fallidas.length }
+                  : {}),
+              },
+              ...(entregas.length > 0
+                ? {
+                    deliveries: {
+                      create: entregas.map((e) => ({
+                        recipient: e.recipient,
+                        status: e.ok ? ("SENT" as const) : ("FAILED" as const),
+                        error: e.error ?? null,
+                        attempts: 1,
+                        lastTriedAt: ahora,
+                        sentAt: e.ok ? ahora : null,
+                      })),
+                    },
+                  }
+                : {}),
             },
           }),
         ]);
@@ -165,10 +208,43 @@ function evaluateConditions(conditions: RuleConditions, event: WorkflowEvent): b
   return true;
 }
 
-/** Resultado de una accion: `skipped` marca una ejecucion omitida con motivo. */
+/** Resultado de la entrega a UN destinatario. */
+export interface EntregaDestinatario {
+  recipient: string;
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Resultado de una accion.
+ *
+ * `entregas` lo rellenan las acciones con varios destinatarios. Antes no
+ * existia: una accion devolvia exito o excepcion, asi que con diez
+ * destinatarios y nueve fallos el resultado era "exito" y los nueve fallos
+ * quedaban invisibles.
+ */
 interface ActionOutcome {
   skipped?: boolean;
   reason?: string;
+  entregas?: EntregaDestinatario[];
+}
+
+/**
+ * Envia a cada destinatario por separado y devuelve un resultado por cada uno.
+ * El fallo de uno no interrumpe a los demas.
+ */
+export async function entregarACadaDestinatario(
+  destinatarios: string[],
+  enviar: (email: string) => Promise<unknown>,
+): Promise<EntregaDestinatario[]> {
+  const resultados = await Promise.allSettled(destinatarios.map((email) => enviar(email)));
+
+  return destinatarios.map((recipient, i) => {
+    const r = resultados[i];
+    if (r.status === "fulfilled") return { recipient, ok: true };
+    const error = r.reason instanceof Error ? r.reason.message : String(r.reason);
+    return { recipient, ok: false, error: error.slice(0, 500) };
+  });
 }
 
 async function executeAction(
@@ -199,20 +275,19 @@ async function executeAction(
 
       const subject = interpolate(config.subject || "Actualización de expediente", caseData);
       const body = interpolate(config.body || "", caseData);
+      const html = buildHtml(subject, body);
 
-      // Antes cada envio llevaba `.catch(console.error)`: si fallaban TODOS,
-      // el workflow se registraba igualmente como SUCCESS y nadie se enteraba.
-      const results = await Promise.allSettled(
-        members.map((m) => sendEmail({ to: m.user.email, subject, html: buildHtml(subject, body) })),
+      // Se devuelve el resultado POR DESTINATARIO. Antes se contaba cuantos
+      // habian funcionado y bastaba con uno para dar la ejecucion por buena:
+      // con diez destinatarios y nueve fallos, el registro decia SUCCESS y no
+      // habia forma de saber quien no lo habia recibido ni de reintentarlo
+      // solo con esos.
+      const entregas = await entregarACadaDestinatario(
+        members.map((m) => m.user.email),
+        (email) => sendEmail({ to: email, subject, html }),
       );
-      const enviados = results.filter((r) => r.status === "fulfilled").length;
 
-      if (enviados === 0) {
-        const primero = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
-        const motivo = primero?.reason instanceof Error ? primero.reason.message : "error de envio";
-        throw new Error(`No se pudo enviar a ningun destinatario del equipo: ${motivo}`);
-      }
-      break;
+      return { entregas };
     }
 
     case "ADD_CASE_COMMENT": {
@@ -277,4 +352,78 @@ function buildHtml(subject: string, body: string): string {
       <p style="color:#999;font-size:12px;">Heredia — Aviso automático generado por una regla de automatización.</p>
     </div>
   `;
+}
+
+/**
+ * Reintenta SOLO las entregas fallidas de una ejecucion.
+ *
+ * Reintentar la regla entera habria vuelto a escribir a quien ya lo habia
+ * recibido; por eso el reintento tiene que ser por destinatario. Al terminar,
+ * el estado agregado del log se recalcula.
+ */
+export async function reintentarEntregasFallidas(
+  workflowLogId: string,
+  enviar: (recipient: string) => Promise<unknown>,
+): Promise<{ reintentadas: number; recuperadas: number; estado: WorkflowLogStatus }> {
+  const fallidas = await prisma.workflowDelivery.findMany({
+    where: { workflowLogId, status: "FAILED" },
+    select: { id: true, recipient: true },
+  });
+
+  const ahora = new Date();
+  let recuperadas = 0;
+
+  for (const entrega of fallidas) {
+    try {
+      await enviar(entrega.recipient);
+      await prisma.workflowDelivery.update({
+        where: { id: entrega.id },
+        data: {
+          status: "SENT",
+          error: null,
+          sentAt: ahora,
+          lastTriedAt: ahora,
+          attempts: { increment: 1 },
+        },
+      });
+      recuperadas++;
+    } catch (err) {
+      await prisma.workflowDelivery.update({
+        where: { id: entrega.id },
+        data: {
+          status: "FAILED",
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 500),
+          lastTriedAt: ahora,
+          attempts: { increment: 1 },
+        },
+      });
+    }
+  }
+
+  const estado = await recalcularEstadoLog(workflowLogId);
+  return { reintentadas: fallidas.length, recuperadas, estado };
+}
+
+/** Recalcula SUCCESS / PARTIAL / FAILED a partir de las entregas actuales. */
+export async function recalcularEstadoLog(workflowLogId: string): Promise<WorkflowLogStatus> {
+  const entregas = await prisma.workflowDelivery.findMany({
+    where: { workflowLogId },
+    select: { status: true },
+  });
+
+  if (entregas.length === 0) return "SUCCESS";
+
+  const fallidas = entregas.filter((e) => e.status === "FAILED").length;
+  const estado: WorkflowLogStatus =
+    fallidas === 0 ? "SUCCESS" : fallidas === entregas.length ? "FAILED" : "PARTIAL";
+
+  await prisma.workflowLog.update({
+    where: { id: workflowLogId },
+    data: {
+      status: estado,
+      error: fallidas > 0 ? `${fallidas} de ${entregas.length} destinatario(s) sin entregar` : null,
+    },
+  });
+
+  return estado;
 }

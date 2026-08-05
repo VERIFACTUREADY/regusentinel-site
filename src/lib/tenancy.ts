@@ -144,7 +144,9 @@ export async function findApprovalInOrg(
 export type DependencyRejection =
   | "self_dependency"
   | "not_found" // no existe, o es de otro expediente/organización
-  | "cycle";
+  | "cycle"
+  /** La cadena supera el límite de recorrido: no se ha podido descartar un ciclo. */
+  | "too_deep";
 
 /**
  * Valida `dependsOnId` antes de guardarlo.
@@ -178,8 +180,9 @@ export async function validateTaskDependency(
   const MAX_DEPTH = 64;
   const visited = new Set<string>([dependsOnId]);
   let cursor: string | null = candidate.dependsOnId;
+  let depth = 0;
 
-  for (let depth = 0; cursor && depth < MAX_DEPTH; depth++) {
+  for (; cursor && depth < MAX_DEPTH; depth++) {
     if (cursor === taskId) {
       return { ok: false, reason: "cycle" };
     }
@@ -196,6 +199,21 @@ export async function validateTaskDependency(
     });
     if (!next) break;
     cursor = next.dependsOnId;
+  }
+
+  // FAIL-CLOSED AL AGOTAR LA PROFUNDIDAD.
+  //
+  // Antes el bucle terminaba y se devolvía `{ ok: true }`: una cadena de más de
+  // 64 eslabones se aceptaba SIN HABER COMPROBADO que no fuera cíclica. Es
+  // decir, el único caso en el que la comprobación no había podido concluir era
+  // justamente el que se daba por bueno. Con 64 dependencias encadenadas se
+  // podía introducir un ciclo que despues bloquease el desbloqueo de tareas.
+  //
+  // Si el recorrido no ha llegado al final de la cadena, se rechaza: quien
+  // tenga una cadena legítima de esa longitud tiene un problema de modelado
+  // que debe resolver, no una dependencia que aceptar a ciegas.
+  if (cursor && depth >= MAX_DEPTH) {
+    return { ok: false, reason: "too_deep" };
   }
 
   return { ok: true };
@@ -215,6 +233,9 @@ export async function validateTaskDependency(
  * P2002 y el llamador reintenta.
  */
 export function caseRefFor(year: number, sequence: number): string {
+  // El relleno es cosmético y se queda corto a partir de 10.000; eso ya no
+  // importa, porque la secuencia sale de un contador numérico y no de ordenar
+  // estas cadenas. `EXP-2026-10000` es una referencia perfectamente válida.
   return `EXP-${year}-${String(sequence).padStart(4, "0")}`;
 }
 
@@ -239,14 +260,40 @@ export async function nextCaseRef(
   // sólo durante la lectura del máximo y la inserción.
   await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`;
 
-  const last = await db.case.findFirst({
-    where: { orgId, ref: { startsWith: prefix } },
-    orderBy: { ref: "desc" },
-    select: { ref: true },
-  });
+  // CONTADOR NUMÉRICO, NO ORDEN LEXICOGRÁFICO.
+  //
+  // Antes: `orderBy: { ref: "desc" }`, que ordena CADENAS. Con menos de 10.000
+  // expedientes al año el relleno a cuatro dígitos hacía que el orden
+  // lexicográfico coincidiera con el numérico, así que funcionaba por
+  // accidente. Superada esa cifra, `EXP-2026-10000` es lexicográficamente MENOR
+  // que `EXP-2026-9999`: el máximo leído sería 9999, la siguiente referencia
+  // calculada 10000 —ya existente— y el alta fallaría en bucle con P2002 hasta
+  // agotar los reintentos. Un despacho grande dejaría de poder dar de alta
+  // expedientes de golpe, sin causa aparente.
+  //
+  // El incremento es una sola sentencia atómica: incluso sin el lock de arriba,
+  // dos altas simultáneas obtienen números distintos.
+  // La primera vez que una organización usa el contador en un año dado, éste
+  // arranca desde el máximo REAL ya existente, calculado numéricamente. Así una
+  // base restaurada, migrada o importada nunca reutiliza una referencia ya
+  // emitida: reutilizarla mezclaría en auditoría y en las comunicaciones ya
+  // enviadas a la familia dos expedientes distintos bajo el mismo número.
+  const filas = await db.$queryRaw<Array<{ lastNumber: number }>>`
+    INSERT INTO "CaseCounter" ("orgId", "year", "lastNumber")
+    VALUES (
+      ${orgId},
+      ${year},
+      (
+        SELECT COALESCE(MAX(CAST(SUBSTRING("ref" FROM ${prefix.length + 1}::int) AS INTEGER)), 0) + 1
+        FROM "Case"
+        WHERE "orgId" = ${orgId} AND "ref" LIKE ${`${prefix}%`}
+          AND "ref" ~ ${`^${prefix}[0-9]+$`}
+      )
+    )
+    ON CONFLICT ("orgId", "year")
+    DO UPDATE SET "lastNumber" = "CaseCounter"."lastNumber" + 1
+    RETURNING "lastNumber"
+  `;
 
-  const lastSequence = last ? Number.parseInt(last.ref.slice(prefix.length), 10) : 0;
-  const next = Number.isFinite(lastSequence) && lastSequence > 0 ? lastSequence + 1 : 1;
-
-  return caseRefFor(year, next);
+  return caseRefFor(year, filas[0].lastNumber);
 }

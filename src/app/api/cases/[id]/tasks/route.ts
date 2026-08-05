@@ -110,7 +110,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           ? "Una tarea no puede depender de sí misma"
           : check.reason === "cycle"
             ? "Esa dependencia crearía un ciclo entre tareas"
-            : "La tarea de la que quieres depender no pertenece a este expediente";
+            : check.reason === "too_deep"
+              ? "La cadena de dependencias es demasiado larga para poder comprobarla. Simplifícala antes de añadir esta."
+              : "La tarea de la que quieres depender no pertenece a este expediente";
       return NextResponse.json({ error: message }, { status: 400 });
     }
   }

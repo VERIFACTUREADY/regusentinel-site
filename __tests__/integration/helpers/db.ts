@@ -26,9 +26,9 @@ export async function resetDatabase() {
     TRUNCATE TABLE
       "AuditLog", "PromptLog", "Approval", "TaskNote", "Document", "Task",
       "PortalMessage", "CaseContact", "Deceased", "NotificationLog",
-      "WorkflowLog", "WorkflowRule", "CaseTemplateTask", "CaseTemplate",
+      "WorkflowDelivery", "WorkflowLog", "WorkflowRule", "CaseTemplateTask", "CaseTemplate",
       "TemplateVersion", "Template", "Case", "UsageRecord", "Subscription",
-      "Membership", "DemoRequest", "PurgeEvidence", "Organization", "User", "StripeEvent"
+      "Membership", "DemoRequest", "PurgeEvidence", "CaseCounter", "Organization", "User", "StripeEvent"
     RESTART IDENTITY CASCADE
   `);
 }

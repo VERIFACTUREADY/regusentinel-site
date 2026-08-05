@@ -5,7 +5,7 @@ import Link from "next/link";
 
 interface LogEntry {
   id: string;
-  status: "SUCCESS" | "FAILED" | "SKIPPED";
+  status: "SUCCESS" | "PARTIAL" | "FAILED" | "SKIPPED";
   error: string | null;
   createdAt: string;
   rule: { id: string; name: string };
@@ -14,12 +14,16 @@ interface LogEntry {
 
 const STATUS_STYLES: Record<string, string> = {
   SUCCESS: "bg-green-100 text-green-700",
+  // Parcial: ni exito ni fallo. Antes una ejecucion en la que fallaban nueve
+  // de diez destinatarios se pintaba en verde.
+  PARTIAL: "bg-amber-100 text-amber-800",
   FAILED: "bg-red-100 text-red-700",
   SKIPPED: "bg-gray-100 text-gray-600",
 };
 
 const STATUS_LABELS: Record<string, string> = {
   SUCCESS: "Exitoso",
+  PARTIAL: "Parcial",
   FAILED: "Error",
   SKIPPED: "Omitido",
 };
@@ -78,9 +82,12 @@ export function WorkflowLogsClient({
   }
 
   const successCount = statMap["SUCCESS"] ?? 0;
+  const partialCount = statMap["PARTIAL"] ?? 0;
   const failedCount = statMap["FAILED"] ?? 0;
   const skippedCount = statMap["SKIPPED"] ?? 0;
-  const totalCount = successCount + failedCount + skippedCount;
+  // Las parciales cuentan como ejecuciones y NO como exito: si nueve de diez
+  // destinatarios no lo recibieron, la ejecucion no fue exitosa.
+  const totalCount = successCount + partialCount + failedCount + skippedCount;
   const successRate = totalCount > 0 ? Math.round((successCount / totalCount) * 100) : 0;
 
   return (
@@ -111,6 +118,10 @@ export function WorkflowLogsClient({
           <p className="text-2xl font-bold text-green-600">{successCount.toLocaleString("es-ES")}</p>
         </div>
         <div className="bg-white rounded-lg border p-4">
+          <p className="text-xs text-gray-500 mb-1">Parciales</p>
+          <p className="text-2xl font-bold text-amber-600">{partialCount.toLocaleString("es-ES")}</p>
+        </div>
+        <div className="bg-white rounded-lg border p-4">
           <p className="text-xs text-gray-500 mb-1">Con error</p>
           <p className="text-2xl font-bold text-red-600">{failedCount.toLocaleString("es-ES")}</p>
         </div>
@@ -129,7 +140,7 @@ export function WorkflowLogsClient({
       {/* Filters */}
       <div className="bg-white rounded-lg border p-4 mb-4 flex flex-wrap gap-3 items-center">
         <div className="flex gap-2 flex-wrap">
-          {["", "SUCCESS", "FAILED", "SKIPPED"].map((s) => (
+          {["", "SUCCESS", "PARTIAL", "FAILED", "SKIPPED"].map((s) => (
             <button
               key={s}
               onClick={() => handleFilter(s, filterRule)}

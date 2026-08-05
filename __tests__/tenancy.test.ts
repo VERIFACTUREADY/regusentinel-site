@@ -209,26 +209,52 @@ describe("Referencia de expediente", () => {
     expect(caseRefFor(2026, 1234)).toBe("EXP-2026-1234");
   });
 
-  it("empieza en 0001 cuando la organizacion no tiene expedientes del anyo", async () => {
-    const db = fakeDb({ cases: [] });
-    expect(await nextCaseRef("org-1", db, new Date("2026-03-01"))).toBe("EXP-2026-0001");
-  });
+  /**
+   * La secuencia ya NO se deduce de `ORDER BY ref DESC` sobre la tabla `Case`
+   * —comparacion de CADENAS, que se rompe al pasar de 9.999— sino de un
+   * contador numerico incrementado con una sola sentencia atomica.
+   *
+   * Aqui se comprueba el contrato; el comportamiento real (concurrencia,
+   * siembra desde el maximo existente, salto de cuatro a cinco digitos)
+   * se verifica contra PostgreSQL en
+   * `__tests__/integration/tenancy-db.test.ts`.
+   */
+  it("usa el contador numerico y NO el orden lexicografico de las referencias", async () => {
+    const db = {
+      $executeRaw: async () => 1,
+      $queryRaw: async () => [{ lastNumber: 8 }],
+      case: {
+        findFirst: async () => {
+          throw new Error(
+            "nextCaseRef no debe deducir la secuencia ordenando cadenas: " +
+              "`EXP-2026-10000` es lexicograficamente MENOR que `EXP-2026-9999`.",
+          );
+        },
+      },
+    } as unknown as Parameters<typeof nextCaseRef>[1];
 
-  it("continua desde el maximo existente, no desde el recuento", async () => {
-    // Con `count + 1` esto habria devuelto EXP-2026-0003 y chocado con la 0007.
-    const db = fakeDb({
-      cases: [
-        { id: "c1", orgId: "org-1", ref: "EXP-2026-0001" },
-        { id: "c2", orgId: "org-1", ref: "EXP-2026-0007" },
-      ],
-    });
     expect(await nextCaseRef("org-1", db, new Date("2026-03-01"))).toBe("EXP-2026-0008");
   });
 
-  it("no mezcla expedientes de otras organizaciones", async () => {
-    const db = fakeDb({
-      cases: [{ id: "c9", orgId: "org-9", ref: "EXP-2026-0055" }],
-    });
-    expect(await nextCaseRef("org-1", db, new Date("2026-03-01"))).toBe("EXP-2026-0001");
+  it("formatea sin truncar por encima de 9.999", () => {
+    expect(caseRefFor(2026, 10000)).toBe("EXP-2026-10000");
+    expect(caseRefFor(2026, 123456)).toBe("EXP-2026-123456");
+  });
+
+  it("toma el advisory lock por organizacion antes de asignar", async () => {
+    const llamadas: string[] = [];
+    const db = {
+      $executeRaw: async () => {
+        llamadas.push("lock");
+        return 1;
+      },
+      $queryRaw: async () => {
+        llamadas.push("contador");
+        return [{ lastNumber: 1 }];
+      },
+    } as unknown as Parameters<typeof nextCaseRef>[1];
+
+    await nextCaseRef("org-1", db, new Date("2026-03-01"));
+    expect(llamadas).toEqual(["lock", "contador"]);
   });
 });
