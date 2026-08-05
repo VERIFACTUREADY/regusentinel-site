@@ -6,7 +6,7 @@
 - **Rama de trabajo:** `claude/heredia-security-hardening-v1`
 - **Rama base auditada:** `claude/setup-baritur-pro-oOo9E` (tip real `23cfc08`)
 - **Punto de partida elegido:** `71c5068` — ver "Decisión de base" más abajo
-- **Última actualización:** Fase 0 completada
+- **Última actualización:** las 10 fases completadas y verificadas
 
 ---
 
@@ -623,3 +623,89 @@ Sin esto, la suite habría dado por bueno código que no lo era.
 - Fase 7: auditoría append-only a nivel de aplicación, **no** inmutable en base de datos; días hábiles sin festivos.
 - Fase 8: los textos legales llevan marcadores; hay que rellenarlos antes de operar.
 - Fase 9: sin integración real con MinIO ni checkout de Stripe en navegador; el resto está hecho y verde.
+
+
+---
+
+# Revisión final
+
+## Comprobaciones exactas
+
+| Comprobación | Comando | Resultado |
+|---|---|---|
+| Prisma | `prisma validate` | ✅ válido |
+| TypeScript | `tsc --noEmit` | ✅ exit 0, sin errores |
+| Unitarias / handler | `npm test` | ✅ **994/994** en 60 ficheros |
+| Integración (PostgreSQL real) | `npm run test:integration` | ✅ **31/31** en 4 ficheros |
+| Navegador (Playwright) | `npm run test:e2e` | ✅ **16/16** |
+| Build | `npm run build` | ✅ exit 0 (sin `DATABASE_URL`, como Vercel) |
+
+Punto de partida: 734 pruebas. Ahora **1.041** (994 + 31 + 16).
+
+## Migraciones verificadas
+
+| Escenario | Resultado |
+|---|---|
+| Base **vacía** → todas las migraciones | ✅ aplican limpias |
+| Base con el **esquema anterior y datos reales** | ✅ aplican y conservan |
+
+Verificado en el segundo escenario: dos expedientes con la misma `ref` quedan
+`EXP-2026-0001` y `EXP-2026-0001-D2` (se conserva el más antiguo); el evento de
+Stripe previo pasa a `PROCESSED` conservando su fecha; y el expediente que
+tenía consentimiento recibe su fila heredada en `PortalConsent`.
+
+## Revisión del diff
+
+| Patrón buscado | Resultado |
+|---|---|
+| `getServerSession` fuera del módulo central | **0** en todo `src/` |
+| Secretos en texto plano | Ninguno: se cifran al escribir; sin clave se rechaza con 503 |
+| `GET` con escritura | Sólo 2 crons (`unblock-tasks`, `trial-expired`), excepción documentada |
+| IDs sin validar | Todos pasan por `lib/tenancy.ts` |
+| `as any` | 6, **todos preexistentes**, en cláusulas `where` dinámicas de Prisma; ninguno oculta validación de entrada del usuario ni afecta al aislamiento (el `orgId` va siempre dentro de las condiciones). No se ha añadido ninguno nuevo |
+
+## Riesgos que quedan abiertos
+
+1. **Sin antivirus.** Un PDF bien formado con contenido malicioso se acepta.
+2. **Auditoría append-only a nivel de aplicación**, no inmutable en base de
+   datos. Decisión consciente: un trigger chocaría con la anonimización
+   legítima de la purga. El copy ya no promete inmutabilidad.
+3. **Días hábiles sin festivos** ⇒ los plazos son optimistas.
+4. **Reglas fiscales sin verificar a 2026**; se presentan como orientativas.
+5. **Ventana teórica de DNS rebinding** en los webhooks salientes.
+6. **Eventos de Stripe en `FAILED`** tras agotar los reintentos: quedan
+   visibles con su error, pero no hay cron que los recupere.
+7. **Sin integración real con MinIO** ni checkout de Stripe en navegador.
+8. **Textos legales con marcadores** (`[DENOMINACION SOCIAL]`, `[NIF]`…).
+9. Las acciones de workflow **no encadenan** (no es regresión).
+
+## Pasos de despliegue
+
+1. Generar y configurar `SECRETS_ENCRYPTION_KEY` (`openssl rand -base64 32`).
+2. Desplegar. Las migraciones se aplican solas durante el build.
+3. **Avisar si hay referencias duplicadas**: la migración las renombra a
+   `-D2`, `-D3`… y eso es visible para el cliente.
+4. Ejecutar `node scripts/encrypt-existing-secrets.mjs --dry-run` y, si informa
+   valores en claro, sin `--dry-run`.
+5. Añadir el cron `/api/cron/unblock-tasks` (ya está en `vercel.json`).
+6. Revisar que `MAX_UPLOAD_MB` y `PROMPT_LOG_RETENTION_DAYS` encajan.
+7. La IA queda **desactivada** en todas las organizaciones: reactivarla es una
+   decisión informada del cliente.
+
+## Plan de rollback
+
+Las migraciones **no son reversibles sin pérdida**: `PromptLog.prompt` se
+elimina y `StripeEvent.processedAt` se sustituye. Antes de desplegar, **copia
+de seguridad de la base de datos**; el rollback es restaurar esa copia y
+volver al commit anterior.
+
+Reversibles sin restaurar: el resto de columnas son aditivas. Revertir sólo el
+código con el esquema nuevo funciona salvo en Stripe y PromptLog.
+
+## Revisión manual pendiente
+
+- Rellenar los datos del responsable en las páginas legales.
+- Redactar y publicar el contrato de encargado de tratamiento.
+- Verificar región y contrato de cada proveedor contratado.
+- Probar la restauración de las copias de seguridad.
+- Revisar las reglas fiscales frente a la normativa vigente.
