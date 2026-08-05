@@ -19,6 +19,35 @@ import {
   eventNameForKind,
   type OutboundEvent,
 } from "../src/lib/outbound-integrations";
+import { __setTransporteParaPruebas, type Transporte } from "../src/lib/ssrf-guard";
+
+type OpcionesTransporte = Parameters<Transporte>[2];
+
+let restaurarTransporte: (() => void) | null = null;
+
+/**
+ * Instala un transporte de prueba y devuelve el espia.
+ *
+ * Antes estas pruebas sustituian `globalThis.fetch`. Ya no sirve: la
+ * correccion de SSRF consistio precisamente en dejar de usar `fetch` —que
+ * vuelve a resolver el nombre y reabre la ventana de DNS rebinding— y conectar
+ * a la IP validada con `http(s).request`. El espia recibe ahora
+ * `(url, ipFijada, opciones)`.
+ */
+function transporte(respuesta: { status: number; location?: string } | Error) {
+  const espia = vi.fn(async (_url: string, _ip: string, _opciones: OpcionesTransporte) => {
+    if (respuesta instanceof Error) throw respuesta;
+    return { status: respuesta.status, location: respuesta.location ?? null };
+  });
+  restaurarTransporte?.();
+  restaurarTransporte = __setTransporteParaPruebas(espia as unknown as Transporte);
+  return espia;
+}
+
+afterEach(() => {
+  restaurarTransporte?.();
+  restaurarTransporte = null;
+});
 
 const sampleEvent: OutboundEvent = {
   event: "isd.deadline_7d",
@@ -93,21 +122,19 @@ describe("sendSlackNotification", () => {
   });
 
   it("devuelve ok cuando el webhook responde 200", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = transporte({ status: 200 });
 
     const res = await sendSlackNotification("https://hooks.slack.com/test", sampleEvent);
     expect(res.ok).toBe(true);
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const init = fetchMock.mock.calls[0][2] as OpcionesTransporte;
     expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body as string).text).toContain("EXP-2026-001");
+    expect(JSON.parse(init.body!).text).toContain("EXP-2026-001");
   });
 
   it("devuelve ok=false cuando el webhook responde 4xx", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("invalid", { status: 400 }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = transporte({ status: 400 });
 
     const res = await sendSlackNotification("https://hooks.slack.com/test", sampleEvent);
     expect(res.ok).toBe(false);
@@ -115,8 +142,7 @@ describe("sendSlackNotification", () => {
   });
 
   it("captura excepciones de red en error", async () => {
-    const fetchMock = vi.fn().mockRejectedValue(new Error("network unreachable"));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = transporte(new Error("network unreachable"));
 
     const res = await sendSlackNotification("https://hooks.slack.com/test", sampleEvent);
     expect(res.ok).toBe(false);
@@ -124,8 +150,7 @@ describe("sendSlackNotification", () => {
   });
 
   it("rechaza URL vacía sin hacer fetch", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = transporte({ status: 200 });
 
     const res = await sendSlackNotification("", sampleEvent);
     expect(res.ok).toBe(false);
@@ -161,18 +186,16 @@ describe("sendTeamsNotification", () => {
   });
 
   it("devuelve ok cuando el webhook responde 200", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("1", { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = transporte({ status: 200 });
 
     const res = await sendTeamsNotification("https://outlook.office.com/webhook/test", sampleEvent);
     expect(res.ok).toBe(true);
-    const init = fetchMock.mock.calls[0][1] as RequestInit;
-    expect(JSON.parse(init.body as string)["@type"]).toBe("MessageCard");
+    const init = fetchMock.mock.calls[0][2] as OpcionesTransporte;
+    expect(JSON.parse(init.body!)["@type"]).toBe("MessageCard");
   });
 
   it("rechaza URL vacía sin hacer fetch", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = transporte({ status: 200 });
     const res = await sendTeamsNotification("", sampleEvent);
     expect(res.ok).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -188,48 +211,44 @@ describe("sendCustomWebhook", () => {
   });
 
   it("envía body JSON con el evento serializado y headers correctos", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = transporte({ status: 200 });
 
     const res = await sendCustomWebhook("https://api.cliente.com/heredia", null, sampleEvent);
     expect(res.ok).toBe(true);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, , init] = fetchMock.mock.calls[0] as [string, string, OpcionesTransporte];
     expect(url).toBe("https://api.cliente.com/heredia");
     expect(init.method).toBe("POST");
-    const headers = init.headers as Record<string, string>;
+    const headers = init.headers;
     expect(headers["X-HEREDIA-Event"]).toBe("isd.deadline_7d");
     expect(headers["Content-Type"]).toBe("application/json");
-    expect(JSON.parse(init.body as string)).toMatchObject({
+    expect(JSON.parse(init.body!)).toMatchObject({
       event: "isd.deadline_7d",
       caseRef: "EXP-2026-001",
     });
   });
 
   it("incluye X-HEREDIA-Signature cuando hay secret", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = transporte({ status: 200 });
 
     await sendCustomWebhook("https://api.cliente.com", "miSecreto", sampleEvent);
-    const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    const headers = (fetchMock.mock.calls[0][2] as OpcionesTransporte).headers;
     expect(headers["X-HEREDIA-Signature"]).toMatch(/^sha256=[0-9a-f]{64}$/);
   });
 
   it("omite la firma si no hay secret", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = transporte({ status: 200 });
 
     await sendCustomWebhook("https://api.cliente.com", null, sampleEvent);
-    const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    const headers = (fetchMock.mock.calls[0][2] as OpcionesTransporte).headers;
     expect(headers["X-HEREDIA-Signature"]).toBeUndefined();
   });
 
   it("la firma incluida es verificable con verifyWebhookSignature", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = transporte({ status: 200 });
 
     await sendCustomWebhook("https://api.cliente.com", "topsecret", sampleEvent);
-    const init = fetchMock.mock.calls[0][1] as RequestInit;
-    const headers = init.headers as Record<string, string>;
+    const init = fetchMock.mock.calls[0][2] as OpcionesTransporte;
+    const headers = init.headers;
     expect(verifyWebhookSignature("topsecret", init.body as string, headers["X-HEREDIA-Signature"])).toBe(true);
   });
 });

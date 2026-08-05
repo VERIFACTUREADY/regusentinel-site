@@ -10,9 +10,39 @@
  *   - cualquier IP privada de la red del proveedor.
  * Además `fetch` sigue redirecciones por defecto, así que un destino público
  * podía responder `302` hacia una dirección interna.
+ *
+ * SEGUNDO ESTADO: VALIDAR Y LUEGO `fetch(url)` — INSUFICIENTE
+ * -----------------------------------------------------------
+ * La primera corrección resolvía el DNS, comprobaba todas las direcciones y
+ * después llamaba a `fetch(url)`. Pero `fetch` **vuelve a resolver el nombre**:
+ * entre la comprobación y la conexión hay una ventana en la que el atacante
+ * controla qué IP se usa. Es DNS rebinding clásico: se publica el nombre con
+ * TTL 0 apuntando primero a una IP pública (que pasa la validación) y, en la
+ * segunda resolución —milisegundos después—, a `169.254.169.254`. La validación
+ * decía "público" y la conexión iba a los metadatos de la nube.
+ *
+ * AHORA: LA CONEXIÓN VA A LA IP QUE SE VALIDÓ
+ * --------------------------------------------
+ * `safeFetch` no usa `fetch`. Usa `https.request`/`http.request` con un
+ * `lookup` propio que **no resuelve nada**: devuelve la dirección concreta que
+ * ya pasó la comprobación. No hay segunda resolución, así que no hay ventana.
+ *
+ * Se conservan las tres cosas que un proxy mal hecho rompe:
+ *   - la cabecera `Host` es el nombre original;
+ *   - el `servername` (SNI) es el nombre original;
+ *   - la validación del certificado se hace contra ese nombre, no contra la IP.
+ *
+ * La clasificación de direcciones ya no la hace aritmética escrita a mano, sino
+ * `ipaddr.js`, que entiende todas las representaciones de IPv6 (`fe80::1` y
+ * `febf::1` son ambas link-local; `::ffff:10.0.0.1`, `::ffff:a00:1` y
+ * `0:0:0:0:0:ffff:10.0.0.1` son la misma IPv4 mapeada).
  */
 
-import { lookup } from "node:dns/promises";
+import { lookup as dnsLookup } from "node:dns/promises";
+import { request as httpsRequest } from "node:https";
+import { request as httpRequest, type IncomingMessage } from "node:http";
+import type { LookupAddress } from "node:dns";
+import ipaddr from "ipaddr.js";
 
 export type SsrfRejection =
   | "invalid_url"
@@ -51,86 +81,100 @@ const BLOCKED_HOSTNAMES = new Set([
   "instance-data",
 ]);
 
-/** Endpoints de metadatos conocidos, por IP. */
-const METADATA_ADDRESSES = new Set([
+/**
+ * Endpoints de metadatos conocidos. Se normalizan antes de comparar para que
+ * `fd00:ec2:0:0:0:0:0:254` y `fd00:ec2::254` sean la misma entrada.
+ */
+const METADATA_ADDRESSES = [
   "169.254.169.254", // AWS, GCP, Azure, DigitalOcean, OpenStack
   "169.254.170.2", // AWS ECS task metadata
   "100.100.100.200", // Alibaba Cloud
   "fd00:ec2::254", // AWS IMDSv2 sobre IPv6
-]);
+].map((a) => ipaddr.parse(a).toNormalizedString());
 
-function ipv4ToInt(ip: string): number | null {
-  const parts = ip.split(".");
-  if (parts.length !== 4) return null;
-  let value = 0;
-  for (const part of parts) {
-    const n = Number(part);
-    if (!Number.isInteger(n) || n < 0 || n > 255) return null;
-    value = value * 256 + n;
-  }
-  return value;
+/**
+ * ÚNICO rango admitido: unicast público. Todo lo demás se rechaza.
+ *
+ * Es una lista blanca a propósito: una lista negra deja fuera cualquier rango
+ * que `ipaddr.js` clasifique con un nombre que no hayamos previsto, y el fallo
+ * sería permitir la conexión.
+ *
+ * Etiquetas de `ipaddr.js` que quedan fuera y por qué:
+ *   IPv4  unspecified, broadcast, multicast, linkLocal, loopback, private,
+ *         carrierGradeNat, reserved
+ *   IPv6  unspecified, multicast, linkLocal (todo fe80::/10), uniqueLocal
+ *         (fc00::/7), loopback, reserved, ipv4Mapped, rfc6145, rfc6052,
+ *         6to4, teredo
+ */
+const RANGOS_PERMITIDOS = new Set(["unicast"]);
+
+/** Etiquetas legibles para el mensaje de rechazo. */
+const ETIQUETAS: Record<string, string> = {
+  unspecified: "no especificada",
+  broadcast: "de difusión",
+  multicast: "multicast",
+  linkLocal: "link-local",
+  loopback: "loopback",
+  private: "privada",
+  uniqueLocal: "privada (ULA)",
+  carrierGradeNat: "CGNAT",
+  reserved: "reservada",
+  ipv4Mapped: "IPv4 mapeada",
+  rfc6145: "de traducción IPv4/IPv6",
+  rfc6052: "de traducción IPv4/IPv6",
+  "6to4": "6to4",
+  teredo: "Teredo",
+};
+
+/**
+ * Site-local (`fec0::/10`), obsoleto por RFC 3879 pero todavía enrutable en
+ * redes internas. `ipaddr.js` lo clasifica como `unicast`, así que se corta
+ * aquí de forma explícita.
+ */
+function esSiteLocalIpv6(dir: ipaddr.IPv6): boolean {
+  return (dir.parts[0] & 0xffc0) === 0xfec0;
 }
 
-/** Rangos IPv4 que no deben alcanzarse desde un webhook saliente. */
-const IPV4_BLOCKED_RANGES: Array<{ cidr: string; label: string }> = [
-  { cidr: "0.0.0.0/8", label: "red actual" },
-  { cidr: "10.0.0.0/8", label: "privada" },
-  { cidr: "100.64.0.0/10", label: "CGNAT" },
-  { cidr: "127.0.0.0/8", label: "loopback" },
-  { cidr: "169.254.0.0/16", label: "link-local / metadatos cloud" },
-  { cidr: "172.16.0.0/12", label: "privada" },
-  { cidr: "192.0.0.0/24", label: "reservada IETF" },
-  { cidr: "192.0.2.0/24", label: "documentación" },
-  { cidr: "192.168.0.0/16", label: "privada" },
-  { cidr: "198.18.0.0/15", label: "benchmarking" },
-  { cidr: "198.51.100.0/24", label: "documentación" },
-  { cidr: "203.0.113.0/24", label: "documentación" },
-  { cidr: "224.0.0.0/4", label: "multicast" },
-  { cidr: "240.0.0.0/4", label: "reservada" },
-];
-
-function inCidr(ip: string, cidr: string): boolean {
-  const [base, bitsRaw] = cidr.split("/");
-  const bits = Number(bitsRaw);
-  const ipInt = ipv4ToInt(ip);
-  const baseInt = ipv4ToInt(base);
-  if (ipInt === null || baseInt === null) return false;
-  if (bits === 0) return true;
-  const mask = (0xffffffff << (32 - bits)) >>> 0;
-  return (ipInt & mask) === (baseInt & mask);
-}
-
-function isBlockedIpv6(ip: string): string | null {
-  const normalized = ip.toLowerCase().split("%")[0];
-
-  if (normalized === "::1" || normalized === "::") return "loopback";
-  if (normalized.startsWith("fe80:")) return "link-local";
-  // fc00::/7 — direcciones únicas locales.
-  if (/^f[cd][0-9a-f]{2}:/.test(normalized)) return "privada (ULA)";
-  if (normalized.startsWith("ff")) return "multicast";
-
-  // IPv4 mapeada (::ffff:10.0.0.1) — se valida como IPv4.
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normalized);
-  if (mapped) {
-    const v4 = checkIpv4(mapped[1]);
-    return v4;
-  }
-
-  if (METADATA_ADDRESSES.has(normalized)) return "metadatos cloud";
-  return null;
-}
-
-function checkIpv4(ip: string): string | null {
-  if (METADATA_ADDRESSES.has(ip)) return "metadatos cloud";
-  for (const range of IPV4_BLOCKED_RANGES) {
-    if (inCidr(ip, range.cidr)) return range.label;
-  }
-  return null;
-}
-
-/** Devuelve el motivo del bloqueo, o `null` si la dirección es pública. */
+/**
+ * Devuelve el motivo del bloqueo, o `null` si la dirección es pública.
+ *
+ * Una IPv4 mapeada en IPv6 se rechaza siempre: nunca es un destino legítimo de
+ * un webhook, y aceptarla obligaría a razonar sobre la equivalencia entre dos
+ * espacios de direcciones en cada comprobación posterior. Antes se
+ * desenvolvía y se validaba como IPv4, pero sólo si venía escrita con el
+ * cuarteto decimal (`::ffff:10.0.0.1`); en su forma hexadecimal
+ * (`::ffff:a00:1`) la expresión regular no la reconocía y la dejaba pasar.
+ */
 export function classifyAddress(ip: string): string | null {
-  return ip.includes(":") ? isBlockedIpv6(ip) : checkIpv4(ip);
+  const limpio = ip.trim().replace(/^\[|\]$/g, "").split("%")[0];
+
+  let dir: ipaddr.IPv4 | ipaddr.IPv6;
+  try {
+    dir = ipaddr.parse(limpio);
+  } catch {
+    // No es una IP: no hay nada que clasificar aquí (un nombre se valida por
+    // DNS más adelante).
+    return null;
+  }
+
+  if (METADATA_ADDRESSES.includes(dir.toNormalizedString())) return "metadatos cloud";
+
+  if (dir.kind() === "ipv6") {
+    const v6 = dir as ipaddr.IPv6;
+    if (esSiteLocalIpv6(v6)) return "site-local";
+    // Una mapeada puede envolver una IPv4 privada; se comprueba también el
+    // interior para que el mensaje sea informativo.
+    if (v6.isIPv4MappedAddress()) {
+      const interior = v6.toIPv4Address().range();
+      const etiqueta = ETIQUETAS[interior] ?? interior;
+      return interior === "unicast" ? "IPv4 mapeada" : `IPv4 mapeada ${etiqueta}`;
+    }
+  }
+
+  const rango = dir.range();
+  if (RANGOS_PERMITIDOS.has(rango)) return null;
+
+  return ETIQUETAS[rango] ?? rango;
 }
 
 /**
@@ -143,7 +187,12 @@ export function classifyAddress(ip: string): string | null {
  */
 export async function validateOutboundUrl(
   rawUrl: string,
-  options: { requireHttps?: boolean; allowPrivateInDev?: boolean } = {},
+  options: {
+    requireHttps?: boolean;
+    allowPrivateInDev?: boolean;
+    /** Resolutor inyectable. Sólo para pruebas: en producción es el DNS real. */
+    resolver?: (hostname: string) => Promise<string[]>;
+  } = {},
 ): Promise<SsrfVerdict> {
   const requireHttps = options.requireHttps ?? process.env.NODE_ENV === "production";
 
@@ -208,22 +257,30 @@ export async function validateOutboundUrl(
     };
   }
 
-  // Literal IP: se valida sin pasar por DNS.
-  const literal = classifyAddress(hostname);
-  if (literal) {
-    return {
-      ok: false,
-      reason: "private_address",
-      message: `El destino apunta a una dirección ${literal}.`,
-    };
+  const allowPrivate = options.allowPrivateInDev && process.env.NODE_ENV !== "production";
+
+  // Literal IP: se valida sin pasar por DNS. `ipaddr.isValid` distingue una IP
+  // de un nombre; antes se llamaba a `classifyAddress` y un `null` significaba
+  // a la vez "es pública" y "no es una IP".
+  if (ipaddr.isValid(hostname)) {
+    const literal = classifyAddress(hostname);
+    if (literal && !allowPrivate) {
+      return {
+        ok: false,
+        reason: "private_address",
+        message: `El destino apunta a una dirección ${literal}.`,
+      };
+    }
+    return { ok: true, addresses: [hostname] };
   }
 
   // Resolución DNS: hay que comprobar TODAS las respuestas. Un nombre público
   // puede resolver a una dirección interna.
   let addresses: string[];
   try {
-    const records = await lookup(hostname, { all: true, verbatim: true });
-    addresses = records.map((r) => r.address);
+    addresses = options.resolver
+      ? await options.resolver(hostname)
+      : (await dnsLookup(hostname, { all: true, verbatim: true })).map((r) => r.address);
   } catch {
     return {
       ok: false,
@@ -235,8 +292,6 @@ export async function validateOutboundUrl(
   if (addresses.length === 0) {
     return { ok: false, reason: "dns_failure", message: "El destino no resuelve a ninguna dirección." };
   }
-
-  const allowPrivate = options.allowPrivateInDev && process.env.NODE_ENV !== "production";
 
   for (const address of addresses) {
     const blocked = classifyAddress(address);
@@ -262,84 +317,237 @@ export interface SafeFetchResult {
   status?: number;
   /** Motivo del rechazo o del fallo de red. Nunca incluye el cuerpo remoto. */
   error?: string;
+  /** Direcciones a las que realmente se conectó, en orden de salto. */
+  connectedTo?: string[];
 }
 
+export interface SafeFetchOptions {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  /**
+   * Plazo TOTAL de la operación: resolución, conexión, TLS, cabeceras y
+   * lectura del cuerpo. Antes el `AbortController` sólo cubría hasta que
+   * `fetch` resolvía —es decir, hasta las cabeceras— y un servidor que
+   * enviaba el cuerpo a un byte por minuto mantenía la conexión abierta
+   * indefinidamente.
+   */
+  timeoutMs?: number;
+  /** Resolutor inyectable. Sólo para pruebas. */
+  resolver?: (hostname: string) => Promise<string[]>;
+  /**
+   * Transporte inyectable. Por defecto, `conectarAIpFijada`, que es la
+   * implementación real. Se expone para que las pruebas puedan observar a QUÉ
+   * dirección se pide la conexión sin depender de la red: es la única forma
+   * estable de demostrar que la conexión usa la IP validada y no el resultado
+   * de una segunda resolución.
+   */
+  dispatcher?: Transporte;
+}
+
+export interface RespuestaAcotada {
+  status: number;
+  location: string | null;
+}
+
+export type Transporte = (
+  rawUrl: string,
+  ip: string,
+  opciones: { method: string; headers: Record<string, string>; body?: string; timeoutMs: number },
+) => Promise<RespuestaAcotada>;
+
 /**
- * `fetch` con protección contra SSRF.
+ * Petición saliente con protección contra SSRF.
  *
  * - Valida el destino **antes** de cada salto.
- * - `redirect: "manual"`: cada redirección se valida de nuevo. Con el
+ * - Conecta a la IP validada, sin volver a resolver el nombre.
+ * - Redirecciones manuales: cada `Location` se valida de nuevo. Con el
  *   comportamiento por defecto, un destino público podía devolver un 302 hacia
  *   `169.254.169.254` y la petición lo seguía sin comprobar nada.
- * - Timeout y tope de lectura del cuerpo.
+ * - Un único plazo cubre conexión, cabeceras y cuerpo.
  * - **Nunca devuelve el cuerpo de la respuesta al llamador**: si lo hiciera,
  *   un destino elegido por el cliente podría usarse para leer servicios
  *   internos y ver el resultado.
  */
 export async function safeFetch(
   rawUrl: string,
-  init: RequestInit & { timeoutMs?: number } = {},
+  options: SafeFetchOptions = {},
 ): Promise<SafeFetchResult> {
-  const { timeoutMs = 7000, ...requestInit } = init;
+  const {
+    timeoutMs = 7000,
+    method = "GET",
+    headers = {},
+    body,
+    resolver,
+    dispatcher = transporteActivo,
+  } = options;
 
+  const limite = Date.now() + timeoutMs;
   let currentUrl = rawUrl;
+  const connectedTo: string[] = [];
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const verdict = await validateOutboundUrl(currentUrl);
+    const restante = limite - Date.now();
+    if (restante <= 0) return { ok: false, error: "Tiempo agotado", connectedTo };
+
+    const verdict = await validateOutboundUrl(currentUrl, { resolver });
     if (!verdict.ok) {
-      return { ok: false, error: verdict.message ?? "Destino no permitido" };
+      return { ok: false, error: verdict.message ?? "Destino no permitido", connectedTo };
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // Se fija la PRIMERA dirección validada. Todas pasaron la comprobación, así
+    // que cualquiera vale; lo importante es que la conexión use una de ellas y
+    // no el resultado de una resolución posterior.
+    const ipFijada = verdict.addresses![0];
+    connectedTo.push(ipFijada);
 
-    let response: Response;
+    let respuesta: RespuestaAcotada;
     try {
-      response = await fetch(currentUrl, {
-        ...requestInit,
-        redirect: "manual",
-        signal: controller.signal,
+      respuesta = await dispatcher(currentUrl, ipFijada, {
+        method,
+        headers,
+        body: hop === 0 ? body : undefined,
+        timeoutMs: restante,
       });
     } catch (err) {
-      clearTimeout(timer);
       const message = err instanceof Error ? err.message : "error de red";
-      return { ok: false, error: message.slice(0, 200) };
+      return { ok: false, error: message.slice(0, 200), connectedTo };
     }
-    clearTimeout(timer);
 
     // Redirección: se valida el destino nuevo en la siguiente vuelta.
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
+    if (respuesta.status >= 300 && respuesta.status < 400) {
+      const location = respuesta.location;
       if (!location) {
-        return { ok: false, status: response.status, error: "Redirección sin destino" };
+        return { ok: false, status: respuesta.status, error: "Redirección sin destino", connectedTo };
       }
       currentUrl = new URL(location, currentUrl).toString();
       continue;
     }
 
-    // Se consume una cantidad acotada del cuerpo y se descarta: sólo importa
-    // el código de estado.
-    try {
-      await readCapped(response);
-    } catch {
-      // Un cuerpo ilegible no invalida un 2xx.
-    }
-
-    return { ok: response.ok, status: response.status };
+    return {
+      ok: respuesta.status >= 200 && respuesta.status < 300,
+      status: respuesta.status,
+      connectedTo,
+    };
   }
 
-  return { ok: false, error: "Demasiadas redirecciones" };
+  return { ok: false, error: "Demasiadas redirecciones", connectedTo };
 }
 
-async function readCapped(response: Response): Promise<void> {
-  const body = response.body;
-  if (!body) return;
-  const reader = body.getReader();
-  let read = 0;
-  while (read < MAX_RESPONSE_BYTES) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    read += value?.byteLength ?? 0;
-  }
-  await reader.cancel().catch(() => {});
+/**
+ * Ejecuta la petición conectando a `ip` pero hablando con el servidor como si
+ * fuera `hostname`: cabecera `Host`, SNI y validación de certificado contra el
+ * nombre. El `lookup` que se inyecta no consulta al DNS — devuelve la IP ya
+ * validada, que es lo que cierra la ventana de rebinding.
+ */
+export const conectarAIpFijada: Transporte = function conectarAIpFijada(
+  rawUrl,
+  ip,
+  opciones,
+): Promise<RespuestaAcotada> {
+  const url = new URL(rawUrl);
+  const esHttps = url.protocol === "https:";
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  const familia = ip.includes(":") ? 6 : 4;
+
+  const lookupFijado = (
+    _hostname: string,
+    opcionesLookup: { all?: boolean } | undefined,
+    callback: (
+      err: NodeJS.ErrnoException | null,
+      address: string | LookupAddress[],
+      family?: number,
+    ) => void,
+  ) => {
+    // No se consulta al DNS: se devuelve la dirección ya validada. Node llama
+    // con `all: true` cuando usa conexión con familia automática, y entonces
+    // espera un array de `{ address, family }` en vez de una cadena.
+    if (opcionesLookup?.all) {
+      callback(null, [{ address: ip, family: familia }]);
+      return;
+    }
+    callback(null, ip, familia);
+  };
+
+  return new Promise<RespuestaAcotada>((resolve, reject) => {
+    let terminado = false;
+
+    const finalizar = (fn: () => void) => {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(temporizador);
+      fn();
+    };
+
+    const peticion = (esHttps ? httpsRequest : httpRequest)(
+      {
+        // `host`/`hostname` siguen siendo el nombre: de ahí salen la cabecera
+        // Host por defecto y, en TLS, el SNI y el nombre contra el que se
+        // valida el certificado.
+        hostname,
+        port: url.port ? Number(url.port) : esHttps ? 443 : 80,
+        path: `${url.pathname}${url.search}`,
+        method: opciones.method,
+        headers: opciones.headers,
+        lookup: lookupFijado as never,
+        // Explícito aunque sea el valor por defecto: desactivarlo convertiría
+        // el pinning en un canal sin autenticar.
+        ...(esHttps ? { servername: hostname, rejectUnauthorized: true } : {}),
+      },
+      (respuesta: IncomingMessage) => {
+        const status = respuesta.statusCode ?? 0;
+        const location = respuesta.headers.location ?? null;
+
+        // El cuerpo se consume acotado y se DESCARTA: sólo importa el estado.
+        // El plazo sigue corriendo durante esta lectura.
+        let leidos = 0;
+        respuesta.on("data", (trozo: Buffer) => {
+          leidos += trozo.length;
+          if (leidos > MAX_RESPONSE_BYTES) {
+            respuesta.destroy();
+            finalizar(() => resolve({ status, location }));
+          }
+        });
+        respuesta.on("end", () => finalizar(() => resolve({ status, location })));
+        respuesta.on("error", () => finalizar(() => resolve({ status, location })));
+      },
+    );
+
+    // Un único plazo para todo: conexión, TLS, cabeceras y cuerpo.
+    const temporizador = setTimeout(() => {
+      finalizar(() => {
+        peticion.destroy();
+        reject(new Error("Tiempo agotado"));
+      });
+    }, opciones.timeoutMs);
+
+    // Plazo adicional a nivel de socket: corta una conexión que ni siquiera
+    // llega a establecerse.
+    peticion.setTimeout(opciones.timeoutMs, () => peticion.destroy(new Error("Tiempo agotado")));
+
+    peticion.on("error", (err) => finalizar(() => reject(err)));
+
+    if (opciones.body !== undefined) peticion.write(opciones.body);
+    peticion.end();
+  });
+};
+
+/**
+ * Transporte que usa `safeFetch` cuando no se le pasa uno. En producción es
+ * siempre `conectarAIpFijada`.
+ *
+ * El seam existe porque los emisores concretos (Slack, Teams, webhook propio)
+ * llaman a `safeFetch` sin exponer sus opciones, y sus pruebas necesitan
+ * observar la petición sin salir a la red. Sustituir `globalThis.fetch` ya no
+ * sirve: precisamente lo que se corrigió es que dejáramos de usar `fetch`.
+ */
+let transporteActivo: Transporte = conectarAIpFijada;
+
+/** Sólo para pruebas. Devuelve una función que restaura el transporte real. */
+export function __setTransporteParaPruebas(t: Transporte): () => void {
+  const anterior = transporteActivo;
+  transporteActivo = t;
+  return () => {
+    transporteActivo = anterior;
+  };
 }

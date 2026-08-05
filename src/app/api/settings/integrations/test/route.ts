@@ -18,8 +18,12 @@ import { rateLimit } from "@/lib/api-rate-limit";
 export async function POST(req: NextRequest) {
   // El endpoint hace peticiones salientes bajo demanda: sin limite, sirve para
   // sondear destinos a ritmo alto aunque cada destino se valide de por si.
-  const limited = rateLimit(req, { bucket: "integrations-test", windowMs: 60_000, max: 6 });
-  if (limited) return limited;
+  // Dos ventanas: una corta contra ráfagas y otra por hora contra el sondeo
+  // lento y sostenido, que la ventana de un minuto no llega a ver.
+  const limitedBurst = rateLimit(req, { bucket: "integrations-test", windowMs: 60_000, max: 6 });
+  if (limitedBurst) return limitedBurst;
+  const limitedHora = rateLimit(req, { bucket: "integrations-test-hora", windowMs: 3_600_000, max: 30 });
+  if (limitedHora) return limitedHora;
 
   const auth = await requireOrgPermission("billing.manage");
   if (!auth.ok) return auth.response;
@@ -38,11 +42,27 @@ export async function POST(req: NextRequest) {
       teamsWebhookUrl: true,
       customWebhookUrl: true,
       customWebhookSecret: true,
+      subscription: { select: { plan: true } },
     },
   });
 
   if (!org) {
     return NextResponse.json({ error: "Organización no encontrada" }, { status: 404 });
+  }
+
+  // EL PLAN SE COMPRUEBA EN EL MOMENTO DEL ENVÍO.
+  //
+  // Guardar la integración exige plan FIRMA, pero este endpoint no lo
+  // comprobaba: una organización que había estado en FIRMA y bajó de plan (o
+  // cuya suscripción se canceló) conservaba las URLs guardadas y seguía
+  // pudiendo disparar peticiones salientes desde nuestros servidores
+  // indefinidamente. El gating en el momento de guardar no dice nada sobre el
+  // momento de usar.
+  if (org.subscription?.plan !== "FIRMA") {
+    return NextResponse.json(
+      { error: "Las notificaciones Slack y webhooks están disponibles a partir del plan Firma" },
+      { status: 402 },
+    );
   }
 
   const event: OutboundEvent = {

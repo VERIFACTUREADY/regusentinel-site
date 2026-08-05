@@ -6,7 +6,7 @@
  * Desde el servidor eso alcanza los metadatos de la nube y cualquier servicio
  * interno.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 // DNS controlado: las pruebas no deben depender de la red.
 const lookupMock = vi.fn();
@@ -14,7 +14,16 @@ vi.mock("node:dns/promises", () => ({
   lookup: (...args: unknown[]) => lookupMock(...args),
 }));
 
-import { validateOutboundUrl, classifyAddress, safeFetch } from "../src/lib/ssrf-guard";
+import {
+  validateOutboundUrl,
+  classifyAddress,
+  safeFetch,
+  conectarAIpFijada,
+  MAX_RESPONSE_BYTES,
+  type Transporte,
+} from "../src/lib/ssrf-guard";
+import { createServer, type Server } from "node:http";
+import { AddressInfo } from "node:net";
 
 /** Resuelve cualquier nombre a la IP indicada. */
 function resolvesTo(...ips: string[]) {
@@ -48,6 +57,28 @@ describe("Clasificacion de direcciones", () => {
     ["fd12:3456::1", "privada"],
     ["ff02::1", "multicast"],
     ["::ffff:10.0.0.1", "privada"],
+    // fe80::/10 COMPLETO: la comprobacion anterior era `startsWith("fe80:")`,
+    // asi que fe81:: .. febf:: —el resto del rango link-local— pasaba.
+    ["fe80::1", "link-local"],
+    ["fe90::1", "link-local"],
+    ["fea0::1", "link-local"],
+    ["febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "link-local"],
+    // Site-local, obsoleto pero enrutable en redes internas.
+    ["fec0::1", "site-local"],
+    // IPv4 mapeada en TODAS sus representaciones. La expresion regular
+    // anterior solo reconocia la forma con cuarteto decimal.
+    ["::ffff:a00:1", "IPv4 mapeada"],
+    ["0:0:0:0:0:ffff:10.0.0.1", "IPv4 mapeada"],
+    ["::ffff:169.254.169.254", "metadatos"],
+    ["::ffff:7f00:1", "IPv4 mapeada"],
+    ["::ffff:8.8.8.8", "IPv4 mapeada"],
+    // Formas equivalentes del endpoint de metadatos IPv6 de AWS.
+    ["fd00:ec2:0:0:0:0:0:254", "metadatos cloud"],
+    // Rangos de traduccion y tunelado que pueden envolver direcciones internas.
+    ["2002:0a00:0001::1", "6to4"],
+    ["2001:0:0:0:0:0:0:1", "Teredo"],
+    ["::", "no especificada"],
+    ["255.255.255.255", "de difusion"],
   ];
 
   for (const [ip, etiqueta] of privadas) {
@@ -56,7 +87,7 @@ describe("Clasificacion de direcciones", () => {
     });
   }
 
-  const publicas = ["93.184.216.34", "8.8.8.8", "1.1.1.1", "172.32.0.1", "2606:4700::1111"];
+  const publicas = ["93.184.216.34", "8.8.8.8", "1.1.1.1", "172.32.0.1", "2606:4700::1111", "fe00::1"];
   for (const ip of publicas) {
     it(`permite ${ip}`, () => {
       expect(classifyAddress(ip)).toBeNull();
@@ -178,81 +209,264 @@ describe("Validacion de URL", () => {
   });
 });
 
-describe("safeFetch: redirecciones y fuga de contenido", () => {
-  const realFetch = globalThis.fetch;
-  afterEach(() => {
-    globalThis.fetch = realFetch;
+
+/**
+ * PINNING DE LA DIRECCION VALIDADA.
+ *
+ * La correccion anterior validaba el DNS y despues llamaba a `fetch(url)`, que
+ * VUELVE A RESOLVER el nombre. Entre la comprobacion y la conexion hay una
+ * ventana en la que el atacante decide a que IP se conecta: DNS rebinding.
+ *
+ * Estas pruebas usan el transporte inyectable para observar a que direccion se
+ * pide la conexion. No dependen de la red, que es lo que hace inestable una
+ * prueba de rebinding real, y demuestran exactamente el invariante: la
+ * conexion usa la IP que paso la validacion.
+ */
+describe("safeFetch: la conexion usa la IP validada (anti DNS rebinding)", () => {
+  /** Transporte de prueba: registra la IP pedida y devuelve una respuesta fija. */
+  function transporteEspia(
+    responder: (url: string, ip: string) => { status: number; location?: string | null },
+  ) {
+    const llamadas: Array<{ url: string; ip: string }> = [];
+    const transporte: Transporte = async (url, ip) => {
+      llamadas.push({ url, ip });
+      const r = responder(url, ip);
+      return { status: r.status, location: r.location ?? null };
+    };
+    return { transporte, llamadas };
+  }
+
+  it("se conecta a la IP resuelta en la validacion, no a una resolucion posterior", async () => {
+    // Resolutor que hace rebinding: publica una IP publica la primera vez y el
+    // endpoint de metadatos despues. Con `fetch(url)` la conexion habria usado
+    // la SEGUNDA.
+    let vez = 0;
+    const resolver = async () => {
+      vez++;
+      return vez === 1 ? ["93.184.216.34"] : ["169.254.169.254"];
+    };
+
+    const { transporte, llamadas } = transporteEspia(() => ({ status: 200 }));
+
+    const r = await safeFetch("https://rebinding.example.com/hook", {
+      method: "POST",
+      resolver,
+      dispatcher: transporte,
+    });
+
+    expect(r.ok).toBe(true);
+    expect(llamadas).toHaveLength(1);
+    expect(llamadas[0].ip).toBe("93.184.216.34");
+    expect(r.connectedTo).toEqual(["93.184.216.34"]);
+  });
+
+  it("cada salto de redireccion se conecta a la IP que valido ESE salto", async () => {
+    const porNombre: Record<string, string[]> = {
+      "primero.example.com": ["93.184.216.34"],
+      "segundo.example.com": ["151.101.1.140"],
+    };
+    const resolver = async (hostname: string) => porNombre[hostname] ?? ["8.8.8.8"];
+
+    const { transporte, llamadas } = transporteEspia((url) =>
+      url.includes("primero")
+        ? { status: 302, location: "https://segundo.example.com/final" }
+        : { status: 200 },
+    );
+
+    const r = await safeFetch("https://primero.example.com/hook", {
+      resolver,
+      dispatcher: transporte,
+    });
+
+    expect(r.ok).toBe(true);
+    expect(llamadas.map((l) => l.ip)).toEqual(["93.184.216.34", "151.101.1.140"]);
   });
 
   it("NO sigue una redireccion hacia una direccion privada", async () => {
-    resolvesTo("93.184.216.34");
+    const resolver = async () => ["93.184.216.34"];
+    const { transporte, llamadas } = transporteEspia(() => ({
+      status: 302,
+      location: "http://169.254.169.254/latest/meta-data/",
+    }));
 
-    const fetchMock = vi.fn(async (url: string) => {
-      if (String(url).includes("publico")) {
-        // Destino público que redirige a los metadatos de la nube.
-        return new Response(null, {
-          status: 302,
-          headers: { location: "http://169.254.169.254/latest/meta-data/" },
-        });
-      }
-      throw new Error("No deberia haberse solicitado el destino interno");
+    const r = await safeFetch("https://publico.example.com/hook", {
+      resolver,
+      dispatcher: transporte,
     });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const r = await safeFetch("https://publico.example.com/hook", { method: "POST" });
 
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/metadatos|link-local/i);
-    // La segunda petición nunca se llegó a hacer.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("no devuelve el cuerpo de la respuesta al llamador", async () => {
-    resolvesTo("93.184.216.34");
-    globalThis.fetch = (async () =>
-      new Response("SECRETO-INTERNO-QUE-NO-DEBE-SALIR", { status: 200 })) as unknown as typeof fetch;
-
-    const r = await safeFetch("https://ejemplo.com/hook", { method: "POST" });
-
-    expect(r.ok).toBe(true);
-    expect(JSON.stringify(r)).not.toContain("SECRETO-INTERNO");
+    // La segunda conexion nunca se llego a pedir.
+    expect(llamadas).toHaveLength(1);
   });
 
   it("rechaza el destino antes de conectar si es privado", async () => {
-    const fetchMock = vi.fn();
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const { transporte, llamadas } = transporteEspia(() => ({ status: 200 }));
 
-    const r = await safeFetch("https://10.0.0.1/hook", { method: "POST" });
+    const r = await safeFetch("https://10.0.0.1/hook", { dispatcher: transporte });
 
     expect(r.ok).toBe(false);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("sigue una redireccion hacia otro destino publico", async () => {
-    resolvesTo("93.184.216.34");
-    let call = 0;
-    globalThis.fetch = (async () => {
-      call++;
-      return call === 1
-        ? new Response(null, { status: 302, headers: { location: "https://otro.example.com/final" } })
-        : new Response("ok", { status: 200 });
-    }) as unknown as typeof fetch;
-
-    const r = await safeFetch("https://publico.example.com/hook", { method: "POST" });
-    expect(r.ok).toBe(true);
-    expect(r.status).toBe(200);
+    expect(llamadas).toHaveLength(0);
   });
 
   it("corta un bucle de redirecciones", async () => {
-    resolvesTo("93.184.216.34");
-    globalThis.fetch = (async () =>
-      new Response(null, {
-        status: 302,
-        headers: { location: "https://bucle.example.com/again" },
-      })) as unknown as typeof fetch;
+    const resolver = async () => ["93.184.216.34"];
+    const { transporte } = transporteEspia(() => ({
+      status: 302,
+      location: "https://bucle.example.com/again",
+    }));
 
-    const r = await safeFetch("https://bucle.example.com/hook", { method: "POST" });
+    const r = await safeFetch("https://bucle.example.com/hook", {
+      resolver,
+      dispatcher: transporte,
+    });
+
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/redirecciones/i);
+  });
+
+  it("un nombre que resuelve a una IP privada se rechaza antes de conectar", async () => {
+    const { transporte, llamadas } = transporteEspia(() => ({ status: 200 }));
+
+    const r = await safeFetch("https://interno.example.com/hook", {
+      resolver: async () => ["10.1.2.3"],
+      dispatcher: transporte,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(llamadas).toHaveLength(0);
+  });
+});
+
+/**
+ * TRANSPORTE REAL contra un servidor HTTP de verdad.
+ *
+ * Aqui no hay mock del transporte: se comprueba que `conectarAIpFijada`
+ * realmente conecta a la IP indicada, conserva la cabecera `Host` con el
+ * NOMBRE (no con la IP, que romperia el enrutado por virtual host y, en TLS,
+ * la validacion del certificado), acota el cuerpo y respeta el plazo durante
+ * la lectura.
+ */
+describe("Transporte real: Host preservado, cuerpo acotado, plazo total", () => {
+  let servidor: Server;
+  let puerto = 0;
+  const recibidas: Array<{ host: string | undefined; url: string | undefined }> = [];
+  let responder: (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => void;
+
+  beforeEach(async () => {
+    recibidas.length = 0;
+    responder = (_req, res) => {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("ok");
+    };
+
+    servidor = createServer((req, res) => {
+      recibidas.push({ host: req.headers.host, url: req.url });
+      responder(req, res);
+    });
+    await new Promise<void>((r) => servidor.listen(0, "127.0.0.1", r));
+    puerto = (servidor.address() as AddressInfo).port;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((r) => servidor?.close(() => r()));
+  });
+
+  it("conecta a la IP indicada y envia el NOMBRE en la cabecera Host", async () => {
+    const respuesta = await conectarAIpFijada(
+      `http://destino.example.com:${puerto}/hook?x=1`,
+      "127.0.0.1",
+      { method: "POST", headers: {}, body: "{}", timeoutMs: 5000 },
+    );
+
+    expect(respuesta.status).toBe(200);
+    // La peticion llego a NUESTRO servidor (conexion a 127.0.0.1)...
+    expect(recibidas).toHaveLength(1);
+    // ...pero hablando con el como `destino.example.com`, no como la IP.
+    expect(recibidas[0].host).toBe(`destino.example.com:${puerto}`);
+    expect(recibidas[0].host).not.toContain("127.0.0.1");
+    expect(recibidas[0].url).toBe("/hook?x=1");
+  });
+
+  it("no devuelve el cuerpo de la respuesta al llamador", async () => {
+    responder = (_req, res) => {
+      res.writeHead(200);
+      res.end("SECRETO-INTERNO-QUE-NO-DEBE-SALIR");
+    };
+
+    const respuesta = await conectarAIpFijada(
+      `http://destino.example.com:${puerto}/hook`,
+      "127.0.0.1",
+      { method: "GET", headers: {}, timeoutMs: 5000 },
+    );
+
+    expect(JSON.stringify(respuesta)).not.toContain("SECRETO-INTERNO");
+  });
+
+  it("corta un cuerpo mayor que el tope sin esperar a que termine", async () => {
+    // Un servidor que envia mucho mas de lo permitido. Sin tope, la lectura
+    // consumiria memoria del proceso a voluntad del destino.
+    responder = (_req, res) => {
+      res.writeHead(200);
+      const trozo = Buffer.alloc(64 * 1024, 0x61);
+      for (let i = 0; i < 40; i++) res.write(trozo);
+      res.end();
+    };
+
+    const inicio = Date.now();
+    const respuesta = await conectarAIpFijada(
+      `http://destino.example.com:${puerto}/grande`,
+      "127.0.0.1",
+      { method: "GET", headers: {}, timeoutMs: 5000 },
+    );
+
+    expect(respuesta.status).toBe(200);
+    expect(Date.now() - inicio).toBeLessThan(5000);
+    expect(MAX_RESPONSE_BYTES).toBe(64 * 1024);
+  });
+
+  it("el plazo sigue corriendo mientras se lee el cuerpo, no solo hasta las cabeceras", async () => {
+    // El servidor responde las cabeceras de inmediato y despues envia el
+    // cuerpo a cuentagotas sin cerrar nunca. Con un AbortController que solo
+    // cubre hasta que `fetch` resuelve, esta conexion quedaba abierta
+    // indefinidamente.
+    responder = (_req, res) => {
+      res.writeHead(200);
+      res.write("a");
+      setInterval(() => {
+        try {
+          res.write("a");
+        } catch {
+          /* socket cerrado */
+        }
+      }, 50).unref();
+    };
+
+    const inicio = Date.now();
+    await expect(
+      conectarAIpFijada(`http://destino.example.com:${puerto}/lento`, "127.0.0.1", {
+        method: "GET",
+        headers: {},
+        timeoutMs: 400,
+      }),
+    ).rejects.toThrow(/agotado/i);
+
+    expect(Date.now() - inicio).toBeLessThan(3000);
+  });
+
+  it("sigue una redireccion devolviendo su Location", async () => {
+    responder = (_req, res) => {
+      res.writeHead(302, { location: "https://otro.example.com/final" });
+      res.end();
+    };
+
+    const respuesta = await conectarAIpFijada(
+      `http://destino.example.com:${puerto}/redir`,
+      "127.0.0.1",
+      { method: "GET", headers: {}, timeoutMs: 5000 },
+    );
+
+    expect(respuesta.status).toBe(302);
+    expect(respuesta.location).toBe("https://otro.example.com/final");
   });
 });
