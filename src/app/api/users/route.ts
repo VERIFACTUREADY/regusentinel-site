@@ -16,6 +16,25 @@ class InviteError extends Error {
   }
 }
 
+/**
+ * El lock por organización serializa las invitaciones de UNA organización,
+ * pero la unicidad de `User.email` es global: dos organizaciones distintas
+ * invitando al mismo email a la vez pueden intentar crear la misma fila y una
+ * de las dos recibirá P2002. En PostgreSQL un error aborta la transacción
+ * entera, así que la única salida correcta es reintentarla: al reintentar, el
+ * `findUnique` ya encuentra al usuario creado por la otra petición y sólo se
+ * añade la membresía.
+ */
+async function conReintentoDeColision<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    if (code !== "P2002") throw err;
+    return await fn();
+  }
+}
+
 export async function GET(_req: NextRequest) {
   const auth = await requireOrgPermission("org.members");
   if (!auth.ok) return auth.response;
@@ -51,46 +70,68 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: denial }, { status: 403 });
     }
 
-    const plan = await planOf(session.user.orgId);
+    // TODO EL ALTA VA EN UNA SOLA TRANSACCIÓN.
+    //
+    // Antes el `User` se creaba FUERA de la transacción, con el comentario de
+    // que era "idempotente por email". No lo era en la práctica: si el tope de
+    // usuarios del plan abortaba la transacción posterior, la cuenta ya había
+    // quedado creada en la base con un `magicToken` válido siete días y sin
+    // ninguna membresía. Es decir, una invitación rechazada dejaba una
+    // credencial de acceso viva a nombre de alguien que nunca fue admitido.
+    // Repetir la llamada creaba tokens nuevos indefinidamente.
+    //
+    // Ahora, dentro de la misma transacción y **después** de tomar el lock:
+    // se lee el plan, se comprueba la membresía previa, se comprueba el tope,
+    // y sólo entonces se crea usuario y membresía. Si algo falla, no queda
+    // nada escrito.
+    let invitedUserId = "";
 
-    // Check if user exists. El alta del usuario va fuera de la transacción a
-    // propósito: es idempotente por email y no debe reintentarse si el tope
-    // de plan aborta.
-    let user = await prisma.user.findUnique({ where: { email: data.email } });
-    const magicToken = crypto.randomBytes(32).toString("hex");
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email: data.email,
-          name: data.email.split("@")[0] || null,
-          magicToken,
-          magicTokenExp: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-        },
-      });
-    }
-    const invitedUser = user;
-
-    // Tope de usuarios del plan. Antes se contaba fuera y se creaba después:
-    // dos invitaciones simultáneas leían el mismo recuento y ambas pasaban,
-    // superando el tope. Ahora el recuento y la creación van en la misma
-    // transacción, serializada por organización.
     try {
-      await prisma.$transaction(async (tx) => {
-        await lockOrgForLimits(session.user.orgId, tx);
+      invitedUserId = await conReintentoDeColision(async () =>
+        prisma.$transaction(async (tx) => {
+          await lockOrgForLimits(session.user.orgId, tx);
 
-        const existing = await tx.membership.findUnique({
-          where: { userId_orgId: { userId: invitedUser.id, orgId: session.user.orgId } },
-        });
-        if (existing) throw new InviteError("El usuario ya es miembro", 400);
+          // El plan se lee DENTRO de la transacción y después del lock: leerlo
+          // antes permitía invitar con el tope del plan anterior si la
+          // suscripción cambiaba entre medias.
+          const plan = await planOf(session.user.orgId, tx);
 
-        const limit = await checkUserLimit(session.user.orgId, plan, tx);
-        if (!limit.allowed) throw new InviteError(limit.message!, 403);
+          const user = await tx.user.findUnique({
+            where: { email: data.email },
+            select: { id: true },
+          });
 
-        await tx.membership.create({
-          data: { userId: invitedUser.id, orgId: session.user.orgId, role: data.role },
-        });
-      });
+          if (user) {
+            const existing = await tx.membership.findUnique({
+              where: { userId_orgId: { userId: user.id, orgId: session.user.orgId } },
+            });
+            if (existing) throw new InviteError("El usuario ya es miembro", 400);
+          }
+
+          const limit = await checkUserLimit(session.user.orgId, plan, tx);
+          if (!limit.allowed) throw new InviteError(limit.message!, 403);
+
+          const userId =
+            user?.id ??
+            (
+              await tx.user.create({
+                data: {
+                  email: data.email,
+                  name: data.email.split("@")[0] || null,
+                  magicToken: crypto.randomBytes(32).toString("hex"),
+                  magicTokenExp: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 días
+                },
+                select: { id: true },
+              })
+            ).id;
+
+          await tx.membership.create({
+            data: { userId, orgId: session.user.orgId, role: data.role },
+          });
+
+          return userId;
+        }),
+      );
     } catch (err) {
       if (err instanceof InviteError) {
         return NextResponse.json({ error: err.message }, { status: err.status });
@@ -118,7 +159,7 @@ export async function POST(req: NextRequest) {
       details: `${data.email} invitado como ${data.role}`,
     });
 
-    return NextResponse.json({ userId: user.id, role: data.role }, { status: 201 });
+    return NextResponse.json({ userId: invitedUserId, role: data.role }, { status: 201 });
   } catch (error: any) {
     if (error?.name === "ZodError") {
       return NextResponse.json({ error: "Datos invalidos", details: error.errors }, { status: 400 });

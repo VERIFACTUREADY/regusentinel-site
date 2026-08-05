@@ -3,6 +3,7 @@ import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { checkRoleAssignment, isValidRole, Role } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
+import { lockOrgForOwnership } from "@/lib/plan-limits";
 
 /**
  * PATCH /api/users/[id] — cambio de rol de un miembro.
@@ -54,6 +55,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     await prisma.$transaction(async (tx) => {
       // Releemos dentro de la transacción: entre la lectura anterior y este
       // punto otra petición pudo cambiar el rol o degradar al otro owner.
+      // El lock DEBE adquirirse antes de contar: sin el, dos degradaciones
+      // simultaneas leen ambas ownerCount = 2 y dejan la organizacion sin
+      // ningun OWNER. Una transaccion normal no lo evita porque las dos
+      // escriben en filas distintas y no hay conflicto.
+      await lockOrgForOwnership(orgId, tx);
+
       const current = await tx.membership.findFirst({
         where: { userId: params.id, orgId },
         select: { id: true, role: true },
@@ -128,6 +135,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   try {
     await prisma.$transaction(async (tx) => {
+      await lockOrgForOwnership(orgId, tx);
+
       const current = await tx.membership.findFirst({
         where: { userId: params.id, orgId },
         select: { id: true, role: true },

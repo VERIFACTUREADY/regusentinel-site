@@ -58,7 +58,9 @@ describe("Revocacion inmediata de sesiones", () => {
     const auth = await requireOrgPermission("cases.read");
     expect(auth.ok).toBe(false);
     if (!auth.ok) {
-      expect(auth.reason).toBe("unauthenticated");
+      // El motivo es concreto: no es que falte la cookie, es que ya no hay
+      // membresia. La respuesta sigue siendo 401 y no revela nada mas.
+      expect(auth.reason).toBe("no_membership");
       expect(auth.response.status).toBe(401);
     }
   });
@@ -114,14 +116,18 @@ describe("Revocacion inmediata de sesiones", () => {
     expect(session?.user.role).toBe("OPERATOR");
   });
 
-  it("el orgId del JWT se ignora si no hay membresia viva en esa organizacion", async () => {
+  it("si el JWT nombra una organizacion sin membresia viva, NO se cambia a otra", async () => {
     // El JWT apunta a org-1; el usuario solo es miembro de org-9.
+    //
+    // Antes se caia en silencio a `memberships[0]`, es decir a org-9: la misma
+    // peticion, dirigida a org-1, se respondia con el contexto de org-9. Para
+    // un usuario con varias organizaciones eso convierte una expulsion en un
+    // cambio de inquilino invisible. Ahora la sesion deja de ser utilizable y
+    // hay que volver a elegir organizacion de forma explicita.
     userFindUnique.mockResolvedValue(
       fakeUserRow({ orgId: "org-9", orgSlug: "org-nueve", role: "MANAGER" }),
     );
-    const session = await getVerifiedSession();
-    expect(session?.orgId).toBe("org-9");
-    expect(session?.role).toBe("MANAGER");
+    expect(await getVerifiedSession()).toBeNull();
   });
 });
 

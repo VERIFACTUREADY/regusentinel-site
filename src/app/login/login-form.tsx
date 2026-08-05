@@ -89,6 +89,21 @@ export function LoginForm({ demoEnabled, ssoEnabled = false }: Props) {
             <p className="text-sm text-slate-500 mt-1">Accede a tus expedientes y al Radar ISD.</p>
           </div>
 
+          {/*
+            El contexto de organización del token ya no es válido (el usuario
+            fue dado de baja de esa organización). No se le cambia a otra en
+            silencio: se le pide iniciar sesión de nuevo.
+          */}
+          {searchParams?.get("motivo") === "organizacion-no-disponible" && (
+            <div
+              role="status"
+              className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-900"
+            >
+              Ya no tienes acceso a la organización con la que iniciaste sesión. Vuelve a
+              identificarte para continuar.
+            </div>
+          )}
+
           {ssoEnabled && (
             <>
               <button

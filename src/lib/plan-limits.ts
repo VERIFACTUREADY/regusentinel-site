@@ -126,3 +126,20 @@ export async function planOf(orgId: string, db: Db = defaultPrisma): Promise<Pla
 export async function lockOrgForLimits(orgId: string, db: Db): Promise<void> {
   await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`limits:${orgId}`}))`;
 }
+
+/**
+ * Serializa las operaciones sobre la TITULARIDAD de una organizacion:
+ * eliminar, degradar, promover o transferir OWNER.
+ *
+ * Sin esto, el recuento de owners y la mutacion viajan en una transaccion
+ * READ COMMITTED normal: dos peticiones simultaneas leen ambas `ownerCount = 2`,
+ * ambas concluyen que pueden degradar, y la organizacion se queda con CERO
+ * owners. El `$transaction` por si solo no lo impide porque no hay conflicto de
+ * escritura entre filas distintas.
+ *
+ * Se usa un espacio de nombres distinto al de los limites de plan para que una
+ * invitacion en curso no bloquee un cambio de titularidad y viceversa.
+ */
+export async function lockOrgForOwnership(orgId: string, db: Db): Promise<void> {
+  await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ownership:${orgId}`}))`;
+}

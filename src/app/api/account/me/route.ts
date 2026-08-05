@@ -6,6 +6,15 @@ import { sendEmail } from "@/lib/email";
 import { rateLimit } from "@/lib/api-rate-limit";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { lockOrgForOwnership } from "@/lib/plan-limits";
+
+/** El titular es el ultimo OWNER de una organizacion: no puede darse de baja. */
+class UltimoOwnerError extends Error {
+  constructor(readonly orgName: string) {
+    super("LAST_OWNER");
+    this.name = "UltimoOwnerError";
+  }
+}
 
 /**
  * DELETE /api/account/me — borrado de cuenta del usuario autenticado.
@@ -76,58 +85,67 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Contrasena incorrecta" }, { status: 401 });
   }
 
-  // Bloquea si el usuario es el unico OWNER de alguna de sus orgs — primero
-  // tiene que transferir ownership o eliminar la org desde billing.
-  for (const m of user.memberships) {
-    if (m.role !== "OWNER") continue;
-    const ownerCount = await prisma.membership.count({
-      where: { orgId: m.orgId, role: "OWNER" },
-    });
-    if (ownerCount <= 1) {
-      return NextResponse.json(
-        {
-          error: `Eres el unico Owner de "${m.org.name}". Transfiere la titularidad a otro miembro o elimina la organizacion desde Facturacion antes de borrar tu cuenta.`,
-        },
-        { status: 409 }
-      );
-    }
-  }
-
   const originalEmail = user.email;
   const originalName = user.name;
   const anonymizedEmail = `deleted-user-${user.id}@heredia.invalid`;
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
 
-  // Anonimizamos en una transaccion atomica: el row User se mantiene para
-  // preservar integridad referencial con AuditLog/PromptLog/Approval/TaskNote,
-  // pero ya no contiene datos personales ni credenciales validas.
-  await prisma.$transaction([
-    prisma.membership.deleteMany({ where: { userId: user.id } }),
-    prisma.user.update({
-      where: { id: user.id },
-      data: {
-        email: anonymizedEmail,
-        name: "Cuenta eliminada",
-        passwordHash: null,
-        magicToken: null,
-        magicTokenExp: null,
-      },
-    }),
-    ...user.memberships.map((m) =>
-      prisma.auditLog.create({
+  // La comprobación del último OWNER y la baja van en la MISMA transacción, y
+  // detrás de un advisory lock por organización. Antes se contaba fuera: dos
+  // owners borrando su cuenta a la vez veían ambos `ownerCount = 2`, ambos
+  // pasaban el control y la organización se quedaba sin ningún titular.
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const m of user.memberships) {
+        if (m.role !== "OWNER") continue;
+
+        await lockOrgForOwnership(m.orgId, tx);
+
+        const ownerCount = await tx.membership.count({
+          where: { orgId: m.orgId, role: "OWNER" },
+        });
+        if (ownerCount <= 1) {
+          throw new UltimoOwnerError(m.org.name);
+        }
+      }
+
+      await tx.membership.deleteMany({ where: { userId: user.id } });
+      await tx.user.update({
+        where: { id: user.id },
         data: {
-          orgId: m.orgId,
-          userId: user.id,
-          action: "account.deleted",
-          // Sin el email original: escribirlo aquí dejaba el dato personal
-          // justo en el registro que documenta su supresión, y contradecía
-          // el email de confirmación que afirma haberlo eliminado. El `userId`
-          // basta para trazar la actuación contra el row ya anonimizado.
-          details: "El titular solicitó el borrado de su cuenta (RGPD Art. 17)",
-          ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+          email: anonymizedEmail,
+          name: "Cuenta eliminada",
+          passwordHash: null,
+          magicToken: null,
+          magicTokenExp: null,
         },
-      })
-    ),
-  ]);
+      });
+      for (const m of user.memberships) {
+        await tx.auditLog.create({
+          data: {
+            orgId: m.orgId,
+            userId: user.id,
+            action: "account.deleted",
+            // Sin el email original: escribirlo aquí dejaba el dato personal
+            // justo en el registro que documenta su supresión, y contradecía
+            // el email de confirmación que afirma haberlo eliminado.
+            details: "El titular solicitó el borrado de su cuenta (RGPD Art. 17)",
+            ip,
+          },
+        });
+      }
+    });
+  } catch (err) {
+    if (err instanceof UltimoOwnerError) {
+      return NextResponse.json(
+        {
+          error: `Eres el unico Owner de "${err.orgName}". Transfiere la titularidad a otro miembro o elimina la organizacion desde Facturacion antes de borrar tu cuenta.`,
+        },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
 
   // Confirmacion al email original — fire and forget, no bloquea la respuesta.
   sendEmail({

@@ -47,6 +47,12 @@ function actor(role: Role | string, userId = "actor-1") {
 function runTransaction(state: { role: Role; ownerCount: number }) {
   txMock.mockImplementation(async (cb: any) =>
     cb({
+      // El handler toma un advisory lock por organizacion antes de contar
+      // owners. En estas pruebas Prisma esta mockeado, asi que el lock no hace
+      // nada: su efecto real se comprueba en
+      // `__tests__/integration/owner-limits-concurrency-db.test.ts`, con
+      // PostgreSQL de verdad y peticiones simultaneas.
+      $executeRaw: async () => 1,
       membership: {
         findFirst: async () => ({ id: "mem-target", role: state.role }),
         count: async () => state.ownerCount,

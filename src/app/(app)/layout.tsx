@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { AppShell, type TrialInfo, type BadgeCounts } from "@/components/layout/app-shell";
-import { getVerifiedSession, getVerifiedUser } from "@/lib/session";
+import { resolverSesion, getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import { isSuperAdmin } from "@/lib/admin";
@@ -27,7 +27,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // pierde la interfaz en la siguiente navegación, no dentro de 30 días.
   // Los usuarios autenticados que todavía no tienen organización siguen
   // llegando al onboarding, así que ahí caemos a la identidad sin membresía.
-  const verified = await getVerifiedSession();
+  const resultado = await resolverSesion();
+
+  // El token nombra una organización a la que el usuario ya no pertenece. No se
+  // le cambia de organización en silencio ni se le manda al onboarding (que le
+  // ofrecería crear una nueva): se le obliga a volver a autenticarse, y el
+  // token se reconstruye entonces con una organización a la que sí pertenece.
+  if (resultado.estado === "organizacion_perdida") {
+    redirect("/login?motivo=organizacion-no-disponible");
+  }
+
+  const verified = resultado.estado === "ok" ? resultado.sesion : null;
   const session = verified ?? (await onboardingSession());
   if (!session) redirect("/login");
 
