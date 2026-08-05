@@ -1182,3 +1182,66 @@ que los siete checks estén en verde.
 | Protección de rama | **Desactivada**; pasos entregados al propietario |
 
 No se ha hecho merge a la rama base.
+
+## Vercel — segunda comprobación, tras seguir en rojo
+
+Reproducción sobre el HEAD real de la rama (`4d63e8d`), clonando de cero desde
+GitHub y compilando como lo hace Vercel:
+
+| Comprobación | Resultado |
+|---|---|
+| `git clone` de la rama + `npm install` | Código 0 |
+| `NODE_ENV=production npm run build` | Código 0 |
+| Accesos a la base de datos durante el build | **0** (antes de la corrección: 1) |
+| Tamaño de la función más pesada, sumando su traza `.nft.json` | **19,3 MB** sobre 208 rutas (límite de Vercel: 250 MB sin comprimir) |
+| Rutas de `vercel.json → crons` que no existen entre las funciones construidas | Ninguna |
+
+Es decir: **el código compila y despliega**. Lo que queda como posible causa
+está fuera del repositorio.
+
+### Lo que NO puede comprobarse desde esta sesión
+
+El proxy de salida rechaza Vercel de forma explícita. Registro del propio
+proxy (`$HTTPS_PROXY/__agentproxy/status`):
+
+```
+{"kind":"connect_rejected",
+ "detail":"gateway answered 403 to CONNECT (policy denial or upstream failure)",
+ "host":"vercel.com:443"}
+{"kind":"connect_rejected",
+ "detail":"gateway answered 403 to CONNECT (policy denial or upstream failure)",
+ "host":"api.vercel.com:443"}
+```
+
+`api.github.com` responde `403` ("An org admin must connect the Claude GitHub
+App"), y el servidor MCP disponible sólo permite leer un check run por id
+numérico, que llega por webhook y aquí no llega ninguno.
+
+**Por tanto el estado del check de Vercel no se conoce y no se declara verde.**
+
+### Tres causas posibles, en orden de probabilidad
+
+**1. El check rojo es el despliegue de producción de `main`, no el de esta
+rama.** `origin/main` está en `de08852` y **no contiene ninguna de estas
+correcciones**: esta rama va 83 commits por delante. Si Vercel tiene `main`
+como rama de producción, ese despliegue seguirá en rojo hasta que se fusione,
+y la instrucción vigente es no fusionar. Comprobación: en el panel de Vercel,
+mirar de qué commit es el despliegue fallido. Si empieza por `de08852` o es
+anterior a esta rama, la corrección todavía no ha llegado a él.
+
+**2. Límites del plan.** `vercel.json` declara 11 crons y uno cada 10 minutos
+(`/api/cron/stripe-recovery`). El plan Hobby permite 2 crons y sólo con
+frecuencia diaria: con esa configuración el despliegue se rechaza antes de
+compilar, y ninguna corrección de código lo arregla. Comprobación: si el
+registro dice algo como *"Your plan allows a maximum of N Cron Jobs"* o
+*"Hobby accounts are limited to daily cron jobs"*, es esto.
+
+**3. Variables de entorno.** La tabla de la sección anterior indica, para cada
+una, en qué entorno debe existir, si es obligatoria y cómo verificarla.
+
+### Qué hace falta para cerrarlo
+
+El registro del despliegue fallido: en el panel de Vercel, *Deployments* → el
+despliegue rojo → *Building* / *Deployment Summary*. Las primeras líneas de
+error y el SHA del commit desplegado bastan para identificar cuál de las tres
+causas es.
