@@ -26,10 +26,13 @@ vi.mock("../src/lib/prisma", () => ({
   },
 }));
 
+const stripeSubRetrieve = vi.fn();
+const stripeEventRetrieve = vi.fn();
 vi.mock("stripe", () => ({
   default: class FakeStripe {
     webhooks = { constructEvent: (body: string) => JSON.parse(body) };
-    subscriptions = { retrieve: vi.fn() };
+    subscriptions = { retrieve: (...a: unknown[]) => stripeSubRetrieve(...a) };
+    events = { retrieve: (...a: unknown[]) => stripeEventRetrieve(...a) };
   },
 }));
 
@@ -40,7 +43,7 @@ process.env.STRIPE_SECRET_KEY = "sk_test_dummy";
 process.env.STRIPE_WEBHOOK_SECRET = "whsec_dummy";
 
 import { prisma } from "../src/lib/prisma";
-import { handleWebhookEvent } from "../src/lib/stripe";
+import { handleWebhookEvent, MAX_INTENTOS_EVENTO } from "../src/lib/stripe";
 
 const evCreate = prisma.stripeEvent.create as unknown as ReturnType<typeof vi.fn>;
 const evFindUnique = prisma.stripeEvent.findUnique as unknown as ReturnType<typeof vi.fn>;
@@ -59,7 +62,7 @@ function invoiceFailedEvent(id: string) {
   return JSON.stringify({
     id,
     type: "invoice.payment_failed",
-    data: { object: { customer: "cus_1", amount_due: 34900 } },
+    data: { object: { customer: "cus_1", subscription: "sub_stripe_1", amount_due: 34900 } },
   });
 }
 
@@ -80,13 +83,34 @@ function eventRow(over: Record<string, unknown> = {}) {
 
 const P2002 = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
 
+/** El evento se ha aplicado ahora (ni duplicado ni pendiente de reintento). */
+function esAplicado(r: Awaited<ReturnType<typeof handleWebhookEvent>>): boolean {
+  return r.received === true && r.duplicate !== true;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   evCreate.mockResolvedValue({});
   evUpdate.mockResolvedValue({});
   evUpdateMany.mockResolvedValue({ count: 1 });
   subFindFirst.mockResolvedValue(null);
+  stripeSubRetrieve.mockReset();
+  stripeEventRetrieve.mockReset();
 });
+
+/** Factura de suscripcion; `subscription` es lo que correlaciona, no el customer. */
+function facturaPagada(
+  id: string,
+  over: Record<string, unknown> = {},
+): string {
+  return JSON.stringify({
+    id,
+    type: "invoice.payment_succeeded",
+    data: {
+      object: { id: "in_1", customer: "cus_1", subscription: "sub_stripe_1", ...over },
+    },
+  });
+}
 
 describe("Evento nuevo", () => {
   it("se marca PROCESSED solo despues de ejecutar la logica", async () => {
@@ -95,7 +119,7 @@ describe("Evento nuevo", () => {
     const result = await handleWebhookEvent(fakeEvent("evt_1"), "sig");
 
     expect(result.received).toBe(true);
-    expect(result.duplicate).toBeUndefined();
+    expect(esAplicado(result)).toBe(true);
 
     // La reclamacion lo pone en PROCESSING...
     expect(evUpdateMany).toHaveBeenCalledWith(
@@ -124,7 +148,7 @@ describe("Evento ya procesado", () => {
 
     const result = await handleWebhookEvent(invoiceFailedEvent("evt_1"), "sig");
 
-    expect(result.duplicate).toBe(true);
+    expect(result).toMatchObject({ received: true, duplicate: true });
     expect(evUpdateMany).not.toHaveBeenCalled();
     // El handler no corrio.
     expect(subFindFirst).not.toHaveBeenCalled();
@@ -135,7 +159,7 @@ describe("Evento ya procesado", () => {
     evFindUnique.mockResolvedValue(eventRow({ status: "PROCESSED" }));
 
     const result = await handleWebhookEvent(fakeEvent("evt_1"), "sig");
-    expect(result.duplicate).toBe(true);
+    expect(result).toMatchObject({ received: true, duplicate: true });
   });
 });
 
@@ -146,12 +170,21 @@ describe("Reintento tras un fallo — el bug de los cobros perdidos", () => {
 
     await expect(handleWebhookEvent(invoiceFailedEvent("evt_1"), "sig")).rejects.toThrow("DB caida");
 
-    expect(evUpdate).toHaveBeenCalledWith(
+    // El fallo se registra con `updateMany` condicionado a `attempts`: mientras
+    // queden reintentos queda FAILED; agotados, pasa a NEEDS_INTERVENTION.
+    expect(evUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({ id: "evt_1", attempts: { lt: MAX_INTENTOS_EVENTO } }),
         data: expect.objectContaining({
           status: "FAILED",
           lastError: expect.stringContaining("DB caida"),
         }),
+      }),
+    );
+    expect(evUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ attempts: { gte: MAX_INTENTOS_EVENTO } }),
+        data: expect.objectContaining({ status: "NEEDS_INTERVENTION" }),
       }),
     );
     // NO se marca como procesado.
@@ -175,7 +208,7 @@ describe("Reintento tras un fallo — el bug de los cobros perdidos", () => {
 
     const result = await handleWebhookEvent(invoiceFailedEvent("evt_1"), "sig");
 
-    expect(result.duplicate).toBeUndefined();
+    expect(esAplicado(result)).toBe(true);
     // La logica corrio de verdad.
     expect(subFindFirst).toHaveBeenCalled();
     expect(evUpdate).toHaveBeenCalledWith(
@@ -183,7 +216,10 @@ describe("Reintento tras un fallo — el bug de los cobros perdidos", () => {
     );
   });
 
-  it("una ejecucion PROCESSING reciente no se duplica", async () => {
+  it("una ejecucion PROCESSING reciente no se duplica y PIDE REINTENTO", async () => {
+    // Antes esto devolvia `{received:true, duplicate:true}` -> HTTP 200, y
+    // Stripe daba el evento por entregado. Si el proceso que lo tenia
+    // reclamado moria a mitad, su efecto no se aplicaba nunca.
     evCreate.mockRejectedValue(P2002);
     evFindUnique.mockResolvedValue(
       eventRow({ status: "PROCESSING", startedAt: new Date(), attempts: 1 }),
@@ -191,7 +227,12 @@ describe("Reintento tras un fallo — el bug de los cobros perdidos", () => {
 
     const result = await handleWebhookEvent(invoiceFailedEvent("evt_1"), "sig");
 
-    expect(result.duplicate).toBe(true);
+    expect(result).toEqual({
+      received: false,
+      type: "invoice.payment_failed",
+      retry: true,
+      reason: "in_progress",
+    });
     expect(subFindFirst).not.toHaveBeenCalled();
   });
 
@@ -207,7 +248,7 @@ describe("Reintento tras un fallo — el bug de los cobros perdidos", () => {
     );
 
     const result = await handleWebhookEvent(fakeEvent("evt_1"), "sig");
-    expect(result.duplicate).toBeUndefined();
+    expect(esAplicado(result)).toBe(true);
   });
 });
 
@@ -220,7 +261,8 @@ describe("Entregas simultaneas del mismo evento", () => {
 
     const result = await handleWebhookEvent(invoiceFailedEvent("evt_1"), "sig");
 
-    expect(result.duplicate).toBe(true);
+    // Perder la carrera tampoco se responde como exito: se pide reintento.
+    expect(result).toMatchObject({ received: false, retry: true, reason: "in_progress" });
     expect(subFindFirst).not.toHaveBeenCalled();
   });
 
@@ -244,39 +286,123 @@ describe("Errores de infraestructura", () => {
   });
 });
 
-describe("Recuperacion de suscripcion al cobrar", () => {
-  it("invoice.payment_succeeded reactiva una suscripcion en past_due", async () => {
+describe("invoice.payment_succeeded — correlacion por suscripcion", () => {
+  /**
+   * ANTES: bastaba con que el `customer` de la factura coincidiera con
+   * `Subscription.stripeCustomerId` para poner la suscripcion en `active`. Una
+   * organizacion impagada volvia a operar por cualquier cobro del mismo
+   * cliente: una factura suelta, un setup fee, o el pago de OTRA suscripcion.
+   *
+   * AHORA: la factura debe pertenecer a la suscripcion guardada, se recupera
+   * esa suscripcion de Stripe, y se aplica SU estado real.
+   */
+  const subLocal = {
+    id: "sub_1",
+    orgId: "org_1",
+    status: "past_due",
+    stripeSubId: "sub_stripe_1",
+    currentPeriodEnd: new Date(),
+  };
+
+  it("reactiva cuando la factura es de la suscripcion guardada y Stripe la da por activa", async () => {
     evFindUnique.mockResolvedValue(eventRow({ type: "invoice.payment_succeeded" }));
-    subFindFirst.mockResolvedValue({ id: "sub_1", orgId: "org_1", status: "past_due" });
+    subFindFirst.mockResolvedValue(subLocal);
+    stripeSubRetrieve.mockResolvedValue({
+      id: "sub_stripe_1",
+      status: "active",
+      current_period_end: 1800000000,
+    });
     subUpdate.mockResolvedValue({});
 
-    await handleWebhookEvent(
-      JSON.stringify({
-        id: "evt_ok",
-        type: "invoice.payment_succeeded",
-        data: { object: { customer: "cus_1" } },
-      }),
-      "sig",
-    );
+    await handleWebhookEvent(facturaPagada("evt_ok"), "sig");
 
-    expect(subUpdate).toHaveBeenCalledWith({
-      where: { id: "sub_1" },
-      data: { status: "active" },
-    });
+    // La busqueda es por stripeSubId, NO por stripeCustomerId.
+    expect(subFindFirst).toHaveBeenCalledWith({ where: { stripeSubId: "sub_stripe_1" } });
+    expect(subUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "sub_1" },
+        data: expect.objectContaining({ status: "active" }),
+      }),
+    );
   });
 
-  it("no toca una suscripcion que ya esta activa", async () => {
+  it("NO reactiva por una factura suelta (one-off, sin suscripcion)", async () => {
     evFindUnique.mockResolvedValue(eventRow({ type: "invoice.payment_succeeded" }));
-    subFindFirst.mockResolvedValue({ id: "sub_1", orgId: "org_1", status: "active" });
+    subFindFirst.mockResolvedValue(subLocal);
+
+    await handleWebhookEvent(facturaPagada("evt_oneoff", { subscription: null }), "sig");
+
+    expect(subFindFirst).not.toHaveBeenCalled();
+    expect(subUpdate).not.toHaveBeenCalled();
+  });
+
+  it("NO reactiva por el cobro de un setup fee facturado aparte", async () => {
+    // Un setup fee cobrado como factura independiente no lleva `subscription`.
+    evFindUnique.mockResolvedValue(eventRow({ type: "invoice.payment_succeeded" }));
+    subFindFirst.mockResolvedValue(subLocal);
 
     await handleWebhookEvent(
-      JSON.stringify({
-        id: "evt_ok2",
-        type: "invoice.payment_succeeded",
-        data: { object: { customer: "cus_1" } },
-      }),
+      facturaPagada("evt_setup", { subscription: undefined, billing_reason: "manual" }),
       "sig",
     );
+
+    expect(subUpdate).not.toHaveBeenCalled();
+  });
+
+  it("NO reactiva por el pago de una suscripcion ANTIGUA ya sustituida", async () => {
+    evFindUnique.mockResolvedValue(eventRow({ type: "invoice.payment_succeeded" }));
+    // La factura es de sub_stripe_VIEJA; en la base tenemos sub_stripe_1, asi
+    // que la busqueda por stripeSubId no encuentra nada.
+    subFindFirst.mockResolvedValue(null);
+
+    await handleWebhookEvent(
+      facturaPagada("evt_vieja", { subscription: "sub_stripe_VIEJA" }),
+      "sig",
+    );
+
+    expect(subFindFirst).toHaveBeenCalledWith({ where: { stripeSubId: "sub_stripe_VIEJA" } });
+    expect(stripeSubRetrieve).not.toHaveBeenCalled();
+    expect(subUpdate).not.toHaveBeenCalled();
+  });
+
+  it("NO reactiva por OTRA suscripcion del mismo customer", async () => {
+    evFindUnique.mockResolvedValue(eventRow({ type: "invoice.payment_succeeded" }));
+    subFindFirst.mockResolvedValue(null); // no hay fila con ese stripeSubId
+
+    await handleWebhookEvent(
+      facturaPagada("evt_otra", { customer: "cus_1", subscription: "sub_stripe_OTRA" }),
+      "sig",
+    );
+
+    expect(subUpdate).not.toHaveBeenCalled();
+  });
+
+  it("si Stripe dice que la suscripcion sigue impagada, NO se reactiva", async () => {
+    // El cobro de una factura no implica que la suscripcion este al corriente:
+    // puede quedar otra factura vencida. Manda el estado real de Stripe.
+    evFindUnique.mockResolvedValue(eventRow({ type: "invoice.payment_succeeded" }));
+    subFindFirst.mockResolvedValue(subLocal);
+    stripeSubRetrieve.mockResolvedValue({
+      id: "sub_stripe_1",
+      status: "past_due",
+      current_period_end: 1800000000,
+    });
+
+    await handleWebhookEvent(facturaPagada("evt_sigue_impagada"), "sig");
+
+    expect(subUpdate).not.toHaveBeenCalled();
+  });
+
+  it("no toca una suscripcion que ya esta activa y con periodo conocido", async () => {
+    evFindUnique.mockResolvedValue(eventRow({ type: "invoice.payment_succeeded" }));
+    subFindFirst.mockResolvedValue({ ...subLocal, status: "active" });
+    stripeSubRetrieve.mockResolvedValue({
+      id: "sub_stripe_1",
+      status: "active",
+      current_period_end: 1800000000,
+    });
+
+    await handleWebhookEvent(facturaPagada("evt_ok2"), "sig");
 
     expect(subUpdate).not.toHaveBeenCalled();
   });

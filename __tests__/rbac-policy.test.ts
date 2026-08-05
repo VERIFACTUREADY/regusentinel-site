@@ -72,6 +72,7 @@ const EXEMPT_ENDPOINTS: Record<string, string> = {
   "cron/notifications": "validateCronSecret",
   "cron/retention-cleanup": "validateCronSecret",
   "cron/stale-leads": "validateCronSecret",
+  "cron/stripe-recovery": "validateCronSecret",
   "cron/trial-expired": "validateCronSecret",
   "cron/trial-expiring": "validateCronSecret",
 

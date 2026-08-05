@@ -31,6 +31,19 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await handleWebhookEvent(body, sig);
+
+    // El evento NO se ha aplicado: otra entrega lo tiene reclamado, o ha
+    // agotado los reintentos automáticos. Responder 200 aquí haría que Stripe
+    // lo diera por entregado y no volviera a enviarlo nunca; si el proceso que
+    // lo tenía reclamado murió a mitad, su efecto se perdería. 409 mantiene
+    // vivo el reintento de Stripe, que es la red de seguridad más barata.
+    if (!result.received) {
+      return NextResponse.json(
+        { error: "Evento no aplicado todavia; reintentar", reason: result.reason },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -709,6 +709,10 @@ enum StripeEventStatus {
   PROCESSING
   PROCESSED
   FAILED
+  /// Agotados los reintentos automáticos. Ya no se reintenta solo: requiere que
+  /// alguien mire qué pasa. Se distingue de FAILED para que un evento atascado
+  /// no quede indistinguible de uno que aún va a recuperarse por sí mismo.
+  NEEDS_INTERVENTION
 }
 
 model StripeEvent {
@@ -732,6 +736,11 @@ model StripeEvent {
   receivedAt  DateTime  @default(now())
   completedAt DateTime?
 
+  /// Momento del último aviso operativo enviado por este evento. Evita repetir
+  /// el mismo correo en cada pasada del cron de recuperación.
+  alertedAt DateTime?
+
   @@index([status, receivedAt])
   @@index([receivedAt])
+  @@index([status, startedAt])
 }
