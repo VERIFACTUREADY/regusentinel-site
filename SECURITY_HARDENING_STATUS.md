@@ -753,7 +753,7 @@ migraciones que una base existente ya tenía aplicadas.
   El despliegue usa un paso separado, `npm run db:deploy`.
 - Ante P3005 el script **falla** e imprime el procedimiento manual. Nunca
   ejecuta `db push` ni `migrate reset`.
-- `__tests__/migration-history.test.ts` congela las 19 migraciones por huella
+- `__tests__/migration-history.test.ts` congela las 20 migraciones por huella
   SHA-256 y falla si alguna se borra, se modifica, se añade sin registrar o
   contiene un `DROP`/`TRUNCATE` no justificado.
 
