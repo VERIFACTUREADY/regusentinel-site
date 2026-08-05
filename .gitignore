@@ -36,3 +36,23 @@ next-env.d.ts
 # Playwright
 /test-results/
 /playwright-report/
+
+# Binarios y artefactos accidentales
+a.out
+*.out
+*.o
+*.so
+*.exe
+*.bin
+
+# Volcados y bases locales
+*.sql.gz
+*.dump
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs y temporales
+*.log
+*.tmp
+.DS_Store

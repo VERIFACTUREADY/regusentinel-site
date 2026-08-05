@@ -4,19 +4,20 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && node scripts/migrate-deploy.mjs && next build",
-    "start": "prisma migrate deploy && next start",
+    "build": "prisma generate && next build",
+    "start": "next start",
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "./scripts/test-db.sh",
     "test:all": "npm run test && npm run test:integration && npm run test:e2e",
-    "test:e2e": "./scripts/e2e.sh"
+    "test:e2e": "./scripts/e2e.sh",
+    "db:deploy": "node scripts/migrate-deploy.mjs",
+    "db:check": "node scripts/migrate-deploy.mjs --check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
