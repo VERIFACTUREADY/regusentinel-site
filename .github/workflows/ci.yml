@@ -15,15 +15,13 @@ env:
   SECRETS_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
   STRIPE_SECRET_KEY: sk_test_ci
   STRIPE_WEBHOOK_SECRET: whsec_ci
-  S3_ENDPOINT: http://127.0.0.1:9000
-  S3_ACCESS_KEY: minioadmin
-  S3_SECRET_KEY: minioadmin123
-  S3_BUCKET: heredia-ci
-  S3_REGION: us-east-1
 
 jobs:
-  verificacion:
-    name: Tipos, pruebas y build
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. Tipos, esquema, pruebas unitarias y build.
+  # ─────────────────────────────────────────────────────────────────────────
+  calidad:
+    name: Tipos, unitarias y build
     runs-on: ubuntu-latest
 
     services:
@@ -48,7 +46,6 @@ jobs:
           node-version: 20
           cache: npm
 
-      # Instalacion reproducible a partir del lockfile.
       - name: Instalar dependencias
         run: npm ci --legacy-peer-deps
 
@@ -60,12 +57,57 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
 
-      # Comprueba que las migraciones aplican sobre una base VACIA. Sin esto,
-      # un esquema editado a mano pasa CI y revienta en el despliegue.
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Pruebas unitarias
+        run: npm test
+
+      # Sin DATABASE_URL: reproduce el build de Vercel en un entorno sin base
+      # de datos, que es como se construyen las previews. Ademas comprueba de
+      # hecho que `npm run build` no toca la base de datos.
+      - name: Build
+        run: npm run build
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. Migraciones: los DOS caminos que un despliegue real puede tomar.
+  # ─────────────────────────────────────────────────────────────────────────
+  migraciones:
+    name: Migraciones (base vacia y actualizacion)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: heredia_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
+      PGPASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci --legacy-peer-deps
+      - run: npx prisma generate
+
+      # CAMINO A: instalacion desde cero.
       - name: Aplicar migraciones sobre base vacia
         run: npx prisma migrate deploy
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
 
       # Detecta un schema.prisma modificado sin su migracion correspondiente.
       - name: Comprobar que no faltan migraciones
@@ -79,25 +121,228 @@ jobs:
               echo "::error::El esquema tiene cambios sin migracion. Ejecuta prisma migrate dev."
               exit 1
             }
+
+      # CAMINO B: una base que ya tenia aplicadas las migraciones antiguas se
+      # actualiza sin perder datos. Es el caso que rompio en produccion y que
+      # el `db push --accept-data-loss` "resolvia" destruyendo columnas.
+      - name: Actualizacion desde el historial antiguo
+        run: ./scripts/verify-upgrade-path.sh
+
+      # El deploy no puede contener ninguna operacion destructiva.
+      # `migrate-deploy.mjs` y `verify-upgrade-path.sh` MENCIONAN el flag en sus
+      # comentarios para explicar por que no se usa. Se excluyen las lineas de
+      # comentario y se busca solo codigo ejecutable.
+      - name: El despliegue no acepta perdida de datos
+        run: |
+          INFRACTORES="$(grep -rn -- '--accept-data-loss' package.json scripts/ 2>/dev/null \
+            | grep -vE ':[[:space:]]*(#|\*|//|/\*)' || true)"
+          if [ -n "$INFRACTORES" ]; then
+            echo "::error::--accept-data-loss ejecutable en el pipeline de despliegue:"
+            echo "$INFRACTORES"
+            exit 1
+          fi
+          echo "Sin --accept-data-loss ejecutable en package.json ni en scripts/."
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. Integracion con PostgreSQL real (sin mocks de Prisma).
+  # ─────────────────────────────────────────────────────────────────────────
+  integracion-postgres:
+    name: Integracion PostgreSQL
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
         env:
-          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: heredia_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
-      - name: TypeScript
-        run: npx tsc --noEmit
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
 
-      - name: Pruebas unitarias
-        run: npm test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
-      - name: Pruebas de integracion (PostgreSQL real)
+      - run: npm ci --legacy-peer-deps
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+
+      - name: Pruebas de integracion
         run: npx vitest run --config vitest.integration.config.ts
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 4. Integracion con almacenamiento de objetos REAL (MinIO).
+  #
+  #    Antes las variables S3_* apuntaban a 127.0.0.1:9000 sin que existiera
+  #    ningun servicio en ese puerto: cualquier prueba que hubiera intentado
+  #    hablar con S3 habria fallado por conexion, no por logica. Ahora el
+  #    servicio existe, el bucket se inicializa y las pruebas se ejecutan
+  #    contra el de verdad.
+  # ─────────────────────────────────────────────────────────────────────────
+  integracion-s3:
+    name: Integracion S3 (MinIO real)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
         env:
-          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: heredia_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
-      # Sin DATABASE_URL: reproduce el build de Vercel en un entorno sin base
-      # de datos, que es como se construyen las previews.
-      - name: Build
-        run: npm run build
+      # Se usa la imagen de Bitnami porque arranca el servidor por si sola: los
+      # servicios de GitHub Actions no permiten sustituir el comando del
+      # contenedor, y `minio/minio` necesita recibir `server /data`.
+      #
+      # Sin `--health-cmd`: la imagen no trae curl, asi que la comprobacion se
+      # hace desde el runner en el paso "Comprobar que MinIO responde", que
+      # ademas falla con un mensaje claro si el servicio no llega a levantar.
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin123
+          MINIO_DEFAULT_BUCKETS: heredia-ci
+        ports: ["9000:9000"]
 
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
+      S3_ENDPOINT: http://127.0.0.1:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin123
+      S3_BUCKET: heredia-ci
+      S3_REGION: us-east-1
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci --legacy-peer-deps
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+
+      # Verificacion explicita: si MinIO no responde, el job falla AQUI con un
+      # mensaje claro en vez de dejar que las pruebas se salten en silencio.
+      - name: Comprobar que MinIO responde
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:9000/minio/health/live; then
+              echo "MinIO disponible tras $i intento(s)."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::MinIO no responde en 127.0.0.1:9000"
+          exit 1
+
+      - name: Inicializar el bucket
+        run: node scripts/init-bucket.mjs
+
+      # Reporter JSON ademas del normal, para poder comprobar despues que las
+      # pruebas NO se han saltado: un job en verde que no ha probado nada es
+      # peor que uno rojo.
+      - name: Pruebas de integracion con S3
+        run: |
+          npx vitest run --config vitest.integration.config.ts \
+            __tests__/integration/s3-db.test.ts \
+            --reporter=default --reporter=json --outputFile=s3-report.json
+
+      - name: Confirmar que las pruebas de S3 se han EJECUTADO
+        run: |
+          node -e "
+            const r = require('./s3-report.json');
+            const total = r.numTotalTests ?? 0;
+            const pasados = r.numPassedTests ?? 0;
+            const saltados = (r.numPendingTests ?? 0) + (r.numTodoTests ?? 0);
+            console.log('S3: ' + pasados + '/' + total + ' pruebas, ' + saltados + ' saltadas');
+            if (total === 0 || saltados > 0 || pasados !== total) {
+              console.error('::error::Las pruebas de S3 no se han ejecutado de verdad contra MinIO.');
+              process.exit(1);
+            }
+          "
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 5. Playwright: navegador real contra la aplicacion construida.
+  #
+  #    La CI incluia los ficheros de Playwright pero NUNCA los ejecutaba.
+  # ─────────────────────────────────────────────────────────────────────────
+  e2e:
+    name: E2E Playwright
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: heredia_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_e2e
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_e2e
+      NEXTAUTH_URL: http://127.0.0.1:3000
+      APP_URL: http://127.0.0.1:3000
+      PGPASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci --legacy-peer-deps
+      - run: npx prisma generate
+
+      - name: Instalar Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Suite E2E
+        run: npm run test:e2e
+
+      # Traza, capturas, video (si estuviera activado) e informe HTML.
+      - name: Artefactos de Playwright
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 6. Dependencias.
+  # ─────────────────────────────────────────────────────────────────────────
   dependencias:
     name: Auditoria de dependencias
     runs-on: ubuntu-latest

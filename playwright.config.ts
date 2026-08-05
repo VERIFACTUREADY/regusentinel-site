@@ -18,7 +18,11 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   timeout: 60_000,
   expect: { timeout: 15_000 },
-  reporter: process.env.CI ? [["github"], ["list"]] : [["list"]],
+  // En CI se genera ademas el informe HTML: es el artefacto que se sube al
+  // fallar y sin el no hay forma de investigar un fallo remoto.
+  reporter: process.env.CI
+    ? [["github"], ["list"], ["html", { open: "never", outputFolder: "playwright-report" }]]
+    : [["list"]],
 
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000",
