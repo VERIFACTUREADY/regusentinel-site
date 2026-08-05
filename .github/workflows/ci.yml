@@ -2,8 +2,15 @@ name: CI
 
 on:
   pull_request:
+  # Permite lanzarlo a mano desde la pestaña Actions.
+  workflow_dispatch:
   push:
-    branches: [main]
+    # Antes solo `main`: una rama de trabajo podia acumular decenas de commits
+    # sin que la CI se ejecutara ni una vez, y "verde en local" era lo unico
+    # que respaldaba el codigo. Las ramas de trabajo tambien se verifican.
+    branches:
+      - main
+      - "claude/**"
 
 # Sin secretos reales: todos los valores de abajo son de juguete y solo sirven
 # para que el codigo arranque. Un PR desde un fork no debe poder leer nada.
