@@ -962,3 +962,223 @@ ese valor del enum. Deben resolverse antes de revertir.
 7. El aviso operativo depende del correo saliente: si el proveedor de email
    está caído, el aviso de "purga bloqueada" también lo está. Queda constancia
    en auditoría y en los logs del servidor.
+
+---
+
+# Parche final — reserva antes de enviar, reintento operativo y despliegue
+
+Auditoría independiente sobre `1e5a23f`. Tres bloqueos, más el despliegue de
+Vercel en rojo y la protección de rama.
+
+## Commits
+
+| SHA | Título |
+|-----|--------|
+| `e5e02d2` | `fix(workflows): claim deliveries before external send` |
+| `f8d6e4c` | `feat(workflows): expose secure retry for failed deliveries` |
+| `24e6811` | `fix(deploy): resolve Vercel deployment failure` |
+| (este)    | `docs(security): record final verified deployment state` |
+
+## 1. Reserva antes de enviar
+
+`SEND_EMAIL_TEAM` llamaba al proveedor y **después** escribía `WorkflowLog` y
+`WorkflowDelivery`. Eso no es idempotencia: entre el envío y la escritura no hay
+nada que impida que otra ejecución envíe lo mismo, y si el proceso muere justo
+después de enviar, la fila nunca llega a existir y el reintento vuelve a enviar.
+
+El orden ahora es:
+
+1. `claveEjecucion(evento, regla)` — SHA-256 de organización, regla,
+   expediente, tipo de evento, estado origen, estado destino, tarea y ventana.
+   Sólo identificadores: ningún dato personal entra en la clave.
+2. `reclamarEjecucion()` — `create` de `WorkflowLog` en `PROCESSING` con esa
+   clave sobre un índice único. El `P2002` del segundo lo convierte en
+   `"ya_ejecutado"`.
+3. `reclamarEntrega()` — una fila `WorkflowDelivery` en `PROCESSING` por
+   destinatario, **antes de llamar al proveedor**. `SENT` → no se envía;
+   `PENDING`/`FAILED`/`PROCESSING` caducado → `updateMany` condicional, y sólo
+   el que ve `count === 1` puede enviar.
+4. `SENT` al terminar bien, `FAILED` al fallar, por destinatario. El fallo de
+   uno no bloquea a los demás.
+5. `PROCESSING` abandonado se vuelve reclamable a los 10 minutos
+   (`ENTREGA_WORKFLOW_COLGADA_MS`).
+
+`planificarAccion()` no llama a ningún proveedor: devuelve el plan de entregas
+o un efecto. La reserva es del motor, no de una acción, así que **todas** las
+acciones con entrega externa quedan protegidas, no sólo `SEND_EMAIL_TEAM`.
+
+Efecto colateral que hubo que corregir: al reservar antes, un
+`CHANGE_CASE_STATUS` que se negaba a escribir por un cambio de estado
+concurrente quedaba registrado como `SUCCESS`. `efecto` devuelve ahora
+`{ aplicado, reason }` y se registra `SKIPPED`.
+
+## 2. Reintento operativo
+
+`POST /api/workflow-logs/[id]/retry`. Exige `workflow.manage`; busca el log
+filtrando por la organización de la sesión (mismo 404 para "no existe" y "es de
+otra organización"); reintenta sólo `FAILED` y `PROCESSING` colgadas; reclama
+antes de enviar; recalcula `SUCCESS`/`PARTIAL`/`FAILED`; deja auditoría
+(`workflow.retry`); devuelve el resultado por destinatario; 10 peticiones por
+minuto e IP.
+
+**El cuerpo de la petición se ignora por completo.** Asunto, cuerpo y
+destinatarios se reconstruyen desde la regla y el expediente. Si no fuera así,
+esto sería un relé de correo autenticado saliendo con el dominio de la
+organización.
+
+En la interfaz, botón "Reintentar fallidas" en el registro de automatizaciones,
+visible sólo cuando la ejecución está en `PARTIAL` o `FAILED`.
+
+## 3. Pruebas
+
+`__tests__/integration/workflow-claim-db.test.ts` (16) y
+`__tests__/integration/workflow-retry-endpoint-db.test.ts` (12), con PostgreSQL
+real. **Cuentan las llamadas al proveedor**, no sólo las filas: el mock de
+`src/lib/email` acumula cada destinatario en un array y las pruebas exigen
+exactamente uno.
+
+Comprobado que 5 de las 16 pruebas de reserva fallan si se anula la reserva
+(forzando `reclamarEntrega` a devolver siempre `"reclamada"` y aleatorizando la
+clave de idempotencia).
+
+## 4. Despliegue de Vercel — causa concreta y corrección
+
+### Causa
+
+El build ejecutaba una consulta a la base de datos. `/api/health` no lee
+cabeceras, ni cookies, ni parámetros, así que Next 14 la consideraba
+estáticamente generable y la ejecutaba durante `next build`:
+
+```
+Generating static pages (0/352) ...
+prisma:error
+Invalid `prisma.$queryRaw()` invocation:
+error: Environment variable not found: DATABASE_URL.
+  -->  schema.prisma:7
+```
+
+Instrumentando el cliente de Prisma (`$queryRaw`, `$executeRaw` y un middleware
+`$use`) durante un build completo se confirma que es el **único** acceso a la
+base de datos de toda la compilación, y que la pila procede de
+`.next/server/app/api/health/route.js`.
+
+En local no hay `DATABASE_URL`: Prisma falla al instante, el `catch` devuelve
+503 y el build sale con código 0. En Vercel `DATABASE_URL` **sí** está definida
+durante el build, así que el intento es real contra la base de producción desde
+la máquina que compila. Si esa base sólo admite conexiones desde la red de
+ejecución —lista de IP permitidas, red privada, límite de conexiones del
+pooler— la consulta no falla rápido: espera, y el build agota su tiempo.
+
+### Corrección
+
+`export const dynamic = "force-dynamic"` y `export const revalidate = 0` en
+`src/app/api/health/route.ts`.
+
+Aparte de desbloquear el despliegue, corrige la comprobación de salud en sí: si
+se generaba estáticamente, respondía `{"status":"ok"}` desde una copia cacheada
+del día del despliegue, también con la base de datos caída.
+
+### Puerta de regresión
+
+El paso «Build» de la CI afirmaba en un comentario que comprobaba que el build
+no tocaba la base de datos. No lo comprobaba: `npm run build` sale con código 0
+aunque Prisma imprima el fallo. `scripts/build-sin-base-de-datos.sh` compila sin
+`DATABASE_URL` y falla si aparece ese error. Verificado: falla al quitar las dos
+líneas de `/api/health` y pasa con ellas.
+
+### Lo que NO se ha podido comprobar desde este entorno
+
+**El check de Vercel no se ha podido leer ni verificar en verde.** No es una
+suposición sobre su estado: es que este entorno no tiene acceso.
+
+- `https://vercel.com` y `https://api.vercel.com` → código `000`: bloqueadas por
+  la política de salida de la sesión.
+- `https://api.github.com/repos/.../check-runs` → `403`: *"GitHub access is not
+  enabled for this session. An org admin must connect the Claude GitHub App"*.
+- El servidor MCP de GitHub disponible no expone estado de commits ni listado de
+  check runs (`get_check_run` exige un id numérico que sólo llega por webhook).
+
+Por tanto: **el despliegue no queda declarado terminado.** La causa concreta
+descrita arriba está probada con el registro del build y corregida; que el check
+pase a verde debe comprobarlo el propietario en el panel de Vercel sobre el
+commit `24e6811` o posterior.
+
+### Si el despliegue sigue en rojo: variables de entorno
+
+Todas se configuran en **Vercel → Project → Settings → Environment Variables**.
+"Entorno" indica en cuáles debe existir.
+
+| Variable | Entorno | ¿Obligatoria? | Cómo verificarla |
+|---|---|---|---|
+| `DATABASE_URL` | Production, Preview | Sí | `psql "$DATABASE_URL" -c "select 1"` desde fuera de la red de la base. Si sólo funciona desde dentro, hay que permitir las IP de Vercel o usar el pooler. |
+| `NEXTAUTH_SECRET` | Production, Preview | Sí | ≥ 32 caracteres. Si falta, NextAuth falla en ejecución, no en el build. |
+| `NEXTAUTH_URL` | Production, Preview | Sí | Debe ser la URL pública exacta con `https://`. Un valor distinto rompe el retorno del login. |
+| `APP_URL` | Production, Preview | Sí | Igual que `NEXTAUTH_URL`. Se usa en los enlaces de los correos. |
+| `SECRETS_ENCRYPTION_KEY` | Production, Preview | Sí | 32 bytes en base64: `openssl rand -base64 32`. **Cambiarla inutiliza los secretos ya cifrados.** |
+| `CRON_SECRET` | Production | Sí | Vercel la envía como `Authorization: Bearer`. Sin ella los crons responden 401. |
+| `STRIPE_SECRET_KEY` | Production, Preview | Sí para facturación | `curl -u "$STRIPE_SECRET_KEY:" https://api.stripe.com/v1/balance` |
+| `STRIPE_WEBHOOK_SECRET` | Production | Sí para facturación | Debe ser el `whsec_…` del endpoint concreto de este proyecto. |
+| `ANTHROPIC_API_KEY` | Production | Sólo si se usa el análisis con IA | Sin ella la función se desactiva; no rompe el build. |
+| `S3_*` / `AWS_*` | Production | Sí para adjuntos | Subir y descargar un fichero de prueba. |
+| `EMAIL_*` / `RESEND_API_KEY` | Production | Sí para avisos | Sin ella los workflows registran `FAILED` y ahora sí se pueden reintentar. |
+
+Ninguna de estas variables se lee durante el build después de esta corrección:
+si el build vuelve a fallar, el registro de Vercel dirá la ruta concreta y
+`scripts/build-sin-base-de-datos.sh` la reproduce en local.
+
+Punto secundario a revisar en el panel, no comprobable desde aquí:
+`vercel.json` declara **11 crons**, uno de ellos cada 10 minutos
+(`/api/cron/stripe-recovery`). Los planes Hobby limitan el número de crons y su
+frecuencia. Si el proyecto está en Hobby, el despliegue se rechaza por eso y no
+por el código.
+
+## 5. Protección de rama
+
+**No está configurada y no se ha podido configurar desde esta sesión**: la API
+de GitHub responde `403` (la Claude GitHub App no está conectada para la
+organización) y el servidor MCP disponible no expone la API de protección de
+ramas.
+
+Mientras la protección figure desactivada, **los seis jobs de Actions no son
+obligatorios**: son informativos y una fusión puede saltárselos.
+
+Pasos exactos para el propietario, en
+`https://github.com/VERIFACTUREADY/regusentinel-site/settings/rules`:
+
+1. **New ruleset → New branch ruleset**.
+2. Nombre: `main protegida`. **Enforcement status: Active**.
+3. **Target branches → Add target → Include default branch**.
+4. Marcar **Require a pull request before merging** (1 aprobación; *Dismiss
+   stale approvals* activado).
+5. Marcar **Require status checks to pass** y, dentro, **Require branches to be
+   up to date before merging**.
+6. En **Add checks**, añadir por nombre exacto:
+   - `Tipos, unitarias y build`
+   - `Migraciones (base vacia y actualizacion)`
+   - `Integracion PostgreSQL`
+   - `Integracion S3 (MinIO real)`
+   - `E2E Playwright`
+   - `Auditoria de dependencias`
+   - `Vercel` *(aparece en el buscador una vez Vercel haya publicado al menos
+     un check en un commit del repositorio)*
+7. Marcar **Block force pushes** y **Restrict deletions**.
+8. **Create**.
+
+Comprobación de que ha quedado hecho: abrir un PR de prueba; el botón de fusión
+debe aparecer bloqueado con "Required statuses must pass before merging" hasta
+que los siete checks estén en verde.
+
+## Estado de verificación de este parche
+
+| Comprobación | Resultado |
+|---|---|
+| `npx prisma validate` | Correcto |
+| `npx tsc --noEmit` | Sin errores |
+| `npm test` | 1.046 pruebas, 62 ficheros |
+| `npm run test:integration` | 139 pruebas con PostgreSQL real (9 de S3 omitidas sin MinIO local) |
+| `bash scripts/build-sin-base-de-datos.sh` | Correcto y sin acceso a la base de datos |
+| GitHub Actions sobre `24e6811` | Pendiente de que termine la ejecución |
+| Despliegue de Vercel | **No verificable desde este entorno** (ver arriba) |
+| Protección de rama | **Desactivada**; pasos entregados al propietario |
+
+No se ha hecho merge a la rama base.
