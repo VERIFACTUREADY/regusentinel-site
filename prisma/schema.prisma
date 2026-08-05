@@ -550,6 +550,21 @@ enum NotificationChannel {
   WEBHOOK
 }
 
+/// Estado de una ENTREGA concreta (expediente, tipo, canal, destinatario,
+/// ventana). Antes no existía: se consultaba si había una entrega correcta, se
+/// enviaba, y sólo después se registraba. Dos ejecuciones simultáneas del cron
+/// leían ambas "no enviado" y ambas enviaban.
+enum NotificationDeliveryStatus {
+  /// Reservada pero aún no intentada.
+  PENDING
+  /// Reclamada por un proceso, que está llamando al proveedor externo.
+  PROCESSING
+  /// Confirmada por el proveedor.
+  SENT
+  /// Falló. Es reintentable.
+  FAILED
+}
+
 model NotificationLog {
   id        String              @id @default(cuid())
   orgId     String
@@ -572,6 +587,15 @@ model NotificationLog {
   /// reintentar de forma independiente. Nullable por las filas anteriores.
   dedupeKey String? @unique
 
+  /// Estado de la máquina de entrega. La fila se crea en PROCESSING ANTES de
+  /// llamar al proveedor externo: quien consigue crearla (o reclamarla con una
+  /// actualización condicional) es el único que envía.
+  deliveryStatus NotificationDeliveryStatus @default(SENT)
+  attempts       Int                        @default(0)
+  /// Momento en que se reclamó. Sirve para detectar entregas colgadas.
+  startedAt   DateTime?
+  completedAt DateTime?
+
   createdAt DateTime @default(now())
 
   org  Organization @relation(fields: [orgId], references: [id])
@@ -580,6 +604,7 @@ model NotificationLog {
   @@index([caseId, kind])
   @@index([orgId, createdAt])
   @@index([caseId, kind, channel, recipient])
+  @@index([deliveryStatus, startedAt])
 }
 
 // ─── CASE TASK TEMPLATES ────────────────────────────────

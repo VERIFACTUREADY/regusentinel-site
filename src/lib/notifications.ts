@@ -11,9 +11,7 @@ import { prisma } from "./prisma";
 import { parsePrefs, type NotifPrefs } from "./notif-prefs";
 import { getConsentStatus } from "./portal-consent";
 import {
-  alreadyDelivered,
-  recordDelivery,
-  recordFailure,
+  entregarUnaVez,
   isoWeekWindow,
 } from "./notification-dedupe";
 import { readSecret } from "./secret-crypto";
@@ -141,24 +139,28 @@ async function scanIsdDeadlines(result: NotificationRunResult): Promise<void> {
         channel: "EMAIL_INTERNAL" as const,
         recipient: email,
       };
-      if (await alreadyDelivered(target)) continue;
-
-      try {
-        await sendIsdDeadlineAlert({
+      // La reserva es ATOMICA y ocurre ANTES de llamar al proveedor: dos
+      // ejecuciones simultaneas del cron no pueden enviar las dos. Antes se
+      // consultaba, se enviaba y se registraba despues, asi que la restriccion
+      // unica impedia la segunda FILA pero no el segundo CORREO.
+      const nombreFallecido = c.deceased.fullName;
+      const entrega = await entregarUnaVez(target, () =>
+        sendIsdDeadlineAlert({
           email,
           caseRef: c.ref,
-          deceasedName: c.deceased.fullName,
+          deceasedName: nombreFallecido,
           daysRemaining: remaining,
           deadline,
           caseUrl,
-        });
-        await recordDelivery(target);
+        }),
+      );
+
+      if (entrega.enviado) {
         result.isdAlertsSent++;
-      } catch (err: any) {
-        // Se registra SIN dedupeKey: el proximo intento vuelve a intentarlo
-        // para este destinatario concreto, sin afectar a los demas.
-        await recordFailure({ ...target, error: String(err?.message ?? err) });
-        result.errors.push({ caseId: c.id, kind: bucket, error: String(err?.message ?? err) });
+      } else if (entrega.error) {
+        // La entrega queda FAILED y reclamable: el proximo intento vuelve a
+        // probar este destinatario, sin afectar a los demas ni a otros canales.
+        result.errors.push({ caseId: c.id, kind: bucket, error: entrega.error });
       }
     }
 
@@ -182,67 +184,73 @@ async function scanIsdDeadlines(result: NotificationRunResult): Promise<void> {
       emittedAt: new Date().toISOString(),
     };
 
+    // SLACK, TEAMS Y WEBHOOK TAMBIEN PASAN POR LA RESERVA.
+    //
+    // Antes no lo hacian: se enviaban en CADA pasada del cron y se escribia un
+    // registro sin `dedupeKey`, asi que el mismo aviso de plazo se repetia
+    // indefinidamente en el canal del cliente. La clave incluye el canal, de
+    // modo que un email ya enviado no bloquea Slack ni al reves.
     if (outboundEnabled && c.org.slackWebhookUrl) {
-      const dispatch = await sendSlackNotification(c.org.slackWebhookUrl, event);
-      await prisma.notificationLog.create({
-        data: {
-          orgId: c.orgId,
-          caseId: c.id,
-          kind: bucket,
-          channel: "SLACK",
-          recipient: "slack",
-          status: dispatch.ok ? "sent" : "failed",
-          error: dispatch.ok ? null : (dispatch.error ?? "unknown").slice(0, 500),
-        },
+      const objetivo = {
+        orgId: c.orgId,
+        caseId: c.id,
+        kind: bucket,
+        channel: "SLACK" as const,
+        recipient: "slack",
+      };
+      const entrega = await entregarUnaVez(objetivo, async () => {
+        const dispatch = await sendSlackNotification(c.org.slackWebhookUrl!, event);
+        if (!dispatch.ok) throw new Error(dispatch.error ?? `HTTP ${dispatch.status}`);
       });
-      if (dispatch.ok) {
+
+      if (entrega.enviado) {
         result.slackAlertsSent++;
-      } else {
-        result.errors.push({ caseId: c.id, kind: `${bucket}/SLACK`, error: dispatch.error ?? "fail" });
+      } else if (entrega.error) {
+        result.errors.push({ caseId: c.id, kind: `${bucket}/SLACK`, error: entrega.error });
       }
     }
 
     if (outboundEnabled && c.org.teamsWebhookUrl) {
-      const dispatch = await sendTeamsNotification(c.org.teamsWebhookUrl, event);
-      await prisma.notificationLog.create({
-        data: {
-          orgId: c.orgId,
-          caseId: c.id,
-          kind: bucket,
-          channel: "TEAMS",
-          recipient: "teams",
-          status: dispatch.ok ? "sent" : "failed",
-          error: dispatch.ok ? null : (dispatch.error ?? "unknown").slice(0, 500),
-        },
+      const objetivo = {
+        orgId: c.orgId,
+        caseId: c.id,
+        kind: bucket,
+        channel: "TEAMS" as const,
+        recipient: "teams",
+      };
+      const entrega = await entregarUnaVez(objetivo, async () => {
+        const dispatch = await sendTeamsNotification(c.org.teamsWebhookUrl!, event);
+        if (!dispatch.ok) throw new Error(dispatch.error ?? `HTTP ${dispatch.status}`);
       });
-      if (dispatch.ok) {
+
+      if (entrega.enviado) {
         result.teamsAlertsSent++;
-      } else {
-        result.errors.push({ caseId: c.id, kind: `${bucket}/TEAMS`, error: dispatch.error ?? "fail" });
+      } else if (entrega.error) {
+        result.errors.push({ caseId: c.id, kind: `${bucket}/TEAMS`, error: entrega.error });
       }
     }
 
     if (outboundEnabled && c.org.customWebhookUrl) {
-      const dispatch = await sendCustomWebhook(
-        c.org.customWebhookUrl,
-        readSecret(c.org.customWebhookSecret),
-        event,
-      );
-      await prisma.notificationLog.create({
-        data: {
-          orgId: c.orgId,
-          caseId: c.id,
-          kind: bucket,
-          channel: "WEBHOOK",
-          recipient: c.org.customWebhookUrl.slice(0, 100),
-          status: dispatch.ok ? "sent" : "failed",
-          error: dispatch.ok ? null : (dispatch.error ?? "unknown").slice(0, 500),
-        },
+      const objetivo = {
+        orgId: c.orgId,
+        caseId: c.id,
+        kind: bucket,
+        channel: "WEBHOOK" as const,
+        recipient: c.org.customWebhookUrl.slice(0, 100),
+      };
+      const entrega = await entregarUnaVez(objetivo, async () => {
+        const dispatch = await sendCustomWebhook(
+          c.org.customWebhookUrl!,
+          readSecret(c.org.customWebhookSecret),
+          event,
+        );
+        if (!dispatch.ok) throw new Error(dispatch.error ?? `HTTP ${dispatch.status}`);
       });
-      if (dispatch.ok) {
+
+      if (entrega.enviado) {
         result.webhookAlertsSent++;
-      } else {
-        result.errors.push({ caseId: c.id, kind: `${bucket}/WEBHOOK`, error: dispatch.error ?? "fail" });
+      } else if (entrega.error) {
+        result.errors.push({ caseId: c.id, kind: `${bucket}/WEBHOOK`, error: entrega.error });
       }
     }
   }
@@ -309,12 +317,11 @@ async function scanFamilyPendingDocs(result: NotificationRunResult): Promise<voi
       recipient: email,
       window: isoWeekWindow(),
     };
-    if (await alreadyDelivered(target)) continue;
-
-    // Cooldown adicional: la ventana semanal evita duplicados dentro de la
-    // misma semana, y esto respeta ademas el periodo minimo configurado.
+    // Cooldown configurado: la ventana semanal evita duplicados dentro de la
+    // misma semana, y esto respeta ademas el periodo minimo. Es una decision
+    // de producto previa a la reserva, no una comprobacion de duplicados.
     const lastReminder = await prisma.notificationLog.findFirst({
-      where: { caseId: c.id, kind: "FAMILY_PENDING_DOCS", status: "sent" },
+      where: { caseId: c.id, kind: "FAMILY_PENDING_DOCS", deliveryStatus: "SENT" },
       orderBy: { createdAt: "desc" },
     });
     if (lastReminder && lastReminder.createdAt > cooldown) continue;
@@ -322,17 +329,19 @@ async function scanFamilyPendingDocs(result: NotificationRunResult): Promise<voi
     const portalUrl = `${APP_URL}/portal/${c.portalToken}`;
     const contactName = c.contact?.fullName || "";
 
-    try {
-      await sendDocumentReminder({ email, name: contactName, missingDocs, portalUrl });
-      await recordDelivery(target);
+    // Reserva atomica antes de escribir a la familia: un recordatorio duplicado
+    // a un particular en duelo no es un fallo cosmetico.
+    const entrega = await entregarUnaVez(target, () =>
+      sendDocumentReminder({ email, name: contactName, missingDocs, portalUrl }),
+    );
+
+    if (entrega.enviado) {
       result.familyRemindersSent++;
-    } catch (err: any) {
-      // Sin dedupeKey: el proximo intento vuelve a probar este destinatario.
-      await recordFailure({ ...target, error: String(err?.message ?? err) });
+    } else if (entrega.error) {
       result.errors.push({
         caseId: c.id,
         kind: "FAMILY_PENDING_DOCS",
-        error: String(err?.message ?? err),
+        error: entrega.error,
       });
     }
   }
