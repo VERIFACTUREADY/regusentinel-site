@@ -5,14 +5,17 @@ import Link from "next/link";
 
 interface LogEntry {
   id: string;
-  status: "SUCCESS" | "PARTIAL" | "FAILED" | "SKIPPED";
+  status: "PROCESSING" | "SUCCESS" | "PARTIAL" | "FAILED" | "SKIPPED";
   error: string | null;
   createdAt: string;
   rule: { id: string; name: string };
   case: { id: string; ref: string } | null;
+  /** Entregas que siguen sin llegar a su destinatario. */
+  pendingDeliveries?: number;
 }
 
 const STATUS_STYLES: Record<string, string> = {
+  PROCESSING: "bg-blue-100 text-blue-700",
   SUCCESS: "bg-green-100 text-green-700",
   // Parcial: ni exito ni fallo. Antes una ejecucion en la que fallaban nueve
   // de diez destinatarios se pintaba en verde.
@@ -22,6 +25,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
+  PROCESSING: "En curso",
   SUCCESS: "Exitoso",
   PARTIAL: "Parcial",
   FAILED: "Error",
@@ -43,6 +47,8 @@ export function WorkflowLogsClient({
   const [total, setTotal] = useState(initialTotal);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [reintentando, setReintentando] = useState<string | null>(null);
+  const [avisoReintento, setAvisoReintento] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState("");
   const [filterRule, setFilterRule] = useState("");
 
@@ -73,6 +79,39 @@ export function WorkflowLogsClient({
       fetchLogs(page, filterStatus, filterRule);
     }
   }, [page, filterStatus, filterRule, fetchLogs]);
+
+  /**
+   * Reintenta las entregas pendientes de una ejecucion.
+   *
+   * No se envia ningun contenido: el servidor reconstruye asunto, cuerpo y
+   * destinatarios desde la regla y el expediente. Si el cliente los mandara,
+   * el endpoint seria un rele de correo autenticado.
+   */
+  async function reintentar(logId: string) {
+    setReintentando(logId);
+    setAvisoReintento(null);
+    try {
+      const res = await fetch(`/api/workflow-logs/${logId}/retry`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setAvisoReintento(data.error ?? "No se pudo reintentar la ejecucion.");
+      } else if (data.retried === 0) {
+        setAvisoReintento("No quedaban entregas pendientes de reintentar.");
+      } else {
+        setAvisoReintento(
+          `${data.recovered} de ${data.retried} entrega(s) recuperada(s). Estado: ${
+            STATUS_LABELS[data.status] ?? data.status
+          }.`,
+        );
+      }
+      await fetchLogs(page, filterStatus, filterRule);
+    } catch {
+      setAvisoReintento("Error de conexion al reintentar.");
+    } finally {
+      setReintentando(null);
+    }
+  }
 
   function handleFilter(status: string, ruleId: string) {
     setFilterStatus(status);
@@ -107,6 +146,15 @@ export function WorkflowLogsClient({
         </Link>
       </div>
 
+      {avisoReintento && (
+        <div
+          role="status"
+          className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-800"
+        >
+          {avisoReintento}
+        </div>
+      )}
+
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-lg border p-4">
@@ -140,7 +188,7 @@ export function WorkflowLogsClient({
       {/* Filters */}
       <div className="bg-white rounded-lg border p-4 mb-4 flex flex-wrap gap-3 items-center">
         <div className="flex gap-2 flex-wrap">
-          {["", "SUCCESS", "PARTIAL", "FAILED", "SKIPPED"].map((s) => (
+          {["", "SUCCESS", "PARTIAL", "FAILED", "PROCESSING", "SKIPPED"].map((s) => (
             <button
               key={s}
               onClick={() => handleFilter(s, filterRule)}
@@ -195,6 +243,7 @@ export function WorkflowLogsClient({
                     <th className="px-4 py-3 text-left">Expediente</th>
                     <th className="px-4 py-3 text-left">Fecha</th>
                     <th className="px-4 py-3 text-left">Error</th>
+                    <th className="px-4 py-3 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -241,6 +290,23 @@ export function WorkflowLogsClient({
                           </span>
                         ) : (
                           <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        {/*
+                          Sólo aparece cuando hay algo que reintentar. Un botón
+                          que no puede hacer nada enseña a ignorar el botón.
+                        */}
+                        {(log.status === "PARTIAL" || log.status === "FAILED") && (
+                          <button
+                            type="button"
+                            onClick={() => reintentar(log.id)}
+                            disabled={reintentando === log.id}
+                            className="text-xs px-2.5 py-1 rounded-md border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                            title="Vuelve a intentar el envío sólo con los destinatarios que no lo recibieron"
+                          >
+                            {reintentando === log.id ? "Reintentando…" : "Reintentar fallidas"}
+                          </button>
                         )}
                       </td>
                     </tr>
