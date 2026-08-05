@@ -215,21 +215,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      # Se usa la imagen de Bitnami porque arranca el servidor por si sola: los
-      # servicios de GitHub Actions no permiten sustituir el comando del
-      # contenedor, y `minio/minio` necesita recibir `server /data`.
-      #
-      # Sin `--health-cmd`: la imagen no trae curl, asi que la comprobacion se
-      # hace desde el runner en el paso "Comprobar que MinIO responde", que
-      # ademas falla con un mensaje claro si el servicio no llega a levantar.
-      minio:
-        image: bitnami/minio:latest
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin123
-          MINIO_DEFAULT_BUCKETS: heredia-ci
-        ports: ["9000:9000"]
-
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/heredia_ci
       S3_ENDPOINT: http://127.0.0.1:9000
@@ -249,6 +234,21 @@ jobs:
       - run: npx prisma generate
       - run: npx prisma migrate deploy
 
+      # MinIO se arranca como contenedor normal, NO como `services:`.
+      #
+      # Motivo: `minio/minio` necesita recibir `server /data` como comando, y
+      # los servicios de GitHub Actions no permiten sustituir el comando del
+      # contenedor. La alternativa habitual —la imagen de Bitnami, que arranca
+      # sola— dejo de publicar la etiqueta `latest` y el pull falla con
+      # `manifest unknown`. Con `docker run` controlamos ambas cosas.
+      - name: Arrancar MinIO
+        run: |
+          docker run -d --name minio-ci \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin123 \
+            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+
       # Verificacion explicita: si MinIO no responde, el job falla AQUI con un
       # mensaje claro en vez de dejar que las pruebas se salten en silencio.
       - name: Comprobar que MinIO responde
@@ -260,7 +260,8 @@ jobs:
             fi
             sleep 3
           done
-          echo "::error::MinIO no responde en 127.0.0.1:9000"
+          echo "::error::MinIO no responde en 127.0.0.1:9000. Log del contenedor:"
+          docker logs minio-ci || true
           exit 1
 
       - name: Inicializar el bucket
@@ -362,11 +363,16 @@ jobs:
 
       - run: npm ci --legacy-peer-deps
 
-      # Solo bloquea por vulnerabilidades CRITICAS. Las de nivel bajo y medio
-      # se informan pero no paran el PR: bloquear por todo lleva a ignorar el
-      # aviso entero, que es peor.
-      - name: Vulnerabilidades criticas
-        run: npm audit --audit-level=critical
+      # `npm audit --audit-level=critical` a secas mezclaba dos riesgos
+      # distintos: una critica en produccion viaja en el artefacto desplegado;
+      # una en una herramienta de desarrollo solo afecta a quien la ejecuta, y a
+      # veces solo en un modo que no usamos. Tratarlas igual acaba en que se
+      # desactiva la comprobacion entera.
+      #
+      # La puerta exige CERO criticas en produccion y obliga a justificar por
+      # escrito cada critica de desarrollo (ver scripts/audit-gate.mjs).
+      - name: Puerta de vulnerabilidades
+        run: node scripts/audit-gate.mjs
 
       - name: Informe completo (no bloqueante)
         run: npm audit || true
