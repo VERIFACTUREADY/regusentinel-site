@@ -145,7 +145,8 @@ describe("cron /retention-cleanup", () => {
       id: "case-1",
       ref: "EXP-2026-0001",
       orgId: "org1",
-      purgedAt: null,
+      purgeAttempts: 0,
+      purgeScheduledAt: new Date(),
       documents: [{ id: "d1", fileKey: "k/1" }],
     });
     deleteFileMock.mockResolvedValue(undefined);
@@ -154,6 +155,10 @@ describe("cron /retention-cleanup", () => {
         promptLog: { deleteMany: vi.fn() },
         auditLog: { updateMany: vi.fn() },
         notificationLog: { deleteMany: vi.fn() },
+        // La constancia de la purga se escribe en `PurgeEvidence`, sin PII, en
+        // la misma transaccion que el borrado: la fila `Case` desaparece, asi
+        // que no puede registrar su propia purga.
+        purgeEvidence: { create: vi.fn() },
         case: { delete: vi.fn() },
       }),
     );
@@ -176,7 +181,8 @@ describe("cron /retention-cleanup", () => {
       id: "case-1",
       ref: "EXP-2026-0002",
       orgId: "org1",
-      purgedAt: null,
+      purgeAttempts: 0,
+      purgeScheduledAt: new Date(),
       documents: [{ id: "d1", fileKey: "k/1" }],
     });
     deleteFileMock.mockRejectedValue(new Error("S3 caido"));
@@ -190,7 +196,13 @@ describe("cron /retention-cleanup", () => {
     // dato esta eliminado mientras sigue en S3 seria falso.
     expect(caseUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ purgeAttempts: { increment: 1 } }),
+        data: expect.objectContaining({
+          purgeAttempts: 1,
+          // Estado explicito y proximo intento programado: el expediente NO se
+          // abandona, solo cambia de ritmo.
+          purgeState: "RETRYABLE_FAILURE",
+          purgeNextAttemptAt: expect.any(Date),
+        }),
       }),
     );
     expect(txMock).not.toHaveBeenCalled();

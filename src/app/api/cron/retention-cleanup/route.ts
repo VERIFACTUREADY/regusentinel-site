@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { runRetention, purgeOldPromptLogs } from "@/lib/retention";
+import { runRetention, purgeOldPromptLogs, reintentarPurga } from "@/lib/retention";
 import { PROMPT_LOG_RETENTION_DAYS } from "@/lib/ai-privacy";
 import { sendEmail } from "@/lib/email";
 import { validateCronSecret } from "@/lib/cron-auth";
@@ -61,9 +61,46 @@ export async function GET(req: NextRequest) {
     scheduledForPurge: retention.scheduled,
     purged: retention.purged,
     purgeFailed: retention.failed,
+    needsIntervention: retention.needsIntervention,
+    alerts: retention.alerts,
     promptLogsPurged,
     // Solo referencias de expediente; sin nombres ni emails.
     details: retention.results.map((r) => ({ ref: r.ref, ok: r.ok, error: r.error })),
     timestamp: now.toISOString(),
   });
+}
+
+/**
+ * Reintento manual de la purga de un expediente concreto, tras resolver la
+ * causa del fallo (permisos de S3, bucket inaccesible…).
+ *
+ * Existe porque la corrección de la fase 10 exige que un expediente atascado
+ * NUNCA quede abandonado: además del reintento automático con backoff largo,
+ * operaciones tiene que poder forzarlo en el momento.
+ *
+ *   POST /api/cron/retention-cleanup?force=<caseId>
+ */
+export async function POST(req: NextRequest) {
+  if (!validateCronSecret(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const caseId = new URL(req.url).searchParams.get("force");
+  if (!caseId) {
+    return NextResponse.json({ error: "Falta el parametro `force=<caseId>`" }, { status: 400 });
+  }
+
+  const resultado = await reintentarPurga(caseId, prisma);
+
+  // Sólo la referencia interna y el resultado: nada de datos personales.
+  return NextResponse.json(
+    {
+      ref: resultado.ref,
+      ok: resultado.ok,
+      s3Deleted: resultado.s3Deleted,
+      s3Failed: resultado.s3Failed,
+      error: resultado.error,
+    },
+    { status: resultado.ok ? 200 : 422 },
+  );
 }

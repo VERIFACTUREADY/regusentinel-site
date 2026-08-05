@@ -2,6 +2,7 @@ import { prisma } from "./prisma";
 import { getCaseDeadlines, isdDeadlineFor, canStillRequestIsdExtension } from "./deadline-engine";
 
 import { contextHash, minimizeContext, PLACEHOLDERS, aiAllowedForCase } from "./ai-privacy";
+import { llamarModelo } from "./ai-gateway";
 export interface CaseAnalysisResult {
   healthScore: number; // 0-100
   status: "excellent" | "good" | "warning" | "critical";
@@ -198,17 +199,18 @@ export async function analyzeCase({ caseId, userId }: AnalysisInput): Promise<Ca
     return result;
   }
 
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const msg = await client.messages.create({
+  // Toda salida al modelo pasa por la puerta unica, que vuelve a minimizar
+  // usando los nombres leidos de la base de datos —incluidos los de los
+  // empleados asignados, que este modulo no conocia—.
+  const respuesta = await llamarModelo({
     model: MODEL,
     max_tokens: 2048,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: context }],
+    caseId,
   });
 
-  const block = msg.content[0];
-  const raw = block.type === "text" ? block.text : "";
+  const raw = respuesta.texto;
 
   // Robust JSON extraction (handle ```json fences)
   let jsonStr = raw.trim();
@@ -245,7 +247,7 @@ export async function analyzeCase({ caseId, userId }: AnalysisInput): Promise<Ca
       contextHash: contextHash(context),
       response: JSON.stringify(result),
       model: MODEL,
-      tokens: msg.usage ? msg.usage.input_tokens + msg.usage.output_tokens : null,
+      tokens: null,
     },
   });
 

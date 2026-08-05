@@ -3,6 +3,7 @@ import { getChecklistForCategories } from "./checklist-rules";
 import type { TaskCategory } from "@prisma/client";
 
 import { contextHash } from "./ai-privacy";
+import { llamarModelo } from "./ai-gateway";
 interface CaseData {
   id: string;
   categories: TaskCategory[];
@@ -15,17 +16,20 @@ interface CaseData {
 
 const HAS_AI = !!process.env.ANTHROPIC_API_KEY;
 
-async function callAI(prompt: string): Promise<string> {
+/**
+ * El `caseId` es obligatorio: la puerta lee de la base de datos los nombres a
+ * sustituir. Antes este modulo llamaba al SDK directamente y enviaba el prompt
+ * en crudo, con el nombre del fallecido, el del contacto y su telefono.
+ */
+async function callAI(prompt: string, caseId: string): Promise<string> {
   if (!HAS_AI) throw new Error("No AI key");
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const msg = await client.messages.create({
+  const respuesta = await llamarModelo({
     model: "claude-sonnet-4-20250514",
     max_tokens: 2048,
     messages: [{ role: "user", content: prompt }],
+    caseId,
   });
-  const block = msg.content[0];
-  return block.type === "text" ? block.text : "";
+  return respuesta.texto;
 }
 
 export async function generateChecklist(
@@ -46,7 +50,7 @@ Genera un checklist JSON de tareas necesarias. Formato:
 [{"category":"BANCOS","title":"...","description":"...","sortOrder":1}]
 Solo responde con el JSON array, sin explicación.`;
 
-      const response = await callAI(prompt);
+      const response = await callAI(prompt, caseData.id);
       await prisma.promptLog.create({
         data: { caseId: caseData.id, userId, action: "generate_checklist", contextHash: contextHash(prompt), response, model: "claude-sonnet-4-20250514" },
       });
@@ -106,7 +110,7 @@ ${rendered}
 
 Responde SOLO con el texto mejorado, sin comentarios adicionales.`;
 
-      const response = await callAI(prompt);
+      const response = await callAI(prompt, caseData.id);
       await prisma.promptLog.create({
         data: { caseId: caseData.id, userId, action: "generate_draft", contextHash: contextHash(prompt), response, model: "claude-sonnet-4-20250514" },
       });

@@ -20,6 +20,27 @@ import type { PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "./prisma";
 import { deleteFile } from "./s3";
 import { logAudit } from "./audit";
+import { sendEmail } from "./email";
+
+/**
+ * Reintentos automáticos rápidos antes de exigir intervención humana.
+ *
+ * Superarlo NO detiene la purga: cambia el estado a NEEDS_INTERVENTION, genera
+ * un aviso operativo y pasa a un backoff largo. Antes el expediente
+ * simplemente dejaba de seleccionarse (`purgeAttempts: { lt: 5 }`) y sus datos
+ * personales quedaban indefinidamente en PostgreSQL y en S3 sin que nadie se
+ * enterase — justo lo contrario de lo que la política de retención promete.
+ */
+export const INTENTOS_AUTOMATICOS = 5;
+
+/** Backoff mientras quedan reintentos rápidos: 15 min, 30, 60, 120, 240. */
+function esperaReintento(intentos: number): number {
+  const minutos = 15 * Math.pow(2, Math.max(0, intentos - 1));
+  return Math.min(minutos, 240) * 60 * 1000;
+}
+
+/** Backoff una vez que el caso requiere intervención: reintento diario. */
+const ESPERA_INTERVENCION_MS = 24 * 60 * 60 * 1000;
 
 export interface PurgeResult {
   caseId: string;
@@ -28,6 +49,8 @@ export interface PurgeResult {
   s3Deleted: number;
   s3Failed: number;
   error?: string;
+  /** Agotados los reintentos automáticos rápidos. */
+  requiereIntervencion?: boolean;
 }
 
 /**
@@ -48,16 +71,17 @@ export async function purgeCase(
       id: true,
       ref: true,
       orgId: true,
-      purgedAt: true,
+      purgeAttempts: true,
+      purgeScheduledAt: true,
       documents: { select: { id: true, fileKey: true } },
     },
   });
 
+  // Idempotencia: si la fila ya no existe, la purga se completó. `purgedAt` no
+  // sirve para esto —la purga borra la fila entera, así que nunca llega a
+  // leerse con valor—; la constancia está en `PurgeEvidence`.
   if (!caso) {
     return { caseId, ref: "", ok: true, s3Deleted: 0, s3Failed: 0 };
-  }
-  if (caso.purgedAt) {
-    return { caseId, ref: caso.ref, ok: true, s3Deleted: 0, s3Failed: 0 };
   }
 
   let s3Deleted = 0;
@@ -77,13 +101,23 @@ export async function purgeCase(
   // afirmar que el dato está eliminado cuando su contenido sigue almacenado.
   if (fallidos.length > 0) {
     const mensaje = `No se pudieron borrar ${fallidos.length} objeto(s) de S3`;
+    const intentos = caso.purgeAttempts + 1;
+    const requiereIntervencion = intentos >= INTENTOS_AUTOMATICOS;
+
     await db.case.update({
       where: { id: caseId },
       data: {
         purgeError: mensaje,
-        purgeAttempts: { increment: 1 },
+        purgeAttempts: intentos,
+        // El expediente NO se abandona al superar el umbral: cambia de estado
+        // y de ritmo, pero se sigue reintentando.
+        purgeState: requiereIntervencion ? "NEEDS_INTERVENTION" : "RETRYABLE_FAILURE",
+        purgeNextAttemptAt: new Date(
+          Date.now() + (requiereIntervencion ? ESPERA_INTERVENCION_MS : esperaReintento(intentos)),
+        ),
       },
     });
+
     return {
       caseId,
       ref: caso.ref,
@@ -91,6 +125,7 @@ export async function purgeCase(
       s3Deleted,
       s3Failed: fallidos.length,
       error: mensaje,
+      requiereIntervencion,
     };
   }
 
@@ -116,6 +151,20 @@ export async function purgeCase(
     // Las notificaciones guardan el email del destinatario.
     await tx.notificationLog.deleteMany({ where: { caseId } });
 
+    // EVIDENCIA SIN PII, en la misma transacción que el borrado: o quedan las
+    // dos cosas o no queda ninguna. Sin esto, completar la purga no dejaba
+    // ninguna constancia observable, porque la fila que la registraba era
+    // precisamente la que se borraba.
+    await tx.purgeEvidence.create({
+      data: {
+        orgId: caso.orgId,
+        caseRef: caso.ref,
+        scheduledAt: caso.purgeScheduledAt,
+        documentsDeleted: s3Deleted,
+        attempts: caso.purgeAttempts + 1,
+      },
+    });
+
     await tx.case.delete({ where: { id: caseId } });
   });
 
@@ -140,7 +189,14 @@ export async function purgeCase(
 export async function runRetention(
   db: PrismaClient = defaultPrisma,
   now: Date = new Date(),
-): Promise<{ scheduled: number; purged: number; failed: number; results: PurgeResult[] }> {
+): Promise<{
+  scheduled: number;
+  purged: number;
+  failed: number;
+  needsIntervention: number;
+  alerts: number;
+  results: PurgeResult[];
+}> {
   const orgs = await db.organization.findMany({
     select: { id: true, retentionDays: true },
   });
@@ -163,20 +219,30 @@ export async function runRetention(
         // Margen de gracia: la purga real ocurre 30 días después del borrado
         // lógico, para que un cierre por error sea recuperable.
         purgeScheduledAt: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+        purgeState: "PENDING",
       },
     });
     scheduled += marcados.count;
   }
 
-  // Fase 2: purga de lo que ya venció.
+  // FASE 2: PURGA DE LO QUE YA VENCIÓ.
+  //
+  // Antes el filtro incluía `purgeAttempts: { lt: 5 }`. Al quinto fallo el
+  // expediente dejaba de seleccionarse PARA SIEMPRE: sus documentos seguían en
+  // S3 y sus datos personales en PostgreSQL, sin aviso, sin reintento y sin
+  // nada que lo distinguiera de un expediente sano. Un fallo transitorio de S3
+  // durante cinco pasadas bastaba para incumplir el derecho de supresión de
+  // forma permanente y silenciosa.
+  //
+  // Ahora NO hay tope de abandono: sólo un cambio de ritmo. Lo que decide si
+  // toca intentarlo es `purgeNextAttemptAt`, no un contador.
   const pendientes = await db.case.findMany({
     where: {
-      purgedAt: null,
       purgeScheduledAt: { not: null, lte: now },
-      // Tope de reintentos: un expediente que falla siempre no debe bloquear
-      // el cron indefinidamente; queda visible con su purgeError.
-      purgeAttempts: { lt: 5 },
+      purgeState: { in: ["PENDING", "RETRYABLE_FAILURE", "NEEDS_INTERVENTION"] },
+      OR: [{ purgeNextAttemptAt: null }, { purgeNextAttemptAt: { lte: now } }],
     },
+    orderBy: { purgeScheduledAt: "asc" },
     select: { id: true },
     take: 200,
   });
@@ -186,12 +252,106 @@ export async function runRetention(
     results.push(await purgeCase(id, db));
   }
 
+  // Aviso operativo: una sola vez por expediente mientras siga atascado, para
+  // que el correo sea señal y no ruido.
+  const alertas = await avisarPurgasAtascadas(db, now);
+
   return {
     scheduled,
     purged: results.filter((r) => r.ok).length,
     failed: results.filter((r) => !r.ok).length,
+    needsIntervention: results.filter((r) => r.requiereIntervencion).length,
+    alerts: alertas,
     results,
   };
+}
+
+/**
+ * Envía un aviso de alta prioridad por los expedientes cuya purga ha agotado
+ * los reintentos automáticos, y marca que ya se avisó.
+ */
+async function avisarPurgasAtascadas(db: PrismaClient, now: Date): Promise<number> {
+  const atascados = await db.case.findMany({
+    where: { purgeState: "NEEDS_INTERVENTION", purgeAlertedAt: null },
+    select: { id: true, ref: true, orgId: true, purgeError: true, purgeAttempts: true },
+    take: 100,
+  });
+
+  if (atascados.length === 0) return 0;
+
+  for (const c of atascados) {
+    await logAudit({
+      orgId: c.orgId,
+      action: "retention.purge_needs_intervention",
+      // Sólo la referencia interna: el registro que documenta un problema de
+      // privacidad no puede ser él mismo una fuga.
+      details: `La purga del expediente ${c.ref} ha fallado ${c.purgeAttempts} veces y requiere intervención`,
+    }).catch(console.error);
+  }
+
+  const destino = process.env.OPS_ALERT_EMAIL || process.env.LEADS_NOTIFY_EMAIL;
+  if (destino) {
+    const filas = atascados
+      .map(
+        (c) =>
+          `<tr><td style="padding:4px 8px;">${c.ref}</td>` +
+          `<td style="padding:4px 8px;text-align:right;">${c.purgeAttempts}</td>` +
+          `<td style="padding:4px 8px;">${(c.purgeError ?? "").slice(0, 200)}</td></tr>`,
+      )
+      .join("");
+
+    await sendEmail({
+      to: destino,
+      subject: `[URGENTE] ${atascados.length} expediente(s) con la purga bloqueada`,
+      html: `
+        <div style="font-family:sans-serif;max-width:760px;">
+          <h2 style="color:#b91c1c;">Purga de retención bloqueada</h2>
+          <p>
+            Estos expedientes han agotado los ${INTENTOS_AUTOMATICOS} reintentos
+            automáticos rápidos. <strong>Sus datos personales siguen almacenados.</strong>
+            El sistema seguirá reintentando una vez al día, pero la causa
+            (normalmente el almacenamiento de objetos) necesita revisión.
+          </p>
+          <p>Reintento manual inmediato: <code>POST /api/cron/retention-cleanup?force=&lt;caseId&gt;</code></p>
+          <table style="border-collapse:collapse;font-size:13px;">
+            <tr style="background:#f1f5f9;text-align:left;">
+              <th style="padding:4px 8px;">Expediente</th>
+              <th style="padding:4px 8px;">Intentos</th>
+              <th style="padding:4px 8px;">Último error</th>
+            </tr>
+            ${filas}
+          </table>
+        </div>
+      `,
+    }).catch(console.error);
+  } else {
+    console.error(
+      `[retención] ${atascados.length} expediente(s) con la purga bloqueada y sin OPS_ALERT_EMAIL configurado:`,
+      atascados.map((c) => c.ref).join(", "),
+    );
+  }
+
+  await db.case.updateMany({
+    where: { id: { in: atascados.map((c) => c.id) } },
+    data: { purgeAlertedAt: now },
+  });
+
+  return atascados.length;
+}
+
+/**
+ * Reintento manual de un expediente concreto, tras resolver la causa. Devuelve
+ * el estado a reintentable inmediato y lo purga en el acto.
+ */
+export async function reintentarPurga(
+  caseId: string,
+  db: PrismaClient = defaultPrisma,
+): Promise<PurgeResult> {
+  await db.case.updateMany({
+    where: { id: caseId },
+    data: { purgeState: "RETRYABLE_FAILURE", purgeNextAttemptAt: null, purgeAlertedAt: null },
+  });
+  return purgeCase(caseId, db);
 }
 
 /**

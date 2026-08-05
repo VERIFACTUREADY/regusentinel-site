@@ -28,7 +28,7 @@ export async function resetDatabase() {
       "PortalMessage", "CaseContact", "Deceased", "NotificationLog",
       "WorkflowLog", "WorkflowRule", "CaseTemplateTask", "CaseTemplate",
       "TemplateVersion", "Template", "Case", "UsageRecord", "Subscription",
-      "Membership", "DemoRequest", "Organization", "User", "StripeEvent"
+      "Membership", "DemoRequest", "PurgeEvidence", "Organization", "User", "StripeEvent"
     RESTART IDENTITY CASCADE
   `);
 }

@@ -244,3 +244,178 @@ describe("Retencion de PromptLog", () => {
     expect(nombres).toContain("contextHash");
   });
 });
+
+/**
+ * BLOQUEO 7 — ABANDONO SILENCIOSO.
+ *
+ * Antes, `runRetention` seleccionaba con `purgeAttempts: { lt: 5 }`. Al quinto
+ * fallo el expediente dejaba de seleccionarse PARA SIEMPRE: sus documentos
+ * seguian en S3 y sus datos personales en PostgreSQL, sin aviso, sin reintento
+ * y sin nada que lo distinguiera de un expediente sano. Un fallo transitorio de
+ * S3 durante cinco pasadas bastaba para incumplir el derecho de supresion de
+ * forma permanente.
+ */
+describe("Sin abandono silencioso tras los reintentos automaticos", () => {
+  /** Deja el expediente listo para purgar y falla S3 `veces` veces. */
+  async function fallarNVeces(caseId: string, veces: number) {
+    fallarS3 = true;
+    for (let i = 0; i < veces; i++) {
+      await purgeCase(caseId);
+      // Se anula el backoff para simular el paso del tiempo entre pasadas.
+      await prisma.case.update({
+        where: { id: caseId },
+        data: { purgeNextAttemptAt: null },
+      });
+    }
+  }
+
+  it("tras cinco fallos el expediente pasa a NEEDS_INTERVENTION, no desaparece del cron", async () => {
+    const { org } = await createOrg();
+    const caso = await casoCompleto(org.id, "EXP-2026-9001");
+    await prisma.case.update({
+      where: { id: caso.id },
+      data: { purgeScheduledAt: new Date(Date.now() - 1000), deletedAt: new Date() },
+    });
+
+    await fallarNVeces(caso.id, 5);
+
+    const tras = await prisma.case.findUnique({ where: { id: caso.id } });
+    expect(tras!.purgeState).toBe("NEEDS_INTERVENTION");
+    expect(tras!.purgeAttempts).toBe(5);
+
+    // SIGUE seleccionandose: el backoff es largo, pero no infinito.
+    await prisma.case.update({ where: { id: caso.id }, data: { purgeNextAttemptAt: null } });
+    fallarS3 = false;
+    const resumen = await runRetention(prisma);
+
+    expect(resumen.purged).toBe(1);
+    expect(await prisma.case.findUnique({ where: { id: caso.id } })).toBeNull();
+  });
+
+  it("genera aviso operativo una sola vez", async () => {
+    const { org } = await createOrg();
+    const caso = await casoCompleto(org.id, "EXP-2026-9002");
+    await prisma.case.update({
+      where: { id: caso.id },
+      data: { purgeScheduledAt: new Date(Date.now() - 1000), deletedAt: new Date() },
+    });
+
+    await fallarNVeces(caso.id, 5);
+
+    const primera = await runRetention(prisma);
+    expect(primera.alerts).toBe(1);
+
+    const conAviso = await prisma.case.findUnique({ where: { id: caso.id } });
+    expect(conAviso!.purgeAlertedAt).not.toBeNull();
+
+    // Queda constancia en auditoria, sin datos personales.
+    const auditoria = await prisma.auditLog.findFirst({
+      where: { action: "retention.purge_needs_intervention" },
+    });
+    expect(auditoria).not.toBeNull();
+    expect(auditoria!.details).toContain("EXP-2026-9002");
+    expect(auditoria!.details).not.toContain("Fallecido");
+
+    const segunda = await runRetention(prisma);
+    expect(segunda.alerts).toBe(0);
+  });
+
+  it("el backoff impide reintentar en la misma pasada, pero no bloquea para siempre", async () => {
+    const { org } = await createOrg();
+    const caso = await casoCompleto(org.id, "EXP-2026-9003");
+    await prisma.case.update({
+      where: { id: caso.id },
+      data: { purgeScheduledAt: new Date(Date.now() - 1000), deletedAt: new Date() },
+    });
+
+    fallarS3 = true;
+    await runRetention(prisma);
+
+    const tras = await prisma.case.findUnique({ where: { id: caso.id } });
+    expect(tras!.purgeState).toBe("RETRYABLE_FAILURE");
+    expect(tras!.purgeNextAttemptAt!.getTime()).toBeGreaterThan(Date.now());
+
+    // Segunda pasada inmediata: no lo toca todavia.
+    fallarS3 = false;
+    const inmediata = await runRetention(prisma);
+    expect(inmediata.purged).toBe(0);
+    expect(await prisma.case.findUnique({ where: { id: caso.id } })).not.toBeNull();
+
+    // Cuando vence el backoff, si.
+    await prisma.case.update({ where: { id: caso.id }, data: { purgeNextAttemptAt: new Date(0) } });
+    const despues = await runRetention(prisma);
+    expect(despues.purged).toBe(1);
+  });
+
+  it("el reintento manual fuerza la purga en el acto", async () => {
+    const { org } = await createOrg();
+    const caso = await casoCompleto(org.id, "EXP-2026-9004");
+    await prisma.case.update({
+      where: { id: caso.id },
+      data: { purgeScheduledAt: new Date(Date.now() - 1000), deletedAt: new Date() },
+    });
+
+    await fallarNVeces(caso.id, 5);
+    fallarS3 = false;
+
+    const { reintentarPurga } = await import("../../src/lib/retention");
+    const r = await reintentarPurga(caso.id, prisma);
+
+    expect(r.ok).toBe(true);
+    expect(await prisma.case.findUnique({ where: { id: caso.id } })).toBeNull();
+  });
+});
+
+describe("Evidencia de purga sin datos personales", () => {
+  it("al completarse queda una fila de evidencia con la referencia y nada mas", async () => {
+    const { org } = await createOrg();
+    const caso = await casoCompleto(org.id, "EXP-2026-9100");
+    const programada = new Date(Date.now() - 1000);
+    await prisma.case.update({
+      where: { id: caso.id },
+      data: { purgeScheduledAt: programada, deletedAt: new Date() },
+    });
+
+    await runRetention(prisma);
+
+    const evidencia = await prisma.purgeEvidence.findFirst({ where: { orgId: org.id } });
+    expect(evidencia).not.toBeNull();
+    expect(evidencia!.caseRef).toBe("EXP-2026-9100");
+    expect(evidencia!.documentsDeleted).toBe(1);
+    expect(evidencia!.attempts).toBe(1);
+
+    // NADA de PII en la evidencia final.
+    const serializada = JSON.stringify(evidencia);
+    for (const pii of ["Fallecido", "Contacto", "familia@", "Ana Perez", "1.2.3.4", "dni.pdf"]) {
+      expect(serializada).not.toContain(pii);
+    }
+  });
+
+  it("una purga fallida NO deja evidencia: no se afirma lo que no ha ocurrido", async () => {
+    const { org } = await createOrg();
+    const caso = await casoCompleto(org.id, "EXP-2026-9101");
+    await prisma.case.update({
+      where: { id: caso.id },
+      data: { purgeScheduledAt: new Date(Date.now() - 1000), deletedAt: new Date() },
+    });
+
+    fallarS3 = true;
+    await runRetention(prisma);
+
+    expect(await prisma.purgeEvidence.count({ where: { orgId: org.id } })).toBe(0);
+  });
+
+  it("la evidencia no se duplica al purgar dos veces", async () => {
+    const { org } = await createOrg();
+    const caso = await casoCompleto(org.id, "EXP-2026-9102");
+    await prisma.case.update({
+      where: { id: caso.id },
+      data: { purgeScheduledAt: new Date(Date.now() - 1000), deletedAt: new Date() },
+    });
+
+    await purgeCase(caso.id);
+    await purgeCase(caso.id);
+
+    expect(await prisma.purgeEvidence.count({ where: { orgId: org.id } })).toBe(1);
+  });
+});

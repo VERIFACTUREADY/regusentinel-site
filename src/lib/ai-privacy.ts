@@ -23,6 +23,15 @@ export const PLACEHOLDERS = {
   iban: "[IBAN]",
   deceased: "[CAUSANTE]",
   contact: "[SOLICITANTE]",
+  /**
+   * Empleado al que está asignada la tarea. El modelo necesita saber que
+   * alguien la tiene asignada —para razonar sobre bloqueos y reasignaciones—
+   * pero no quién es: es un dato de una persona física identificada que no
+   * aporta nada al análisis del expediente.
+   */
+  assignee: "[RESPONSABLE_ASIGNADO]",
+  /** Otros nombres de personas del entorno del expediente (herederos, etc.). */
+  person: "[PERSONA]",
 } as const;
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
@@ -53,16 +62,37 @@ export function redactPii(text: string): string {
  * Se hace por nombre completo y también por cada apellido de más de tres
  * letras, porque las notas suelen referirse a "la Sra. Pérez".
  */
-export function pseudonymizeNames(
-  text: string,
-  names: { deceased?: string | null; contact?: string | null },
-): string {
+export interface NombresConocidos {
+  deceased?: string | null;
+  contact?: string | null;
+  /**
+   * Nombres de empleados de la organización (responsables de tarea, autores de
+   * notas). Antes se enviaban tal cual: el contexto que iba a Anthropic incluía
+   * "Asignada a: Marta Ruiz". Son personas físicas identificadas y su identidad
+   * no aporta nada al análisis.
+   */
+  assignees?: Array<string | null | undefined>;
+  /** Cualquier otra persona nombrada en el expediente (herederos, notarios…). */
+  people?: Array<string | null | undefined>;
+}
+
+export function pseudonymizeNames(text: string, names: NombresConocidos): string {
   let out = text;
 
   const reemplazos: Array<[string | null | undefined, string]> = [
     [names.deceased, PLACEHOLDERS.deceased],
     [names.contact, PLACEHOLDERS.contact],
+    ...(names.assignees ?? []).map(
+      (n) => [n, PLACEHOLDERS.assignee] as [string | null | undefined, string],
+    ),
+    ...(names.people ?? []).map(
+      (n) => [n, PLACEHOLDERS.person] as [string | null | undefined, string],
+    ),
   ];
+
+  // Los nombres más largos primero: si "Marta Ruiz Gómez" y "Marta Ruiz" están
+  // ambos en la lista, sustituir el corto primero dejaría " Gómez" suelto.
+  reemplazos.sort((a, b) => (b[0]?.trim().length ?? 0) - (a[0]?.trim().length ?? 0));
 
   for (const [nombre, marcador] of reemplazos) {
     if (!nombre) continue;
@@ -86,10 +116,7 @@ function escapeRegExp(value: string): string {
 }
 
 /** Minimiza un contexto completo: primero los nombres, luego el resto. */
-export function minimizeContext(
-  text: string,
-  names: { deceased?: string | null; contact?: string | null } = {},
-): string {
+export function minimizeContext(text: string, names: NombresConocidos = {}): string {
   return redactPii(pseudonymizeNames(text, names));
 }
 

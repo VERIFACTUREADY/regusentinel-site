@@ -48,6 +48,7 @@ const HISTORIAL_CONGELADO: Record<string, string> = {
   "20260805000000_case_ref_unique_per_org": "f3d1ea2a3c8ab4c3",
   "20260805120000_stripe_event_recovery": "3416f5142cc5ac93",
   "20260805140000_notification_delivery_state": "e788ee70de80cc74",
+  "20260805160000_retention_states_and_evidence": "a50d3c379a653cc9",
 };
 
 function huella(nombre: string): string {

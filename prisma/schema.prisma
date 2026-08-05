@@ -86,6 +86,7 @@ model Organization {
   notifications NotificationLog[]
   workflowRules WorkflowRule[]
   caseTemplates CaseTemplate[]
+  purgeEvidence PurgeEvidence[]
 
   retentionDays Int @default(90)
 
@@ -226,9 +227,25 @@ model Case {
   /// `deletedAt` es solo borrado logico: el expediente sigue en PostgreSQL y
   /// sus documentos en S3.
   purgeScheduledAt DateTime? // cuando toca purgar de verdad
-  purgedAt         DateTime? // purga completada
-  purgeError       String?   // ultimo fallo, para reintento
-  purgeAttempts    Int       @default(0)
+  /// OBSOLETO. La purga BORRA la fila `Case`, así que este campo nunca llega a
+  /// leerse con valor: presentarlo como "estado persistente del expediente" era
+  /// engañoso. La evidencia de purga vive en `PurgeEvidence`, sin datos
+  /// personales. Se conserva la columna para no reescribir historial de
+  /// migraciones; no debe usarse.
+  purgedAt      DateTime?
+  purgeError    String? // ultimo fallo, para reintento
+  purgeAttempts Int     @default(0)
+
+  /// Estado explícito del ciclo de purga. Antes sólo había un contador: al
+  /// llegar a 5 el expediente dejaba de seleccionarse y sus datos personales
+  /// quedaban abandonados en la base y en S3 sin que nadie se enterara.
+  purgeState PurgeState @default(PENDING)
+  /// Momento a partir del cual se puede volver a intentar. Implementa el
+  /// backoff: creciente mientras hay reintentos automáticos, y largo pero
+  /// finito una vez que el caso requiere intervención.
+  purgeNextAttemptAt DateTime?
+  /// Último aviso operativo enviado. Evita repetir el correo en cada pasada.
+  purgeAlertedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -253,6 +270,7 @@ model Case {
 
   /// Lo consulta el cron de retención para localizar lo que toca purgar.
   @@index([purgeScheduledAt])
+  @@index([purgeState, purgeNextAttemptAt])
 }
 
 model Deceased {
@@ -518,6 +536,49 @@ model Subscription {
   updatedAt DateTime @updatedAt
 
   org Organization @relation(fields: [orgId], references: [id])
+}
+
+/// Fases del ciclo de purga. La auditoría exigía distinguirlas: con un simple
+/// contador de intentos, "pendiente", "fallando" y "abandonado" eran el mismo
+/// estado a ojos de cualquiera que mirase la base de datos.
+enum PurgeState {
+  /// Programado, aún no intentado.
+  PENDING
+  /// Un proceso lo tiene reclamado ahora mismo.
+  PROCESSING
+  /// Falló y se reintenta solo, con backoff creciente.
+  RETRYABLE_FAILURE
+  /// Agotados los reintentos automáticos rápidos. Sigue reintentándose con
+  /// backoff largo, pero ya ha generado aviso operativo y admite reintento
+  /// manual: los datos personales NO se abandonan.
+  NEEDS_INTERVENTION
+  /// Sólo por completitud del enum: al completarse, la fila `Case` se elimina
+  /// y la constancia queda en `PurgeEvidence`.
+  COMPLETED
+}
+
+/// Evidencia de purga SIN datos personales.
+///
+/// La purga borra la fila `Case` entera, así que no puede quedar constancia en
+/// ella (`Case.purgedAt` nunca llegaba a observarse). Esta tabla conserva lo
+/// necesario para demostrar el cumplimiento —qué organización, qué referencia
+/// interna, cuándo, cuántos objetos se borraron— y nada más: ni nombre del
+/// causante, ni contacto, ni ningún identificador de persona.
+model PurgeEvidence {
+  id    String @id @default(cuid())
+  orgId String
+  /// Referencia interna del expediente (p. ej. `EXP-2026-0042`). No es un dato
+  /// personal: es un correlativo por organización.
+  caseRef String
+
+  scheduledAt      DateTime?
+  purgedAt         DateTime  @default(now())
+  documentsDeleted Int       @default(0)
+  attempts         Int       @default(0)
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, purgedAt])
 }
 
 model UsageRecord {

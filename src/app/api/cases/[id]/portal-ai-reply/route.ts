@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { llamarModelo } from "@/lib/ai-gateway";
 
 const HAS_AI = !!process.env.ANTHROPIC_API_KEY;
 const MODEL = "claude-sonnet-4-6";
@@ -65,10 +66,7 @@ export async function POST(
 
   if (HAS_AI && lastMessage) {
     try {
-      const Anthropic = (await import("@anthropic-ai/sdk")).default;
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-      const msg = await client.messages.create({
+      const respuesta = await llamarModelo({
         model: MODEL,
         max_tokens: 400,
         system: SYSTEM_PROMPT,
@@ -78,9 +76,9 @@ export async function POST(
             content: `Contexto del expediente:\n${context}\n\nMensaje de la familia:\n"${lastMessage}"\n\nRedacta una respuesta profesional y empática.`,
           },
         ],
-      });
-      const block = msg.content[0];
-      reply = block.type === "text" ? block.text.trim() : "";
+        caseId: params.id,
+    });
+      reply = respuesta.texto || "";
     } catch {
       reply = buildHeuristicReply(c.contact?.fullName || null, inProgress.length, done.length);
     }
