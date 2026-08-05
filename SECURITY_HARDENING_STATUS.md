@@ -1177,7 +1177,7 @@ que los siete checks estén en verde.
 | `npm test` | 1.046 pruebas, 62 ficheros |
 | `npm run test:integration` | 139 pruebas con PostgreSQL real (9 de S3 omitidas sin MinIO local) |
 | `bash scripts/build-sin-base-de-datos.sh` | Correcto y sin acceso a la base de datos |
-| GitHub Actions sobre `24e6811` | Pendiente de que termine la ejecución |
+| GitHub Actions | Ejecución 7 sobre `24e6811` y ejecución 8 sobre `8689bd6`: los **seis jobs en verde**, incluido el nuevo paso «Build sin base de datos» |
 | Despliegue de Vercel | **No verificable desde este entorno** (ver arriba) |
 | Protección de rama | **Desactivada**; pasos entregados al propietario |
 
