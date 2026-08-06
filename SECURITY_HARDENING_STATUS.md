@@ -1319,3 +1319,26 @@ supone o gastar dinero o apagar automatizaciones:
 - recortar `vercel.json` a lo que permita el plan, aceptando que las
   automatizaciones recortadas dejan de ejecutarse solas. La recuperación de
   cobros de Stripe (`*/10 * * * *`) es la que más se degrada.
+
+### Reproducido, y con el mismo enlace de error
+
+Segunda medición, en el commit siguiente:
+
+| Commit | Push recibido por GitHub | «Deployment failed.» | Retraso |
+|---|---|---|---|
+| `54e38ee` | 23:26:41Z | 23:26:43Z | 2 s |
+| `b46dcbd` | 00:00:43Z | 00:00:43Z | 0 s |
+
+Y el detalle que lo cierra: **los dos estados apuntan al mismo enlace**,
+`https://vercel.link/3Fpeeb1`.
+
+Si el despliegue se hubiera compilado y hubiera fallado, cada intento
+enlazaría a su propio registro de build, que es distinto en cada despliegue.
+Un enlace corto idéntico en dos despliegues distintos no es un registro: es
+una **página fija de explicación del error**, de las que Vercel usa para los
+rechazos de configuración y de límites de plan.
+
+Es decir: no hay dos fallos, hay **el mismo rechazo dos veces**, y no llega a
+compilarse. Abrir ese enlace en un navegador da el motivo literal; desde este
+entorno el proxy de salida lo rechaza con 403, como todos los dominios de
+Vercel.
