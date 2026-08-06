@@ -1245,3 +1245,77 @@ El registro del despliegue fallido: en el panel de Vercel, *Deployments* → el
 despliegue rojo → *Building* / *Deployment Summary*. Las primeras líneas de
 error y el SHA del commit desplegado bastan para identificar cuál de las tres
 causas es.
+
+## Vercel — el despliegue se rechaza ANTES de compilar
+
+Al abrir el PR #2 se pudo por fin leer el estado real, que hasta entonces era
+inaccesible desde el entorno de trabajo. El estado que Vercel publica en el
+commit `54e38ee`:
+
+```
+context:     Vercel
+state:       failure
+description: Deployment failed.
+created_at:  2026-08-05T23:26:43Z
+```
+
+Y la cronología del mismo commit:
+
+| Hora (UTC) | Suceso |
+|---|---|
+| 23:26:38 | Fecha del commit |
+| 23:26:41 | GitHub recibe el push y crea la ejecución 10 de Actions |
+| **23:26:43** | **Vercel publica «Deployment failed.»** |
+
+**Dos segundos.** Este proyecto genera 352 páginas estáticas y su build tarda
+entre 70 y 90 segundos en la CI y en local. Un fallo dos segundos después del
+push no puede venir de la compilación: **Vercel rechaza el despliegue antes de
+empezar a construir.**
+
+De ahí se siguen dos conclusiones firmes:
+
+1. **Ningún cambio de código va a arreglarlo.** Concuerda con la reproducción
+   ya registrada: clonando la rama de cero, `npm install` y
+   `NODE_ENV=production npm run build` terminan en 0.
+2. **La corrección de `/api/health` era un defecto real —el build consultaba
+   la base de datos de producción— pero no era la causa de este check rojo.**
+   Queda igualmente, porque una comprobación de salud servida desde una copia
+   cacheada no comprueba nada.
+
+### Corrección de dos hipótesis anteriores
+
+Este documento afirmaba antes que el check rojo podía ser el despliegue de
+producción de `main` y que quizá Vercel no estuviera construyendo la rama. **Las
+dos son falsas.** Vercel construye esta rama y publica su estado en estos
+commits; lo que falla es este commit, no `main`.
+
+### Qué se rechaza en dos segundos
+
+Sólo la validación previa a la compilación. Por orden de probabilidad:
+
+1. **Límites de crons del plan.** `vercel.json` declara 11 crons y uno cada 10
+   minutos (`/api/cron/stripe-recovery`). El plan Hobby admite 2 crons y sólo
+   con frecuencia diaria. El mensaje sería del estilo *"Your plan allows a
+   maximum of 2 Cron Jobs"* o *"Cron jobs on the Hobby plan can only run once
+   per day"*. Es la única particularidad de la configuración de este
+   repositorio, y encaja con un rechazo instantáneo.
+2. **Bloqueo de la cuenta**: método de pago rechazado, límite de gasto
+   alcanzado o cuota de despliegues agotada. También rechaza al instante.
+3. **`vercel.json` inválido.** Descartado en lo comprobable desde aquí: el
+   esquema es correcto y las 11 rutas declaradas existen entre las funciones
+   construidas.
+
+### Cómo confirmarlo en diez segundos
+
+El enlace del propio estado —`https://vercel.link/3Fpeeb1`— lleva al
+despliegue rechazado y muestra el motivo. No puede abrirse desde este entorno
+(el proxy de salida rechaza los dominios de Vercel con 403), pero desde un
+navegador da la respuesta directamente.
+
+Si es lo primero, hay dos salidas y **la elección es del propietario**, porque
+supone o gastar dinero o apagar automatizaciones:
+
+- subir el proyecto a un plan que admita 11 crons y frecuencias sub-diarias; o
+- recortar `vercel.json` a lo que permita el plan, aceptando que las
+  automatizaciones recortadas dejan de ejecutarse solas. La recuperación de
+  cobros de Stripe (`*/10 * * * *`) es la que más se degrada.
