@@ -15,7 +15,8 @@
  * En esta suite el correo NO sale —no hay SMTP— así que el segundo caso es el
  * comportamiento por defecto y se puede comprobar tal cual.
  */
-import { test, expect, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { test, expect } from "./vigilancia";
 import { PrismaClient } from "@prisma/client";
 import { E2E } from "./seed-e2e";
 

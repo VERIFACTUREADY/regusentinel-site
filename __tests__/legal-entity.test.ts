@@ -81,6 +81,21 @@ describe("datos de la entidad legal", () => {
   });
 });
 
+describe("la puerta de despliegue", () => {
+  it("solo bloquea con una senal explicita de despliegue a produccion", () => {
+    // NODE_ENV=production no basta: la suite E2E compila asi para probar el
+    // artefacto real, y bloquear ahi impedia ejecutar las pruebas sin proteger
+    // a nadie, porque ese build no lo ve ningun cliente.
+    const script = readFileSync(
+      join(process.cwd(), "scripts/check-legal-config.mjs"),
+      "utf8",
+    );
+    expect(script).toContain('VERCEL_ENV === "production"');
+    expect(script).toContain('DEPLOY_TARGET === "production"');
+    expect(script).not.toMatch(/NODE_ENV\s*===\s*"production"/);
+  });
+});
+
 describe("los textos publicados no contienen datos inventados", () => {
   const paginas = [
     "src/app/legal/privacidad/page.tsx",

@@ -11,7 +11,8 @@
  * De ahi que estas pruebas comprueben la POSICION REAL de la tarea dentro de la
  * rejilla, no solo que el numero aparezca en algun sitio de la pagina.
  */
-import { test, expect, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { test, expect, permitirFalloEn, pantallaUtil } from "./vigilancia";
 import { PrismaClient } from "@prisma/client";
 import { readFileSync } from "node:fs";
 import { E2E } from "./seed-e2e";
@@ -88,6 +89,7 @@ test.describe("Calendario", () => {
   test("el circulo de hoy cae en el dia de hoy en horario espanol", async ({ page }) => {
     await login(page, E2E.owner);
     await page.goto("/calendar");
+    await pantallaUtil(page);
 
     // Dia de hoy tal y como lo ve el navegador, que esta en Madrid.
     const diaHoy = await page.evaluate(() => new Date().getDate());
@@ -134,6 +136,10 @@ test.describe("Calendario", () => {
   }) => {
     await login(page, E2E.owner);
 
+    // El 500 de abajo es el escenario, no un defecto: se declara para que el
+    // vigilante global no lo cuente como incidencia.
+    permitirFalloEn(page, "/api/tasks/calendar");
+
     let roto = true;
     await page.route("**/api/tasks/calendar**", async (route) => {
       if (roto) {
@@ -169,6 +175,7 @@ test.describe("Calendario", () => {
   test("una sesion caducada se distingue de un error de servidor", async ({ page }) => {
     await login(page, E2E.owner);
 
+    permitirFalloEn(page, "/api/tasks/calendar");
     await page.route("**/api/tasks/calendar**", (route) =>
       route.fulfill({
         status: 401,

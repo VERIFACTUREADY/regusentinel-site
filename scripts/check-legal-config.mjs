@@ -35,9 +35,20 @@ const OPCIONALES = [
   ["LEGAL_DPO_CONTACT", "Contacto del delegado de proteccion de datos, si se ha designado."],
 ];
 
+/*
+ * Que cuenta como "desplegar a produccion".
+ *
+ * NO vale mirar NODE_ENV. La suite E2E compila con NODE_ENV=production para
+ * probar el artefacto real, y bloquear ahi impedia ejecutar las pruebas sin
+ * aportar nada: ese build no lo ve ningun cliente.
+ *
+ * La senal tiene que ser explicita del despliegue: Vercel marca VERCEL_ENV, y
+ * para cualquier otro destino se usa DEPLOY_TARGET=production. Lo que no esta
+ * marcado no bloquea, solo avisa.
+ */
 const esProduccion =
   process.env.VERCEL_ENV === "production" ||
-  (!process.env.VERCEL_ENV && process.env.NODE_ENV === "production" && process.env.CI !== "true");
+  process.env.DEPLOY_TARGET === "production";
 
 const faltan = OBLIGATORIAS.filter(([nombre]) => !process.env[nombre]?.trim());
 

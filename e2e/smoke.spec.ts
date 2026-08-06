@@ -6,7 +6,8 @@
  * a alguien surte efecto de inmediato, que el portal no filtra documentos
  * internos y que una cuenta suspendida sigue pudiendo llegar a facturacion.
  */
-import { test, expect, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { test, expect } from "./vigilancia";
 import { PrismaClient } from "@prisma/client";
 import { E2E } from "./seed-e2e";
 
