@@ -21,43 +21,44 @@
 # `Authorization`, nunca como parametro de consulta: los parametros acaban en
 # los registros del servidor y del proxy, las cabeceras no.
 #
-# LIMITACION QUE HAY QUE CONOCER
-# -------------------------------
-# GitHub solo ejecuta `schedule` desde la RAMA POR DEFECTO. Mientras esto viva
-# en una rama de trabajo, no se dispara solo: hay que usar «Run workflow». En
-# cuanto se fusione a `main`, empieza a correr.
+# TRES LIMITACIONES QUE HAY QUE CONOCER
+# --------------------------------------
+# 1. Este fichero NO HACE NADA hasta que llegue a `main`. GitHub solo ejecuta
+#    `schedule` desde la rama por defecto, y `workflow_dispatch` tampoco sirve
+#    de escape: el boton «Run workflow» solo aparece cuando el workflow existe
+#    en la rama por defecto. Mientras viva solo en una rama de trabajo no puede
+#    dispararse ni solo ni a mano.
 #
-# Ademas GitHub no garantiza la puntualidad de `schedule`: en horas de mucha
-# carga los disparos se retrasan, y a veces se saltan. Para un reintento de
-# cobro es aceptable —el siguiente disparo recoge lo que quedo pendiente—, pero
-# no debe usarse este mecanismo para nada que exija puntualidad estricta.
+# 2. GitHub no garantiza la puntualidad de `schedule`: en horas de mucha carga
+#    los disparos se retrasan, y a veces se saltan. Por eso el horario evita el
+#    minuto en punto. Para un reintento de cobro es aceptable —el siguiente
+#    disparo recoge lo que quedo pendiente—, pero no debe usarse este mecanismo
+#    para nada que exija puntualidad estricta.
+#
+# 3. En repositorios publicos, GitHub DESACTIVA los workflows programados tras
+#    60 dias sin actividad en el repositorio, y avisa por correo al propietario.
+#    Un repositorio que se queda quieto dos meses deja de reintentar cobros sin
+#    que nada falle a la vista. Por eso `vercel.json` conserva una ejecucion
+#    diaria de respaldo: aunque GitHub se apague, el proceso sigue corriendo una
+#    vez al dia. Se reactiva desde la pestana Actions.
 name: Crons frecuentes
 
 on:
   schedule:
-    # Recuperacion de cobros de Stripe: la misma frecuencia que tenia en
-    # `vercel.json` antes de que Hobby la rechazara.
-    - cron: "*/10 * * * *"
-  # Para probarlos a mano sin esperar al turno.
+    # Cada 10 minutos, la misma frecuencia que tenia en `vercel.json` antes de
+    # que Hobby la rechazara, pero DESPLAZADA fuera del minuto en punto.
+    #
+    # El minuto 0 es donde se acumulan casi todos los `schedule` del mundo, y
+    # es justo cuando GitHub mas retrasa o descarta disparos. En los minutos
+    # 3, 13, 23... la cola esta mucho mas vacia.
+    - cron: "3-59/10 * * * *"
+  # Para dispararlo a mano sin esperar al turno.
   workflow_dispatch:
-    inputs:
-      ruta:
-        description: "Endpoint de cron a disparar"
-        required: true
-        default: /api/cron/stripe-recovery
-        type: choice
-        options:
-          - /api/cron/stripe-recovery
-          - /api/cron/notifications
-          - /api/cron/unblock-tasks
-          - /api/cron/demo-reset
-          - /api/cron/stale-leads
-          - /api/cron/trial-expiring
-          - /api/cron/trial-expired
-          - /api/cron/retention-cleanup
-          - /api/cron/analyze-all
-          - /api/cron/digest-isd
-          - /api/cron/daily-briefing
+
+# Este workflow no lee ni escribe nada del repositorio: solo hace una peticion
+# HTTP saliente. Sin permisos, el GITHUB_TOKEN que recibe no sirve para tocar
+# codigo, incidencias ni releases aunque algo saliera mal.
+permissions: {}
 
 # Un disparo cada 10 minutos con una ejecucion que se alargue produciria dos
 # procesos solapados sobre los mismos cobros. Se deja terminar al que ya corre.
@@ -71,6 +72,10 @@ jobs:
     runs-on: ubuntu-latest
     # Un fork no debe poder lanzar procesos contra la aplicacion de produccion.
     if: github.repository == 'VERIFACTUREADY/regusentinel-site'
+    # El peor caso del `curl` de abajo son tres intentos de 120 s mas dos
+    # esperas de 10, algo menos de 7 minutos. Con 10 el job se corta antes de
+    # solaparse con el disparo siguiente, que llega a los 10.
+    timeout-minutes: 10
     steps:
       - name: Comprobar la configuracion
         env:
@@ -94,7 +99,7 @@ jobs:
         env:
           BASE: ${{ vars.APP_URL }}
           SECRETO: ${{ secrets.CRON_SECRET }}
-          RUTA: ${{ github.event.inputs.ruta || '/api/cron/stripe-recovery' }}
+          RUTA: /api/cron/stripe-recovery
         run: |
           set -uo pipefail
           URL="${BASE%/}$RUTA"
@@ -103,16 +108,18 @@ jobs:
           # El secreto viaja en la cabecera, no en la URL: los parametros de
           # consulta acaban en los registros de acceso, las cabeceras no.
           # `-sS` calla la barra de progreso pero deja pasar los errores.
-          CODIGO=$(curl -sS -o /tmp/respuesta.txt -w '%{http_code}' \
-            --max-time 300 --retry 2 --retry-delay 10 --retry-connrefused \
+          #
+          # La respuesta se descarta. Los registros de Actions de un repositorio
+          # publico los lee cualquiera, y el cuerpo de un endpoint de cobros
+          # puede traer importes, identificadores de cliente o mensajes de error
+          # de Stripe. La ruta y el codigo HTTP bastan para saber si ha ido bien;
+          # el detalle esta en los registros del servidor, donde corresponde.
+          CODIGO=$(curl -sS -o /dev/null -w '%{http_code}' \
+            --max-time 120 --retry 2 --retry-delay 10 --retry-connrefused \
             -H "Authorization: Bearer $SECRETO" \
             "$URL") || CODIGO="000"
 
           echo "HTTP $CODIGO"
-          # La respuesta puede traer un resumen util; el cuerpo de estos
-          # endpoints no contiene datos personales, solo recuentos.
-          head -c 2000 /tmp/respuesta.txt || true
-          echo
 
           case "$CODIGO" in
             2*)   echo "Correcto." ;;

@@ -25,6 +25,7 @@ con `Authorization: Bearer <CRON_SECRET>`.
 | `/api/cron/daily-briefing` | `30 7 * * 1-5` — laborables | Resumen diario |
 | `/api/cron/retention-cleanup` | `0 4 * * 0` — semanal | Purga por política de retención |
 | `/api/cron/digest-isd` | `0 8 * * 1` — semanal | Boletín ISD |
+| `/api/cron/stripe-recovery` | `17 2 * * *` — diaria | **Respaldo.** El proceso corre cada 10 minutos desde GitHub Actions; esta ejecución diaria es la que sobrevive si GitHub desactiva el workflow por inactividad (ver limitación 3). |
 
 ## Qué se dispara desde GitHub Actions
 
@@ -33,10 +34,23 @@ admite. Fichero: [`.github/workflows/crons.yml`](../.github/workflows/crons.yml)
 
 | Ruta | Frecuencia | Por qué no puede bajarse a diaria |
 |---|---|---|
-| `/api/cron/stripe-recovery` | `*/10 * * * *` — cada 10 min | Reintenta los cobros fallidos antes de que la suscripción se cancele sola. A una vez al día, la ventana en la que un cobro recuperable se queda sin reintentar pasa de 10 minutos a 24 horas. |
+| `/api/cron/stripe-recovery` | `3-59/10 * * * *` — cada 10 min | Reintenta los cobros fallidos antes de que la suscripción se cancele sola. A una vez al día, la ventana en la que un cobro recuperable se queda sin reintentar pasa de 10 minutos a 24 horas. |
 
-**La frecuencia no se ha tocado**: sigue siendo cada 10 minutos, exactamente la
-que tenía en `vercel.json`.
+**La frecuencia no se ha tocado**: sigue siendo cada 10 minutos. Lo que cambia
+es el minuto de arranque —3, 13, 23, 33, 43, 53 en vez de 0, 10, 20…—, porque el
+minuto en punto es donde se acumulan casi todos los `schedule` de GitHub y es
+justo cuando más se retrasan o se descartan disparos.
+
+El disparo manual sólo sirve para este proceso: no hay selector de endpoints. Un
+botón capaz de lanzar los once convertiría la pestaña Actions en un mando a
+distancia para ejecutar purgas de retención o envíos masivos cuando a alguien le
+apeteciera.
+
+**Los registros no muestran el cuerpo de la respuesta**, sólo la ruta y el
+código HTTP. Los registros de Actions de un repositorio público los lee
+cualquiera, y la respuesta de un endpoint de cobros puede traer importes,
+identificadores de cliente o mensajes de error de Stripe. El detalle queda en
+los registros del servidor, que es donde corresponde.
 
 ## Configuración necesaria en GitHub
 
@@ -57,25 +71,56 @@ mensaje explícito**. Es deliberado: una variable mal puesta produciría un 401
 silencioso y el proceso dejaría de ejecutarse sin que nadie se enterara. Un
 cron que falla en silencio es peor que uno que no existe.
 
-## Dos limitaciones que hay que conocer
+## Tres limitaciones que hay que conocer
 
-1. **`schedule` sólo se ejecuta desde la rama por defecto.** Mientras este
-   workflow viva en una rama de trabajo, no se dispara solo. Empieza a correr
-   en cuanto se fusione a `main`. Hasta entonces se prueba con
-   **Actions → Crons frecuentes → Run workflow**, que además permite elegir
-   cualquiera de los once endpoints.
+### 1. El workflow no hace nada hasta que llegue a `main`
 
-2. **GitHub no garantiza la puntualidad de `schedule`.** En horas de mucha carga
-   los disparos se retrasan, y ocasionalmente se saltan. Para un reintento de
-   cobro es aceptable, porque el siguiente disparo recoge lo que quedó
-   pendiente. No debe usarse este mecanismo para nada que exija puntualidad
-   estricta.
+GitHub sólo ejecuta `schedule` desde la **rama por defecto**. Y
+`workflow_dispatch` no es una vía de escape: el botón **Run workflow** sólo
+aparece cuando el workflow existe en la rama por defecto. Mientras este fichero
+viva únicamente en `claude/heredia-security-hardening-v1`, **no puede
+dispararse ni solo ni a mano**.
+
+Es decir: hasta la fusión, la recuperación de cobros corre sólo una vez al día,
+la del respaldo de Vercel. Recuperar la cadencia de 10 minutos es una razón para
+fusionar, no algo que pueda probarse antes.
+
+### 2. GitHub no garantiza la puntualidad de `schedule`
+
+En horas de mucha carga los disparos se retrasan, y ocasionalmente se saltan.
+Por eso el horario evita el minuto en punto. Para un reintento de cobro es
+aceptable, porque el siguiente disparo recoge lo que quedó pendiente. No debe
+usarse este mecanismo para nada que exija puntualidad estricta.
+
+### 3. GitHub desactiva los workflows programados por inactividad
+
+En **repositorios públicos** —éste lo es—, GitHub **desactiva automáticamente
+los workflows con `schedule` tras 60 días sin actividad en el repositorio**, y
+avisa por correo al propietario. No falla nada a la vista: simplemente dejan de
+dispararse.
+
+Aplicado a esto: un repositorio parado dos meses dejaría de reintentar cobros en
+silencio, que es justo el fallo que nadie detecta hasta que hay suscripciones
+canceladas.
+
+Por eso `/api/cron/stripe-recovery` **también está en `vercel.json`, una vez al
+día** (`17 2 * * *`). Vercel no se desactiva por inactividad, así que en el peor
+caso el proceso sigue corriendo a diario. Se pierde cadencia, no el proceso.
+
+Para reactivarlo: **pestaña Actions → el aviso de workflows deshabilitados →
+Enable**.
 
 ## Comprobar que funciona
 
-1. **Actions → Crons frecuentes → Run workflow**, dejando
-   `/api/cron/stripe-recovery`.
-2. El job debe terminar en verde y mostrar `HTTP 200`.
+Sólo es posible **una vez fusionado a `main`** (ver limitación 1).
+
+1. **Actions → Crons frecuentes → Run workflow**.
+2. El job debe terminar en verde y mostrar `HTTP 200`. No muestra el cuerpo de
+   la respuesta, y es deliberado.
 3. Un `401` significa que el `CRON_SECRET` de GitHub no coincide con el de
    Vercel. Un `000` significa que `APP_URL` es incorrecta o el despliegue no
    responde.
+
+Antes de fusionar, lo que sí puede comprobarse es el respaldo: en Vercel,
+**Settings → Cron Jobs**, donde debe aparecer `/api/cron/stripe-recovery` a las
+02:17.

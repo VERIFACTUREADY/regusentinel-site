@@ -70,16 +70,85 @@ describe("crons de vercel.json en plan Hobby", () => {
     expect(inexistentes.map((c) => c.path)).toEqual([]);
   });
 
-  it("el proceso de recuperación de Stripe conserva su frecuencia en Actions", () => {
+  it("conserva el respaldo diario de la recuperación de Stripe", () => {
+    // GitHub desactiva los workflows programados de los repositorios públicos
+    // tras 60 días sin actividad, y avisa sólo por correo al propietario. Si
+    // eso ocurre y este respaldo no está, los cobros fallidos dejan de
+    // reintentarse sin que nada falle a la vista.
+    const respaldo = crons.find((c) => c.path === "/api/cron/stripe-recovery");
+
+    expect(
+      respaldo,
+      "Falta el respaldo diario de /api/cron/stripe-recovery en vercel.json. " +
+        "Es la única ejecución que sobrevive si GitHub desactiva el workflow " +
+        "programado por inactividad.",
+    ).toBeDefined();
+  });
+});
+
+describe("workflow de crons frecuentes", () => {
+  const workflow = readFileSync(
+    join(process.cwd(), ".github/workflows/crons.yml"),
+    "utf8",
+  );
+
+  it("mantiene la frecuencia de la recuperación de Stripe", () => {
     // Salió de vercel.json por el límite del plan, no porque sobrara: es lo que
     // reintenta los cobros fallidos antes de que la suscripción se cancele
     // sola. Si alguien lo borra del workflow, se pierde en silencio.
-    const workflow = readFileSync(
-      join(process.cwd(), ".github/workflows/crons.yml"),
-      "utf8",
-    );
-
     expect(workflow).toContain("/api/cron/stripe-recovery");
-    expect(workflow).toContain('cron: "*/10 * * * *"');
+    // Cada 10 minutos, evitando el minuto en punto, donde se acumulan los
+    // disparos de todo el mundo y GitHub más retrasa o descarta.
+    expect(workflow).toMatch(/cron:\s*"3-59\/10 \* \* \* \*"/);
+  });
+
+  it("no ofrece ningún otro endpoint de cron", () => {
+    // El disparo manual sólo debe servir para este proceso. Un selector con
+    // los once endpoints convierte el botón en un mando a distancia para
+    // ejecutar cualquier tarea programada cuando a alguien le apetezca:
+    // purgas de retención, envíos masivos o el reinicio de la demostración.
+    const rutas = workflow.match(/\/api\/cron\/[a-z-]+/g) ?? [];
+    const otras = rutas
+      .filter((r) => r !== "/api/cron/stripe-recovery")
+      .filter((r, i, todas) => todas.indexOf(r) === i);
+
+    expect(
+      otras,
+      "El workflow sólo debe referirse a /api/cron/stripe-recovery.",
+    ).toEqual([]);
+  });
+
+  it("no vuelca el cuerpo de la respuesta en los registros", () => {
+    // Los registros de Actions de un repositorio público los lee cualquiera, y
+    // el cuerpo de un endpoint de cobros puede traer importes, identificadores
+    // de cliente o mensajes de error de Stripe. La ruta y el código HTTP
+    // bastan para saber si ha ido bien.
+    expect(workflow).toContain("-o /dev/null");
+
+    const volcados = [
+      /head\s+-c/,
+      /\bcat\s+\/tmp/,
+      /\btail\s+.*\/tmp/,
+      // Guardar la respuesta en un fichero es el paso previo a imprimirla.
+      /-o\s+\/tmp/,
+    ].filter((patron) => patron.test(workflow));
+
+    expect(
+      volcados.map(String),
+      "El workflow no debe guardar ni imprimir el cuerpo de la respuesta.",
+    ).toEqual([]);
+  });
+
+  it("no pide permisos sobre el repositorio", () => {
+    // Solo hace una petición HTTP saliente: no necesita el GITHUB_TOKEN.
+    expect(workflow).toMatch(/^permissions:\s*\{\}\s*$/m);
+  });
+
+  it("tiene un límite de tiempo por debajo del intervalo de disparo", () => {
+    // Sin límite, un job colgado se solapa con el siguiente disparo y dos
+    // procesos trabajan a la vez sobre los mismos cobros.
+    const limite = workflow.match(/timeout-minutes:\s*(\d+)/);
+    expect(limite, "Falta timeout-minutes en el job.").not.toBeNull();
+    expect(Number(limite![1])).toBeLessThanOrEqual(10);
   });
 });

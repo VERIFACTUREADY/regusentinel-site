@@ -1348,8 +1348,9 @@ Vercel.
 El proyecto se mantiene en **Hobby**, que sólo admite crons diarios. En lugar
 de degradar los procesos, cambian de disparador:
 
-- **`vercel.json`** conserva los 10 crons que se ejecutan una vez al día o
-  menos.
+- **`vercel.json`** conserva los crons que se ejecutan una vez al día o menos,
+  más una ejecución diaria de respaldo de la recuperación de Stripe
+  (`17 2 * * *`).
 - **`/api/cron/stripe-recovery`** pasa a `.github/workflows/crons.yml`
   **conservando su frecuencia de 10 minutos**. Es lo que reintenta los cobros
   fallidos antes de que una suscripción se cancele sola: bajarlo a diario
@@ -1414,3 +1415,39 @@ un `000`, que `APP_URL` es incorrecta.
 
 Y recuérdese que `schedule` sólo se dispara desde la rama por defecto: hasta que
 esta rama se fusione, la recuperación de cobros hay que lanzarla a mano.
+
+### Endurecimiento del workflow de crons
+
+Repaso posterior sobre `.github/workflows/crons.yml`:
+
+- **El disparo manual ya no ofrece un selector de once endpoints**, sólo
+  `/api/cron/stripe-recovery`. Un botón capaz de lanzar cualquiera convertía la
+  pestaña Actions en un mando a distancia para ejecutar purgas de retención o
+  envíos masivos a voluntad.
+- **No se vuelca el cuerpo de la respuesta en los registros**: sólo la ruta y el
+  código HTTP. Los registros de Actions de un repositorio público los lee
+  cualquiera, y la respuesta de un endpoint de cobros puede traer importes,
+  identificadores de cliente o mensajes de error de Stripe. La respuesta va a
+  `/dev/null`, ni siquiera a un fichero temporal.
+- **`permissions: {}`**: sólo hace una petición HTTP saliente, así que el
+  `GITHUB_TOKEN` que recibe no sirve para tocar código, incidencias ni releases.
+- **`timeout-minutes: 10`**, por debajo del intervalo de disparo: un job colgado
+  no puede solaparse con el siguiente y trabajar dos veces sobre los mismos
+  cobros.
+- **Horario `3-59/10 * * * *`** en vez de `*/10`. Misma frecuencia, evitando el
+  minuto en punto, que es donde se acumulan los `schedule` de todo el mundo y
+  donde GitHub más retrasa o descarta disparos.
+- **Respaldo diario en `vercel.json`** (`17 2 * * *`). GitHub desactiva los
+  workflows programados de los repositorios públicos tras 60 días sin actividad,
+  avisando sólo por correo. Sin respaldo, un repositorio parado dos meses dejaría
+  de reintentar cobros en silencio. Con él se pierde cadencia, no el proceso.
+
+Y una corrección de la documentación: `workflow_dispatch` **no** permite probar
+el workflow antes de fusionar. El botón «Run workflow» sólo aparece cuando el
+workflow existe en la rama por defecto, así que hasta la fusión este fichero no
+puede dispararse ni solo ni a mano. Lo que decía antes `docs/CRONS.md` era falso.
+
+Pruebas en `__tests__/vercel-crons.test.ts`, comprobadas una a una contra el
+comportamiento anterior: fallan si el workflow vuelve a ofrecer otros endpoints,
+si vuelve a guardar o imprimir el cuerpo de la respuesta, o si desaparece el
+respaldo diario de `vercel.json`.
