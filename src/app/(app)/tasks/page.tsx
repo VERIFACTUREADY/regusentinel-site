@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { TASK_STATUS_COLORS, ALL_CATEGORIES } from "@/lib/constants";
@@ -62,6 +63,7 @@ export default function TasksPage() {
   const [status, setStatus] = useState("PENDING,IN_PROGRESS,BLOCKED,READY");
   const [category, setCategory] = useState("");
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -75,9 +77,21 @@ export default function TasksPage() {
 
   useEffect(() => {
     fetch("/api/org/members")
-      .then((r) => (r.ok ? r.json() : []))
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${r.status}.`,
+          );
+        }
+        return r.json();
+      })
       .then(setMembers)
-      .catch(() => {});
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setErrorCarga(e instanceof Error ? e.message : "No se han podido cargar los datos.");
+      });
   }, []);
 
   const assigneeOptions = useMemo(() => [
@@ -164,15 +178,32 @@ export default function TasksPage() {
     if (category) params.set("category", category);
 
     fetch(`/api/tasks?${params}`, { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data && !controller.signal.aborted) {
-          setTasks(data.tasks);
-          setTotal(data.total);
-          setSelected(new Set());
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(
+            res.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${res.status}.`,
+          );
         }
+        return res.json();
       })
-      .catch(() => {})
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        if (!data || !Array.isArray(data.tasks)) {
+          throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        }
+        setErrorCarga(null);
+        setTasks(data.tasks);
+        setTotal(data.total);
+        setSelected(new Set());
+      })
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setTasks([]);
+        setTotal(0);
+        setErrorCarga(e instanceof Error ? e.message : "No se han podido cargar las tareas.");
+      })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
@@ -310,7 +341,13 @@ export default function TasksPage() {
 
       {/* Tasks list */}
       <div className="space-y-2">
-        {loading ? (
+        {errorCarga ? (
+          <AvisoError
+            mensaje={errorCarga}
+            que="las tareas"
+            onReintentar={() => setRefreshKey((k) => k + 1)}
+          />
+        ) : loading ? (
           <div className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">
             Cargando...
           </div>

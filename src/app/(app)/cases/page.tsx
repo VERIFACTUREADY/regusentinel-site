@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { CASE_STATUS_COLORS, ALL_CATEGORIES } from "@/lib/constants";
@@ -55,6 +56,7 @@ export default function CasesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchLoading, setBatchLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -100,16 +102,39 @@ export default function CasesPage() {
     if (isdExpiringFilter) params.set("isdExpiring", isdExpiringFilter);
     if (myTasksFilter) params.set("myTasks", "true");
 
+    /*
+     * Antes: `.then(res => res.ok ? res.json() : null)` y `.catch(() => {})`.
+     * Con la peticion caida la lista se quedaba como estaba y la tabla mostraba
+     * "No hay expedientes": indistinguible de que de verdad no hubiera ninguno,
+     * y significando lo contrario.
+     */
     fetch(`/api/cases?${params}`, { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data && !controller.signal.aborted) {
-          setCases(data.cases);
-          setTotal(data.total);
-          setSelected(new Set());
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(
+            res.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${res.status}.`,
+          );
         }
+        return res.json();
       })
-      .catch(() => {})
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        if (!data || !Array.isArray(data.cases)) {
+          throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        }
+        setErrorCarga(null);
+        setCases(data.cases);
+        setTotal(data.total);
+        setSelected(new Set());
+      })
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setCases([]);
+        setTotal(0);
+        setErrorCarga(e instanceof Error ? e.message : "No se han podido cargar los expedientes.");
+      })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
@@ -340,10 +365,20 @@ export default function CasesPage() {
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {errorCarga ? (
+              <tr>
+                <td colSpan={8} className="px-6 py-10">
+                  <AvisoError
+                    mensaje={errorCarga}
+                    que="los expedientes"
+                    onReintentar={() => setRefreshKey((k) => k + 1)}
+                  />
+                </td>
+              </tr>
+            ) : loading ? (
               <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-400">Cargando...</td></tr>
             ) : cases.length === 0 ? (
-              <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-400">No hay expedientes</td></tr>
+              <tr><td colSpan={8} data-testid="carga-vacio" className="px-6 py-12 text-center text-gray-400">No hay expedientes</td></tr>
             ) : cases.map((c) => {
               const isdDays = c.deceased?.deathDate
                 ? 180 - Math.floor((Date.now() - new Date(c.deceased.deathDate).getTime()) / (1000 * 60 * 60 * 24))
@@ -419,10 +454,16 @@ export default function CasesPage() {
 
       {/* Mobile cards */}
       <div className="md:hidden space-y-3">
-        {loading ? (
+        {errorCarga ? (
+          <AvisoError
+            mensaje={errorCarga}
+            que="los expedientes"
+            onReintentar={() => setRefreshKey((k) => k + 1)}
+          />
+        ) : loading ? (
           <div className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">Cargando...</div>
         ) : cases.length === 0 ? (
-          <div className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">No hay expedientes</div>
+          <div data-testid="carga-vacio" className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">No hay expedientes</div>
         ) : cases.map((c) => (
           <div key={c.id} className={`bg-white rounded-lg border p-4 ${selected.has(c.id) ? "ring-2 ring-blue-300" : ""}`}>
             <div className="flex items-start gap-3">

@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -35,6 +36,8 @@ export function NotificationLogViewer() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
   const [kind, setKind] = useState("");
   const [channel, setChannel] = useState("");
   const [status, setStatus] = useState("");
@@ -42,6 +45,7 @@ export function NotificationLogViewer() {
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
+    setErrorCarga(null);
     const params = new URLSearchParams();
     params.set("page", String(page));
     params.set("limit", String(PAGE_SIZE));
@@ -50,20 +54,32 @@ export function NotificationLogViewer() {
     if (status) params.set("status", status);
 
     fetch(`/api/notifications?${params}`, { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(
+            res.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${res.status}.`,
+          );
+        }
+        return res.json();
+      })
       .then((data) => {
         if (data && !controller.signal.aborted) {
           setLogs(data.logs);
           setTotal(data.total);
         }
       })
-      .catch(() => {})
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setErrorCarga(e instanceof Error ? e.message : "No se han podido cargar los datos.");
+      })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => controller.abort();
-  }, [page, kind, channel, status]);
+  }, [page, kind, channel, status, reintento]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const hasFilters = kind || channel || status;
@@ -147,7 +163,17 @@ export function NotificationLogViewer() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {loading ? (
+              {errorCarga ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8">
+                    <AvisoError
+                      mensaje={errorCarga}
+                      que="los avisos"
+                      onReintentar={() => setReintento((n) => n + 1)}
+                    />
+                  </td>
+                </tr>
+              ) : loading ? (
                 <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400">Cargando...</td></tr>
               ) : logs.length === 0 ? (
                 <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400">
@@ -200,7 +226,13 @@ export function NotificationLogViewer() {
 
         {/* Mobile */}
         <div className="md:hidden divide-y">
-          {loading ? (
+          {errorCarga ? (
+            <AvisoError
+              mensaje={errorCarga}
+              que="los avisos"
+              onReintentar={() => setReintento((n) => n + 1)}
+            />
+          ) : loading ? (
             <div className="px-4 py-12 text-center text-gray-400">Cargando...</div>
           ) : logs.length === 0 ? (
             <div className="px-4 py-12 text-center text-gray-400">

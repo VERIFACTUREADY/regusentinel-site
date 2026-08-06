@@ -40,9 +40,16 @@ export default defineConfig({
     // coincidir con la que espera @playwright/test. Se apunta al binario que
     // existe en vez de descargar otro: PLAYWRIGHT_CHROMIUM_PATH lo fija de
     // forma explicita (ver scripts/e2e.sh).
-    launchOptions: process.env.PLAYWRIGHT_CHROMIUM_PATH
-      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
-      : undefined,
+    launchOptions: {
+      ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
+        ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
+        : {}),
+      // Los proyectos de tablet y movil emulan un dispositivo tactil, y ese
+      // arranque de Chromium se niega a correr como root sin esta bandera. Sin
+      // ella los dos proyectos fallaban al lanzar el navegador, no por un
+      // defecto de la aplicacion. El contenedor de CI ya esta aislado.
+      args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    },
   },
 
   /**
@@ -59,7 +66,22 @@ export default defineConfig({
     {
       name: "tablet",
       testMatch: /.*\.responsive\.spec\.ts/,
-      use: { ...devices["iPad (gen 7)"] },
+      /*
+       * Tamano de tablet sobre Chromium, definido a mano.
+       *
+       * `devices["iPad (gen 7)"]` trae `defaultBrowserType: "webkit"`, y aqui
+       * solo hay Chromium instalado: el proyecto entero fallaba al lanzar el
+       * navegador, no por un defecto de la aplicacion. Lo que se quiere
+       * comprobar es el TAMANO, asi que se fija el tamano y se deja el motor
+       * que existe.
+       */
+      use: {
+        browserName: "chromium",
+        viewport: { width: 820, height: 1180 },
+        deviceScaleFactor: 2,
+        isMobile: false,
+        hasTouch: true,
+      },
     },
     {
       name: "movil",

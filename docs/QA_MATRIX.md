@@ -132,12 +132,19 @@ unidad, que por el criterio de arriba no cuentan como cobertura funcional.
 | MANAGER | 🟡 sólo como rol asignado en `correo-real.spec.ts` |
 | VIEWER | ❌ sin ninguna prueba |
 | Escritorio | ✅ proyecto `escritorio`, suite completa |
-| Tablet | ❌ proyecto `tablet` configurado, **sin ficheros `*.responsive.spec.ts`** |
-| Móvil | ❌ proyecto `movil` configurado, **sin ficheros `*.responsive.spec.ts`** |
+| Tablet | ✅ `navegacion.responsive.spec.ts` — 10 pruebas (820×1180, Chromium táctil) |
+| Móvil | ✅ `navegacion.responsive.spec.ts` — 10 pruebas (Pixel 5) |
 
-Los proyectos de tablet y móvil existen en `playwright.config.ts` y no ejecutan
-nada: hasta que haya ficheros `*.responsive.spec.ts`, esa fila es un hueco, no
-una cobertura.
+Tablet y móvil ejecutan `e2e/navegacion.responsive.spec.ts`: panel, expedientes,
+tareas, calendario (con panel de día), usuarios, documentos, navegación,
+formulario de invitación y tabla ancha. Cada una comprueba además que la página
+**no se desplaza en horizontal**, que es el síntoma número uno de una pantalla
+rota en móvil.
+
+Dos hallazgos del montaje, ya corregidos: `devices["iPad (gen 7)"]` arrastra
+WebKit, que no está instalado, y el proyecto entero fallaba al lanzar el
+navegador sin que eso dijera nada de la aplicación; y Chromium táctil no arranca
+como root sin `--no-sandbox`.
 
 ---
 
@@ -154,21 +161,33 @@ Verificada inyectando una excepción: la aserción pasa y la prueba falla igual.
 
 ---
 
-## Deuda conocida: pantallas que ocultan sus fallos
+## Errores silenciosos
 
-Trece pantallas cargan datos con `.catch(() => {})` y sin estado de error. Si la
-petición falla, muestran una pantalla vacía indistinguible de «no hay nada».
-Es el mismo defecto que se corrigió en el calendario.
+`src/components/ui/carga-remota.tsx` centraliza los cuatro estados —cargando,
+listo, vacío, error con Reintentar— porque el fallo era idéntico en las catorce
+pantallas y repetir la corrección a mano garantiza que la próxima nazca rota.
+
+### Corregidas y probadas
+
+| Pantalla | `response.ok` | Error visible | Reintentar | Prueba |
+|---|---|---|---|---|
+| `calendar` | ✅ | ✅ | ✅ | `calendar.spec.ts` |
+| `cases` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
+| `tasks` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
+| `approvals` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
+| `notifications` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
+| `search-modal` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
+| `users` (panel de invitaciones) | ✅ | ✅ | ✅ | — |
+
+Cada una se comprueba en los tres estados, y en el de error se exige **además
+que el estado vacío NO aparezca**: confundirlos es exactamente el defecto.
+
+### Pendientes
 
 ```
-approvals/approvals-queue.tsx          documents/documents-client.tsx
-audit/audit-log-viewer.tsx             messages/page.tsx
-cases/[id]/page.tsx                    notifications/notification-log-viewer.tsx
-cases/kanban/page.tsx                  tasks/page.tsx
-cases/page.tsx                         tasks/timeline/page.tsx
+audit/audit-log-viewer.tsx             documents/documents-client.tsx
+cases/[id]/page.tsx                    messages/page.tsx
+cases/kanban/page.tsx                  tasks/timeline/page.tsx
 workflow-logs/workflow-logs-client.tsx components/dashboard/usage-widget.tsx
-components/layout/notification-bell.tsx  components/layout/search-modal.tsx
+components/layout/notification-bell.tsx
 ```
-
-(`calendar/CalendarClient.tsx` y `users/invitaciones-panel.tsx` ya lo tienen
-resuelto.)
