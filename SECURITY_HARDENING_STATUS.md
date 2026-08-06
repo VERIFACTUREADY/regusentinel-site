@@ -1378,3 +1378,39 @@ con «Run workflow». Empieza a correr cuando se fusione a `main`.
 
 Las menciones anteriores de este documento a «11 crons» describen el estado
 previo a este cambio; ahora son 10 en Vercel y 1 en GitHub Actions.
+
+### Confirmado: Vercel despliega
+
+Estado publicado por Vercel en el commit `ae753ad`, ya con los crons frecuentes
+fuera de `vercel.json`:
+
+| Hora (UTC) | Estado | Enlace |
+|---|---|---|
+| 00:12:30 | `pending` — «Vercel is deploying your app» | `…/regusentinel-site/69rBjVv4Fz2WVo4Btrg1H8cZLr3a` |
+| 00:14:30 | **`success` — «Deployment has completed»** | el mismo |
+
+Dos minutos de compilación, que es lo que tarda este proyecto. Compárese con lo
+anterior: rechazo en 0–2 segundos y siempre el mismo enlace genérico de error.
+
+Queda así demostrado que la causa era la configuración de crons frente al plan,
+no el código: **el único cambio entre el rechazo instantáneo y el despliegue
+correcto es haber sacado de `vercel.json` el cron de 10 minutos.**
+
+GitHub Actions sobre el mismo commit: ejecución 16, los seis jobs en verde.
+
+### Lo que falta configurar para que el cron migrado funcione
+
+El despliegue ya no depende de esto, pero la recuperación de cobros sí. En
+**Settings → Secrets and variables → Actions**:
+
+| Nombre | Pestaña | Valor |
+|---|---|---|
+| `CRON_SECRET` | Secrets | El mismo valor que la variable `CRON_SECRET` del proyecto en Vercel |
+| `APP_URL` | Variables | La URL pública con `https://` y sin barra final |
+
+Comprobación: **Actions → Crons frecuentes → Run workflow**. Debe terminar en
+verde con `HTTP 200`. Un `401` significa que los dos `CRON_SECRET` no coinciden;
+un `000`, que `APP_URL` es incorrecta.
+
+Y recuérdese que `schedule` sólo se dispara desde la rama por defecto: hasta que
+esta rama se fusione, la recuperación de cobros hay que lanzarla a mano.
