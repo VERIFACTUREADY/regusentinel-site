@@ -28,6 +28,14 @@ export default defineConfig({
     baseURL: process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+
+    // El navegador debe comportarse como el de un usuario real de este
+    // producto, que es espanol. Con el navegador en UTC —el valor por defecto de
+    // un contenedor— se escapan justo los fallos de fecha: el calendario
+    // calculaba las claves de dia con `toISOString()` y salia desplazado 24
+    // horas para todo el mercado objetivo, mientras la CI lo daba por bueno.
+    timezoneId: "Europe/Madrid",
+    locale: "es-ES",
     // El navegador viene preinstalado en la imagen y su version puede no
     // coincidir con la que espera @playwright/test. Se apunta al binario que
     // existe en vez de descargar otro: PLAYWRIGHT_CHROMIUM_PATH lo fija de
@@ -37,5 +45,26 @@ export default defineConfig({
       : undefined,
   },
 
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  /**
+   * Tres tamanos de pantalla.
+   *
+   * `escritorio` ejecuta la suite completa. Los otros dos ejecutan solo los
+   * ficheros marcados como responsive: repetir toda la suite en tres tamanos
+   * triplicaria el tiempo de CI sin encontrar nada nuevo en la mayoria de los
+   * casos, mientras que lo que de verdad se rompe al estrechar la pantalla
+   * —menus, tablas, rejillas— si se comprueba en los tres.
+   */
+  projects: [
+    { name: "escritorio", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "tablet",
+      testMatch: /.*\.responsive\.spec\.ts/,
+      use: { ...devices["iPad (gen 7)"] },
+    },
+    {
+      name: "movil",
+      testMatch: /.*\.responsive\.spec\.ts/,
+      use: { ...devices["Pixel 5"] },
+    },
+  ],
 });
