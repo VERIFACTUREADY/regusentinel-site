@@ -189,4 +189,44 @@ test.describe("Tamanos de pantalla", () => {
     // puede es arrastrar consigo toda la pagina.
     await sinDesbordeHorizontal(page, "Listado de expedientes");
   });
+
+  test("el menu cerrado no deja enlaces alcanzables por teclado", async ({ page }) => {
+    /*
+     * El panel se apartaba con `-translate-x-full`, que lo saca de la vista
+     * pero NO del arbol de accesibilidad ni del orden de tabulacion: con el
+     * menu cerrado, quien navega con teclado tabulaba por todos los enlaces sin
+     * verlos, y un lector de pantalla se los anunciaba.
+     */
+    const enPantallaPequena = (page.viewportSize()?.width ?? 0) < 1024;
+    test.skip(!enPantallaPequena, "En escritorio el panel esta siempre visible a proposito.");
+
+    await login(page, E2E.owner);
+    await page.goto("/dashboard");
+
+    /*
+     * Se localiza por CSS, NO por rol.
+     *
+     * `getByRole` excluye lo que esta fuera del arbol de accesibilidad, que es
+     * justo lo que esta correccion consigue: usarlo aqui haria que la prueba
+     * pasara por no encontrar nada, sin demostrar nada. Con el selector de CSS
+     * el enlace se encuentra siempre y se puede comprobar su estado real.
+     */
+    const enlace = page
+      .locator('aside[aria-label="Navegacion principal"] a[href="/cases"]')
+      .first();
+
+    await expect(enlace, "el enlace debe seguir en el DOM").toHaveCount(1);
+    await expect(
+      enlace,
+      "con el menu cerrado, sus enlaces no pueden estar visibles",
+    ).toBeHidden({ timeout: 15_000 });
+
+    // Y tampoco enfocables: `toBeHidden` mira estilos, esto mira el foco real,
+    // que es lo que rompia para quien navega con teclado.
+    const enfocable = await enlace.evaluate((el) => {
+      (el as HTMLElement).focus();
+      return document.activeElement === el;
+    });
+    expect(enfocable, "un enlace del menu cerrado no debe poder recibir el foco").toBe(false);
+  });
 });

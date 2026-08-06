@@ -190,12 +190,30 @@ export function AppShell({
         )}
 
         {/* Sidebar — mobile: slide-over, desktop: static */}
-        <aside className={`
+        {/*
+          Cerrado, el panel tiene que ser INERTE, no solo estar fuera de vista.
+          Antes solo se apartaba con `-translate-x-full`: seguia en el arbol de
+          accesibilidad y en el orden de tabulacion, asi que con el menu
+          "cerrado" un usuario de teclado tabulaba por todos los enlaces de
+          navegacion sin verlos, y un lector de pantalla los anunciaba.
+
+          `invisible` (visibility: hidden) lo saca de ambos, y
+          `pointer-events-none` evita que intercepte clics en la zona izquierda
+          de la pantalla. En `lg` se revierten los dos, porque ahi el panel es
+          fijo y siempre esta a la vista.
+
+          La visibilidad entra en la transicion para que el cierre siga
+          animandose en vez de desaparecer de golpe.
+        */}
+        <aside
+          aria-label="Navegacion principal"
+          className={`
           fixed inset-y-0 left-0 z-50 w-64 bg-white border-r flex flex-col shrink-0
-          transform transition-transform duration-200 ease-in-out
-          lg:static lg:translate-x-0
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-        `}>
+          transform transition-[transform,visibility] duration-200 ease-in-out
+          lg:static lg:translate-x-0 lg:visible lg:pointer-events-auto
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full invisible pointer-events-none"}
+        `}
+        >
           {sidebarContent}
         </aside>
 
