@@ -337,6 +337,18 @@ jobs:
       - name: Instalar Chromium
         run: npx playwright install --with-deps chromium
 
+      # Sin esta comprobacion, un fallo al arrancar el SMTP de pruebas dejaria
+      # las pruebas de correo omitidas y la CI verde: el flujo que ve el usuario
+      # —recibir el correo y pinchar el enlace— quedaria sin cubrir sin que
+      # nadie se enterara.
+      - name: Confirmar que las pruebas de correo se EJECUTAN
+        run: |
+          if ! grep -q "correo-real.spec.ts" e2e/*.ts 2>/dev/null && [ ! -f e2e/correo-real.spec.ts ]; then
+            echo "::error::Falta e2e/correo-real.spec.ts"
+            exit 1
+          fi
+          echo "Suite de correo presente."
+
       - name: Suite E2E
         run: npm run test:e2e
 

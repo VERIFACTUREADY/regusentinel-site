@@ -15,12 +15,35 @@
  * En esta suite el correo NO sale —no hay SMTP— así que el segundo caso es el
  * comportamiento por defecto y se puede comprobar tal cual.
  */
-import { type Page } from "@playwright/test";
+import { type Page, type APIRequestContext } from "@playwright/test";
 import { test, expect } from "./vigilancia";
 import { PrismaClient } from "@prisma/client";
 import { E2E } from "./seed-e2e";
 
 const prisma = new PrismaClient();
+const BANDEJA = process.env.BANDEJA_URL ?? "http://127.0.0.1:8025";
+
+/**
+ * Comprueba que un enlace de creacion de contrasena ya no sirve.
+ *
+ * Se afirma que la peticion NO tiene exito, no que devuelva un 400 concreto: el
+ * endpoint esta limitado por IP y en una suite que lo ejerce varias veces puede
+ * responder 429. Un 429 tampoco deja usar el token, pero no demuestra que este
+ * muerto, asi que la prueba de verdad es la de la base de datos: `magicToken`
+ * en null.
+ */
+async function enlaceMuerto(api: APIRequestContext, token: string, email: string) {
+  const res = await api.post("/api/auth/reset-password", {
+    data: { token, password: "IntentoDeReuso-2026!" },
+  });
+  expect(res.ok(), "el enlace no puede seguir sirviendo").toBeFalsy();
+
+  const usuario = await prisma.user.findUnique({
+    where: { email },
+    select: { magicToken: true },
+  });
+  expect(usuario!.magicToken, "el token debe estar anulado").not.toBe(token);
+}
 
 test.afterAll(async () => {
   await prisma.$disconnect();
@@ -33,6 +56,12 @@ async function login(page: Page, email: string, password = E2E.password) {
   await page.click('button[type="submit"]');
   await page.waitForURL("**/dashboard", { timeout: 45_000 });
 }
+
+test.afterEach(async ({ request }) => {
+  // El estado "averiado" es global al servidor de pruebas: dejarlo puesto haria
+  // fallar a la siguiente prueba por un motivo que no es suyo.
+  await request.post(`${BANDEJA}/reparar`);
+});
 
 test.describe("Invitaciones", () => {
   test("al invitar se emite un token con el que el invitado puede crear su contrasena", async ({
@@ -88,8 +117,14 @@ test.describe("Invitaciones", () => {
 
   test("no se anuncia 'Invitacion enviada' cuando el correo no ha salido", async ({
     page,
+    request,
   }) => {
     const correo = `sincorreo.${Date.now()}@ejemplo.test`;
+
+    // Se averia el SMTP a proposito. Antes esta prueba dependia de que no
+    // hubiera ninguno, lo cual dejo de ser cierto al montar el de pruebas: una
+    // prueba no puede apoyarse en que falte una pieza del entorno.
+    await request.post(`${BANDEJA}/averiar`);
 
     await login(page, E2E.owner);
     await page.goto("/users");
@@ -105,8 +140,10 @@ test.describe("Invitaciones", () => {
     await expect(page.getByText(/Invitacion enviada/)).toHaveCount(0);
   });
 
-  test("el fallo de correo queda escrito en la auditoria", async ({ page }) => {
+  test("el fallo de correo queda escrito en la auditoria", async ({ page, request }) => {
     const correo = `auditoria.${Date.now()}@ejemplo.test`;
+
+    await request.post(`${BANDEJA}/averiar`);
 
     await login(page, E2E.owner);
     await page.goto("/users");
@@ -235,10 +272,7 @@ test.describe("Ciclo de vida de la invitacion", () => {
     expect(despues, "el enlace anterior debe quedar anulado").not.toBe(antes);
 
     // El enlace viejo ya no sirve.
-    const viejo = await page.request.post("/api/auth/reset-password", {
-      data: { token: antes, password: "LoQueSea-2026!" },
-    });
-    expect(viejo.status()).toBe(400);
+    await enlaceMuerto(page.request, antes!, correo);
   });
 
   test("Revocar quita el acceso y anula el enlace", async ({ page }) => {
@@ -281,10 +315,7 @@ test.describe("Ciclo de vida de la invitacion", () => {
 
     // 2. El enlace deja de servir, por si acabo en un correo reenviado.
     expect(usuario!.magicToken).toBeNull();
-    const intento = await page.request.post("/api/auth/reset-password", {
-      data: { token, password: "LoQueSea-2026!" },
-    });
-    expect(intento.status()).toBe(400);
+    await enlaceMuerto(page.request, token!, correo);
 
     // 3. Queda el estado.
     const inv = await prisma.invitation.findFirst({ where: { email: correo } });
@@ -352,10 +383,7 @@ test.describe("Ciclo de vida de la invitacion", () => {
     expect(inv!.acceptedAt).not.toBeNull();
 
     // El mismo enlace no puede volver a usarse.
-    const repetido = await page.request.post("/api/auth/reset-password", {
-      data: { token, password: "OtraDistinta-2026!" },
-    });
-    expect(repetido.status()).toBe(400);
+    await enlaceMuerto(page.request, token, correo);
   });
 
   test("un OPERATOR no puede reenviar ni revocar", async ({ page }) => {
