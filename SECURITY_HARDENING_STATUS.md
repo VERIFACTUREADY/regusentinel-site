@@ -1342,3 +1342,39 @@ Es decir: no hay dos fallos, hay **el mismo rechazo dos veces**, y no llega a
 compilarse. Abrir ese enlace en un navegador da el motivo literal; desde este
 entorno el proxy de salida lo rechaza con 403, como todos los dominios de
 Vercel.
+
+### Resuelto: los crons frecuentes salen de Vercel
+
+El proyecto se mantiene en **Hobby**, que sólo admite crons diarios. En lugar
+de degradar los procesos, cambian de disparador:
+
+- **`vercel.json`** conserva los 10 crons que se ejecutan una vez al día o
+  menos.
+- **`/api/cron/stripe-recovery`** pasa a `.github/workflows/crons.yml`
+  **conservando su frecuencia de 10 minutos**. Es lo que reintenta los cobros
+  fallidos antes de que una suscripción se cancele sola: bajarlo a diario
+  alargaría de 10 minutos a 24 horas la ventana en la que un cobro recuperable
+  se queda sin reintentar.
+
+`CRON_SECRET` se lee de los secretos de Actions —nunca del repositorio— y viaja
+en la cabecera `Authorization`, no como parámetro de consulta: los parámetros
+acaban en los registros de acceso, las cabeceras no. El workflow falla en el
+primer paso, con mensaje explícito, si falta `CRON_SECRET` o `APP_URL`: un cron
+que devuelve 401 en silencio es peor que uno que no existe.
+
+Se añade `workflow_dispatch` con selector de endpoint para poder disparar
+cualquiera de los once a mano.
+
+Regresión cubierta por `__tests__/vercel-crons.test.ts`: falla si alguien
+declara en `vercel.json` un cron más frecuente que diario, o si desaparece del
+workflow la frecuencia de la recuperación de Stripe. Comprobado que la prueba
+falla al reponer el cron de 10 minutos y pasa al quitarlo.
+
+Reparto completo en `docs/CRONS.md`.
+
+**Limitación conocida**: GitHub sólo ejecuta `schedule` desde la rama por
+defecto. Mientras el workflow viva en esta rama no se dispara solo; se prueba
+con «Run workflow». Empieza a correr cuando se fusione a `main`.
+
+Las menciones anteriores de este documento a «11 crons» describen el estado
+previo a este cambio; ahora son 10 en Vercel y 1 en GitHub Actions.

@@ -1,0 +1,128 @@
+# Crons que no caben en el plan Hobby de Vercel.
+#
+# POR QUE EXISTE ESTE FICHERO
+# ----------------------------
+# El plan Hobby de Vercel solo admite crons de frecuencia diaria. Mientras
+# `vercel.json` declaraba uno cada 10 minutos, Vercel RECHAZABA el despliegue
+# entero antes de compilar: el estado «Deployment failed.» llegaba 0-2 segundos
+# despues del push, cuando el build de este proyecto tarda entre 70 y 90.
+#
+# No es que ese proceso fuera prescindible: la recuperacion de cobros de Stripe
+# es lo que reintenta los pagos fallidos antes de que una suscripcion se cancele
+# sola. Bajarla a una vez al dia alarga hasta 24 horas la ventana en la que un
+# cobro recuperable se queda sin reintentar.
+#
+# Asi que el proceso conserva su frecuencia y cambia de disparador: sale de
+# `vercel.json` y entra aqui.
+#
+# EL SECRETO NO ESTA EN EL REPOSITORIO
+# -------------------------------------
+# `CRON_SECRET` se lee de los secretos de Actions y viaja en la cabecera
+# `Authorization`, nunca como parametro de consulta: los parametros acaban en
+# los registros del servidor y del proxy, las cabeceras no.
+#
+# LIMITACION QUE HAY QUE CONOCER
+# -------------------------------
+# GitHub solo ejecuta `schedule` desde la RAMA POR DEFECTO. Mientras esto viva
+# en una rama de trabajo, no se dispara solo: hay que usar «Run workflow». En
+# cuanto se fusione a `main`, empieza a correr.
+#
+# Ademas GitHub no garantiza la puntualidad de `schedule`: en horas de mucha
+# carga los disparos se retrasan, y a veces se saltan. Para un reintento de
+# cobro es aceptable —el siguiente disparo recoge lo que quedo pendiente—, pero
+# no debe usarse este mecanismo para nada que exija puntualidad estricta.
+name: Crons frecuentes
+
+on:
+  schedule:
+    # Recuperacion de cobros de Stripe: la misma frecuencia que tenia en
+    # `vercel.json` antes de que Hobby la rechazara.
+    - cron: "*/10 * * * *"
+  # Para probarlos a mano sin esperar al turno.
+  workflow_dispatch:
+    inputs:
+      ruta:
+        description: "Endpoint de cron a disparar"
+        required: true
+        default: /api/cron/stripe-recovery
+        type: choice
+        options:
+          - /api/cron/stripe-recovery
+          - /api/cron/notifications
+          - /api/cron/unblock-tasks
+          - /api/cron/demo-reset
+          - /api/cron/stale-leads
+          - /api/cron/trial-expiring
+          - /api/cron/trial-expired
+          - /api/cron/retention-cleanup
+          - /api/cron/analyze-all
+          - /api/cron/digest-isd
+          - /api/cron/daily-briefing
+
+# Un disparo cada 10 minutos con una ejecucion que se alargue produciria dos
+# procesos solapados sobre los mismos cobros. Se deja terminar al que ya corre.
+concurrency:
+  group: crons-frecuentes
+  cancel-in-progress: false
+
+jobs:
+  disparar:
+    name: Disparar cron
+    runs-on: ubuntu-latest
+    # Un fork no debe poder lanzar procesos contra la aplicacion de produccion.
+    if: github.repository == 'VERIFACTUREADY/regusentinel-site'
+    steps:
+      - name: Comprobar la configuracion
+        env:
+          BASE: ${{ vars.APP_URL }}
+          SECRETO: ${{ secrets.CRON_SECRET }}
+        run: |
+          # Sin esta comprobacion, una variable mal puesta produce un 401
+          # silencioso y el proceso deja de ejecutarse sin que nadie se entere.
+          # Un cron que falla en silencio es peor que uno que no existe.
+          faltan=""
+          [ -n "$BASE" ]    || faltan="$faltan APP_URL(variable)"
+          [ -n "$SECRETO" ] || faltan="$faltan CRON_SECRET(secreto)"
+          if [ -n "$faltan" ]; then
+            echo "::error::Falta configurar en este repositorio:$faltan"
+            echo "APP_URL va en Settings > Secrets and variables > Actions > Variables."
+            echo "CRON_SECRET va en la pestana Secrets, y debe coincidir con el de Vercel."
+            exit 1
+          fi
+
+      - name: Llamar al endpoint
+        env:
+          BASE: ${{ vars.APP_URL }}
+          SECRETO: ${{ secrets.CRON_SECRET }}
+          RUTA: ${{ github.event.inputs.ruta || '/api/cron/stripe-recovery' }}
+        run: |
+          set -uo pipefail
+          URL="${BASE%/}$RUTA"
+          echo "Disparando $RUTA"
+
+          # El secreto viaja en la cabecera, no en la URL: los parametros de
+          # consulta acaban en los registros de acceso, las cabeceras no.
+          # `-sS` calla la barra de progreso pero deja pasar los errores.
+          CODIGO=$(curl -sS -o /tmp/respuesta.txt -w '%{http_code}' \
+            --max-time 300 --retry 2 --retry-delay 10 --retry-connrefused \
+            -H "Authorization: Bearer $SECRETO" \
+            "$URL") || CODIGO="000"
+
+          echo "HTTP $CODIGO"
+          # La respuesta puede traer un resumen util; el cuerpo de estos
+          # endpoints no contiene datos personales, solo recuentos.
+          head -c 2000 /tmp/respuesta.txt || true
+          echo
+
+          case "$CODIGO" in
+            2*)   echo "Correcto." ;;
+            401|403)
+              echo "::error::$RUTA ha respondido $CODIGO. El CRON_SECRET de este repositorio no coincide con el de la aplicacion."
+              exit 1 ;;
+            000)
+              echo "::error::No se ha podido contactar con $URL. Revisa APP_URL y que el despliegue este vivo."
+              exit 1 ;;
+            *)
+              echo "::error::$RUTA ha respondido $CODIGO."
+              exit 1 ;;
+          esac

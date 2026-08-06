@@ -39,10 +39,6 @@
     {
       "path": "/api/cron/daily-briefing",
       "schedule": "30 7 * * 1-5"
-    },
-    {
-      "path": "/api/cron/stripe-recovery",
-      "schedule": "*/10 * * * *"
     }
   ]
 }
