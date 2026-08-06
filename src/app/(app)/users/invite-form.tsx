@@ -48,6 +48,13 @@ export function InviteForm() {
       }
       setEmail("");
       setRole("OPERATOR");
+      /*
+       * `router.refresh()` refresca los componentes de servidor, pero el panel
+       * de invitaciones es de cliente y trae su lista por su cuenta: sin este
+       * aviso, invitabas a alguien y no aparecia en la lista hasta recargar la
+       * pagina a mano.
+       */
+      window.dispatchEvent(new CustomEvent("heredia:invitaciones-cambiadas"));
       router.refresh();
     } catch (err: any) {
       setMessage({ type: "err", text: err.message });

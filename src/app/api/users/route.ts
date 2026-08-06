@@ -4,6 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { inviteUserSchema } from "@/lib/validations";
 import { checkRoleAssignment } from "@/lib/rbac";
 import { sendEmail } from "@/lib/email";
+import {
+  tieneCredencialUtilizable,
+  rotarTokenInvitacion,
+  enlaceCrearContrasena,
+  VALIDEZ_INVITACION_MS,
+} from "@/lib/invitaciones";
 import { logAudit } from "@/lib/audit";
 import { checkUserLimit, planOf, lockOrgForLimits } from "@/lib/plan-limits";
 import crypto from "crypto";
@@ -99,7 +105,8 @@ export async function POST(req: NextRequest) {
 
           const user = await tx.user.findUnique({
             where: { email: data.email },
-            select: { id: true },
+            // `passwordHash` hace falta para saber si la credencial sirve.
+            select: { id: true, passwordHash: true },
           });
 
           if (user) {
@@ -112,32 +119,72 @@ export async function POST(req: NextRequest) {
           const limit = await checkUserLimit(session.user.orgId, plan, tx);
           if (!limit.allowed) throw new InviteError(limit.message!, 403);
 
-          // El token se retiene aquí: es lo que permite al invitado ELEGIR su
-          // contraseña. Antes se generaba y no se le enviaba a nadie, así que
-          // la persona invitada recibía un correo que la mandaba a /login sin
-          // tener ninguna credencial con la que entrar.
+          /*
+           * El token es lo que permite al invitado ELEGIR su contrasena.
+           *
+           * La condicion NO es "el usuario es nuevo", que era el error
+           * anterior. Es "no tiene una credencial utilizable". Alguien que ya
+           * existe en la base de datos porque le invitaron antes y nunca entro
+           * sigue sin contrasena: si no se le emite token, se le da de alta en
+           * la organizacion y se queda fuera para siempre.
+           */
           let tokenInvitacion: string | null = null;
+          let caduca = new Date(Date.now() + VALIDEZ_INVITACION_MS);
 
           let userId: string;
           if (user) {
             userId = user.id;
+            if (!tieneCredencialUtilizable(user)) {
+              const emitido = await rotarTokenInvitacion(tx, userId);
+              tokenInvitacion = emitido.token;
+              caduca = emitido.expira;
+            }
           } else {
-            tokenInvitacion = crypto.randomBytes(32).toString("hex");
             userId = (
               await tx.user.create({
                 data: {
                   email: data.email,
                   name: data.email.split("@")[0] || null,
-                  magicToken: tokenInvitacion,
-                  magicTokenExp: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 días
                 },
                 select: { id: true },
               })
             ).id;
+            const emitido = await rotarTokenInvitacion(tx, userId);
+            tokenInvitacion = emitido.token;
+            caduca = emitido.expira;
           }
 
           await tx.membership.create({
             data: { userId, orgId: session.user.orgId, role: data.role },
+          });
+
+          /*
+           * La invitacion queda registrada con su estado. Reinvitar reutiliza
+           * la fila —hay un unico indice por (orgId, email)— porque una segunda
+           * invitacion al mismo correo no es un hecho nuevo, es el mismo que
+           * vuelve a intentarse.
+           */
+          await tx.invitation.upsert({
+            where: { orgId_email: { orgId: session.user.orgId, email: data.email } },
+            create: {
+              orgId: session.user.orgId,
+              email: data.email,
+              role: data.role,
+              status: tokenInvitacion ? "PENDING" : "ACCEPTED",
+              invitedById: session.user.id,
+              expiresAt: caduca,
+              acceptedAt: tokenInvitacion ? null : new Date(),
+              lastSentAt: new Date(),
+            },
+            update: {
+              role: data.role,
+              status: tokenInvitacion ? "PENDING" : "ACCEPTED",
+              invitedById: session.user.id,
+              expiresAt: caduca,
+              acceptedAt: tokenInvitacion ? null : new Date(),
+              revokedAt: null,
+              lastSentAt: new Date(),
+            },
           });
 
           return { userId, tokenInvitacion };
@@ -165,7 +212,7 @@ export async function POST(req: NextRequest) {
      * tenia cuenta recibe simplemente el aviso de que se le ha dado acceso.
      */
     const enlace = tokenInvitacion
-      ? `${process.env.APP_URL}/reset-password?token=${tokenInvitacion}`
+      ? enlaceCrearContrasena(tokenInvitacion)
       : `${process.env.APP_URL}/login`;
 
     let correoEnviado = false;

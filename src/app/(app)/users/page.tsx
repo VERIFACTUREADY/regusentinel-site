@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { PLAN_PRICING } from "@/lib/stripe";
 import { ROLE_LABELS } from "@/lib/constants";
 import { InviteForm } from "./invite-form";
+import { InvitacionesPanel } from "./invitaciones-panel";
 import { MemberRow } from "./member-row";
 
 export default async function UsersPage() {
@@ -48,6 +49,7 @@ export default async function UsersPage() {
       )}
 
       {canInvite && <InviteForm />}
+      {canInvite && <InvitacionesPanel />}
 
       <div className="bg-white rounded-lg border">
         <div className="px-6 py-4 border-b">

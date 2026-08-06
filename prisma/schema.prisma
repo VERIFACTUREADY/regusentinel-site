@@ -117,6 +117,8 @@ model Organization {
   /// proveedor del software. Antes se hacia sin que nadie lo decidiera.
   aiEnabled   Boolean   @default(false)
   aiEnabledAt DateTime?
+
+  invitations Invitation[]
 }
 
 // ─── USER & MEMBERSHIP ──────────────────────────────────
@@ -137,6 +139,8 @@ model User {
   auditLogs     AuditLog[]
   promptLogs    PromptLog[]
   taskNotes     TaskNote[]
+
+  invitacionesEnviadas Invitation[] @relation("InvitacionesEnviadas")
 }
 
 model Membership {
@@ -913,4 +917,50 @@ model StripeEvent {
   @@index([status, receivedAt])
   @@index([receivedAt])
   @@index([status, startedAt])
+}
+
+/// Estado de una invitacion.
+///
+/// POR QUE UNA TABLA APARTE Y NO UN CAMPO EN Membership
+/// ----------------------------------------------------
+/// El acceso se decide mirando Membership, y esa consulta se hace desde varios
+/// sitios: el callback de NextAuth, la carga de sesion, la comprobacion de
+/// tenencia. Anadir ahi un estado "revocada" obligaria a excluirlo en TODOS, y
+/// olvidarse de uno significa dejar acceso a alguien a quien se ha revocado.
+///
+/// Con una tabla aparte, revocar sigue siendo lo que ya estaba probado —borrar
+/// la membresia— y el estado queda registrado sin tocar ningun camino de
+/// acceso.
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+model Invitation {
+  id          String           @id @default(cuid())
+  orgId       String
+  email       String
+  role        Role
+  status      InvitationStatus @default(PENDING)
+  invitedById String?
+  /// Caducidad del enlace. Coincide con `User.magicTokenExp` al emitirlo.
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  /// Cuantas veces se ha reenviado. Cada reenvio rota el token, de modo que el
+  /// enlace anterior deja de servir.
+  resendCount Int              @default(0)
+  lastSentAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  invitedBy User?        @relation("InvitacionesEnviadas", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  /// Una invitacion viva por correo y organizacion. Reinvitar reutiliza la fila.
+  @@unique([orgId, email])
+  @@index([orgId, status])
 }
