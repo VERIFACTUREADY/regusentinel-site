@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { identificacionResponsable, contactoPrivacidadTexto, faltanDatosLegales } from "@/lib/legal-entity";
 
 export const metadata: Metadata = {
   title: "Politica de Privacidad — Heredia",
@@ -21,8 +22,7 @@ export default function PrivacidadPage() {
 
       <h2>1. Responsable del tratamiento</h2>
       <p>
-        <strong>[DENOMINACION SOCIAL]</strong>, con NIF <strong>[NIF]</strong> y domicilio en
-        <strong> [DOMICILIO]</strong> (en adelante, &quot;el Proveedor&quot;), es responsable del
+        <strong>{identificacionResponsable()}</strong> (en adelante, &quot;el Proveedor&quot;), es responsable del
         tratamiento de los datos de las cuentas de usuario profesional y de la facturacion.
       </p>
       <p>
@@ -104,7 +104,7 @@ export default function PrivacidadPage() {
 
       <h2>7. Derechos de los interesados</h2>
       <p>Puedes ejercer tus derechos de acceso, rectificacion, supresion, limitacion,
-        portabilidad y oposicion enviando un email a <strong>dpo@heredia.app</strong>.</p>
+        portabilidad y oposicion enviando un email a <strong>{contactoPrivacidadTexto()}</strong>.</p>
       <p>
         Tambien puedes presentar una reclamacion ante la Agencia Espanola de Proteccion
         de Datos (<a href="https://www.aepd.es" target="_blank" rel="noopener noreferrer">www.aepd.es</a>).

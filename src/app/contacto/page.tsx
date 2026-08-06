@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { identificacionResponsable } from "@/lib/legal-entity";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
@@ -81,8 +82,7 @@ export default function ContactoPage() {
         <div className="mt-12 border-t pt-8">
           <h2 className="font-semibold text-gray-900 mb-4">Datos de la empresa</h2>
           <div className="text-sm text-gray-600 space-y-1">
-            <p><strong>HEREDIA TECHNOLOGIES S.L.</strong></p>
-            <p>Domicilio fiscal en Espana</p>
+            <p><strong>{identificacionResponsable()}</strong></p>
             <p>Email general: <a href="mailto:info@heredia.app" className="text-primary hover:underline">info@heredia.app</a></p>
           </div>
         </div>

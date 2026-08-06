@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { identificacionResponsable } from "@/lib/legal-entity";
 
 export const metadata: Metadata = {
   title: "Terminos de Servicio — Heredia",
@@ -104,7 +105,7 @@ export default function TerminosPage() {
       <h2>12. Propiedad intelectual</h2>
       <p>
         Todos los derechos de propiedad intelectual sobre la Plataforma (codigo, diseno,
-        marca, documentacion) pertenecen a HEREDIA TECHNOLOGIES S.L. El Cliente obtiene
+        marca, documentacion) pertenecen a {identificacionResponsable()}. El Cliente obtiene
         una licencia de uso no exclusiva, no transferible, limitada al periodo de suscripcion.
       </p>
 
