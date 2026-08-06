@@ -85,9 +85,10 @@ export async function POST(req: NextRequest) {
     // y sólo entonces se crea usuario y membresía. Si algo falla, no queda
     // nada escrito.
     let invitedUserId = "";
+    let tokenInvitacion: string | null = null;
 
     try {
-      invitedUserId = await conReintentoDeColision(async () =>
+      const alta = await conReintentoDeColision(async () =>
         prisma.$transaction(async (tx) => {
           await lockOrgForLimits(session.user.orgId, tx);
 
@@ -111,27 +112,39 @@ export async function POST(req: NextRequest) {
           const limit = await checkUserLimit(session.user.orgId, plan, tx);
           if (!limit.allowed) throw new InviteError(limit.message!, 403);
 
-          const userId =
-            user?.id ??
-            (
+          // El token se retiene aquí: es lo que permite al invitado ELEGIR su
+          // contraseña. Antes se generaba y no se le enviaba a nadie, así que
+          // la persona invitada recibía un correo que la mandaba a /login sin
+          // tener ninguna credencial con la que entrar.
+          let tokenInvitacion: string | null = null;
+
+          let userId: string;
+          if (user) {
+            userId = user.id;
+          } else {
+            tokenInvitacion = crypto.randomBytes(32).toString("hex");
+            userId = (
               await tx.user.create({
                 data: {
                   email: data.email,
                   name: data.email.split("@")[0] || null,
-                  magicToken: crypto.randomBytes(32).toString("hex"),
+                  magicToken: tokenInvitacion,
                   magicTokenExp: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 días
                 },
                 select: { id: true },
               })
             ).id;
+          }
 
           await tx.membership.create({
             data: { userId, orgId: session.user.orgId, role: data.role },
           });
 
-          return userId;
+          return { userId, tokenInvitacion };
         }),
       );
+      invitedUserId = alta.userId;
+      tokenInvitacion = alta.tokenInvitacion;
     } catch (err) {
       if (err instanceof InviteError) {
         return NextResponse.json({ error: err.message }, { status: err.status });
@@ -139,27 +152,75 @@ export async function POST(req: NextRequest) {
       throw err;
     }
 
-    // Send invite email
+    /*
+     * EL CORREO DE INVITACION
+     * -----------------------
+     * Antes decia "Accede con tu email" y enlazaba a /login. Para alguien
+     * recien creado eso es un callejon sin salida: no tiene contrasena, y el
+     * `magicToken` que se le habia generado no se le enviaba a ninguna parte.
+     * La invitacion se registraba como enviada y la persona no podia entrar.
+     *
+     * Ahora el alta nueva recibe el enlace que le permite elegir contrasena
+     * —el mismo mecanismo que la recuperacion, que ya existia— y quien ya
+     * tenia cuenta recibe simplemente el aviso de que se le ha dado acceso.
+     */
+    const enlace = tokenInvitacion
+      ? `${process.env.APP_URL}/reset-password?token=${tokenInvitacion}`
+      : `${process.env.APP_URL}/login`;
+
+    let correoEnviado = false;
+    let motivoFallo: string | null = null;
     try {
       await sendEmail({
         to: data.email,
         subject: "Invitacion a Heredia",
-        html: `<p>Has sido invitado a unirte a Heredia.</p>
-               <p>Accede con tu email: ${data.email}</p>
-               <p><a href="${process.env.APP_URL}/login">Iniciar sesion</a></p>`,
+        html: tokenInvitacion
+          ? `<p>Te han invitado a unirte a Heredia.</p>
+             <p>Para entrar, elige tu contrasena:</p>
+             <p><a href="${enlace}">Crear mi contrasena</a></p>
+             <p>El enlace caduca en 7 dias. Si caduca, pide que te reenvien la invitacion.</p>`
+          : `<p>Te han dado acceso a una organizacion en Heredia.</p>
+             <p>Entra con tu cuenta habitual:</p>
+             <p><a href="${enlace}">Iniciar sesion</a></p>`,
       });
-    } catch {
-      // Email sending is best-effort
+      correoEnviado = true;
+    } catch (err) {
+      /*
+       * NO se traga el fallo.
+       *
+       * Antes este catch estaba vacio con el comentario "best-effort" y el
+       * endpoint respondia 201, asi que la interfaz decia "Invitacion enviada"
+       * aunque el servidor de correo estuviera caido. El administrador se
+       * quedaba esperando a alguien que nunca iba a recibir nada.
+       *
+       * El alta SI es correcta —la membresia esta creada— asi que no se
+       * devuelve un error: se devuelve la verdad, `emailSent: false`, y la
+       * interfaz lo dice y ofrece reenviar.
+       */
+      motivoFallo = err instanceof Error ? err.message : "error desconocido";
+      console.error("[invitacion] no se ha podido enviar el correo:", motivoFallo);
     }
 
     await logAudit({
       orgId: session.user.orgId,
       userId: session.user.id,
       action: "user.invited",
-      details: `${data.email} invitado como ${data.role}`,
+      details:
+        `${data.email} invitado como ${data.role}` +
+        (correoEnviado ? "" : ` — EL CORREO NO SE PUDO ENVIAR (${motivoFallo})`),
     });
 
-    return NextResponse.json({ userId: invitedUserId, role: data.role }, { status: 201 });
+    return NextResponse.json(
+      {
+        userId: invitedUserId,
+        role: data.role,
+        emailSent: correoEnviado,
+        // El token NO se devuelve nunca: entregarselo a quien invita le daria
+        // poder para fijar la contrasena de la cuenta de otra persona.
+        needsPasswordSetup: tokenInvitacion !== null,
+      },
+      { status: 201 },
+    );
   } catch (error: any) {
     if (error?.name === "ZodError") {
       return NextResponse.json({ error: "Datos invalidos", details: error.errors }, { status: 400 });

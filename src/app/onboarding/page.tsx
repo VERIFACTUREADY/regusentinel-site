@@ -199,6 +199,8 @@ export default function OnboardingPage() {
                     onChange={(e) => update("email", e.target.value)}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                     placeholder="andrea@gestoriaejemplo.es"
+                    name="email"
+                    autoComplete="username"
                   />
                 </div>
                 <div>
@@ -210,6 +212,8 @@ export default function OnboardingPage() {
                     onChange={(e) => update("password", e.target.value)}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                     placeholder="Mínimo 6 caracteres"
+                    name="new-password"
+                    autoComplete="new-password"
                   />
                 </div>
                 <div className="flex gap-2 pt-1">

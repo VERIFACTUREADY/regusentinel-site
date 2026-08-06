@@ -141,6 +141,8 @@ export function LoginForm({ demoEnabled, ssoEnabled = false }: Props) {
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                 placeholder="tu@email.com"
+                name="email"
+                autoComplete="username"
                 autoFocus
               />
             </div>
@@ -158,6 +160,8 @@ export function LoginForm({ demoEnabled, ssoEnabled = false }: Props) {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                 placeholder="••••••"
+                name="password"
+                autoComplete="current-password"
               />
             </div>
 

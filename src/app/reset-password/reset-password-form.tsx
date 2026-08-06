@@ -109,6 +109,8 @@ export function ResetPasswordForm() {
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                     placeholder="Mínimo 6 caracteres"
+                    name="new-password"
+                    autoComplete="new-password"
                     autoFocus
                   />
                 </div>
@@ -120,6 +122,8 @@ export function ResetPasswordForm() {
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                    name="confirm-password"
+                    autoComplete="new-password"
                   />
                 </div>
                 {error && (

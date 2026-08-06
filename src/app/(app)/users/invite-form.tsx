@@ -9,7 +9,7 @@ export function InviteForm() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("OPERATOR");
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: "ok" | "warn" | "err"; text: string } | null>(null);
   const router = useRouter();
 
   async function handleInvite(e: React.FormEvent) {
@@ -26,7 +26,26 @@ export function InviteForm() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al invitar");
 
-      setMessage({ type: "ok", text: `Invitacion enviada a ${email}` });
+      /*
+       * No se anuncia "Invitacion enviada" sin saber si ha salido.
+       *
+       * El endpoint devuelve `emailSent`. Cuando el correo falla, el alta ES
+       * correcta —la persona ya es miembro— pero no se ha enterado, y decirle
+       * al administrador que se envio le deja esperando a alguien que nunca va
+       * a recibir nada. Se distingue un caso del otro.
+       */
+      if (data.emailSent === false) {
+        setMessage({
+          type: "warn",
+          text:
+            `${email} ya es miembro, pero NO se ha podido enviar el correo. ` +
+            (data.needsPasswordSetup
+              ? "Necesita el enlace para crear su contrasena: usa \u201cReenviar invitacion\u201d cuando el correo vuelva a funcionar."
+              : "Avisale de que ya puede entrar con su cuenta habitual."),
+        });
+      } else {
+        setMessage({ type: "ok", text: `Invitacion enviada a ${email}` });
+      }
       setEmail("");
       setRole("OPERATOR");
       router.refresh();
@@ -90,7 +109,15 @@ export function InviteForm() {
         </div>
       </form>
       {message && (
-        <p className={`mt-3 text-sm ${message.type === "ok" ? "text-green-600" : "text-red-600"}`}>
+        <p
+          className={`mt-3 text-sm ${
+            message.type === "ok"
+              ? "text-green-600"
+              : message.type === "warn"
+                ? "text-amber-700"
+                : "text-red-600"
+          }`}
+        >
           {message.text}
         </p>
       )}
