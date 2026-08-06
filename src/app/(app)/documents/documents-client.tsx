@@ -248,10 +248,21 @@ export function DocumentsClient({
                         )}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                        {/*
+                          `timeZone` explicito, y no es un adorno: este es un
+                          componente de cliente que Next tambien renderiza en el
+                          servidor. El servidor corre en UTC y el navegador del
+                          usuario en Europe/Madrid, asi que la misma fecha se
+                          formateaba distinta en cada lado —un dia de diferencia
+                          en las horas de la tarde— y React fallaba al hidratar
+                          (errores #418/#422/#425). Fijando la zona, ambos lados
+                          producen el mismo texto.
+                        */}
                         {new Date(doc.createdAt).toLocaleDateString("es-ES", {
                           day: "2-digit",
                           month: "2-digit",
                           year: "2-digit",
+                          timeZone: "Europe/Madrid",
                         })}
                       </td>
                       <td className="px-4 py-3">

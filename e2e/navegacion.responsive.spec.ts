@@ -64,51 +64,79 @@ test.describe("Tamanos de pantalla", () => {
     });
   }
 
-  test("se puede navegar entre pantallas", async ({ page }) => {
+  test("el menu de navegacion se abre, navega, se cierra y se vuelve a abrir", async ({
+    page,
+  }, testInfo) => {
+    /*
+     * SIN ATAJOS.
+     *
+     * La version anterior caia a `page.goto("/cases")` cuando el clic del menu
+     * fallaba. Eso permitia que el menu movil estuviera roto y la prueba
+     * siguiera en verde: comprobaba que la RUTA existe, no que una persona
+     * pueda llegar. Aqui no hay salida alternativa — si el menu no se puede
+     * pulsar, la prueba falla.
+     */
     await login(page, E2E.owner);
-
-    // En movil el menu suele estar plegado tras un boton. Se busca uno u otro
-    // sin dar por hecho cual, porque lo que importa es poder llegar.
     await page.goto("/dashboard");
 
-    const abridor = page
-      .getByRole("button", { name: /men[uú]|abrir|navegaci/i })
-      .or(page.locator("button[aria-label*='men' i]"))
-      .first();
+    const enPantallaPequena = (page.viewportSize()?.width ?? 0) < 1024;
 
-    // Tiempo corto a proposito: si no hay menu plegado, el clic no puede
-    // consumir el minuto entero de la prueba antes de caer al camino
-    // alternativo. Lo que se comprueba es poder llegar, no como.
-    if (await abridor.isVisible().catch(() => false)) {
-      await abridor.click({ timeout: 3_000 }).catch(() => {});
+    // Nombres accesibles exactos: un patron amplio capturaba tambien el boton
+    // de cerrar, que vive dentro del panel plegado y nunca esta accionable.
+    const abridor = page.getByRole("button", { name: "Abrir navegacion" });
+    const cerrador = page.getByRole("button", { name: "Cerrar navegacion" });
+
+    if (enPantallaPequena) {
+      await expect(
+        abridor,
+        "en pantalla pequena tiene que haber un boton que abra la navegacion",
+      ).toBeVisible({ timeout: 15_000 });
+
+      // Abrir.
+      await abridor.click();
+      await expect(
+        page.getByRole("link", { name: /expedientes/i }).first(),
+      ).toBeVisible({ timeout: 15_000 });
+
+      // Cerrar y volver a abrir ANTES de navegar: un menu que solo funciona la
+      // primera vez esta roto igual. Se comprueba aqui porque al pulsar un
+      // enlace el panel se cierra solo —que es lo correcto— y entonces ya no
+      // habria nada que cerrar.
+      await expect(cerrador).toBeVisible({ timeout: 15_000 });
+      await cerrador.click({ timeout: 10_000 });
+      await expect(cerrador).toBeHidden({ timeout: 15_000 });
+
+      await abridor.click();
+      await expect(cerrador, "el menu debe poder abrirse una segunda vez").toBeVisible({
+        timeout: 15_000,
+      });
     }
 
-    const enlaceExpedientes = page.getByRole("link", { name: /expedientes/i }).first();
-    // `count()` no basta: en movil el enlace existe en el DOM pero puede estar
-    // oculto tras un menu plegado, y pulsarlo se queda esperando para siempre.
-    /*
-     * El enlace del menu lateral existe y `isVisible()` lo da por visible, pero
-     * en los tamanos pequenos el panel esta desplazado fuera de pantalla y la
-     * comprobacion de accionabilidad de Playwright nunca lo da por estable.
-     *
-     * Lo que esta prueba tiene que demostrar es que se PUEDE LLEGAR a
-     * expedientes, no por que camino. Se intenta el enlace con un tiempo
-     * acotado y, si no responde, se navega directo: lo inaceptable seria que la
-     * ruta tampoco funcionara.
-     */
-    const porElMenu = await enlaceExpedientes
-      .click({ timeout: 5_000 })
-      .then(() => true)
-      .catch(() => false);
+    const enlace = page.getByRole("link", { name: /expedientes/i }).first();
 
-    if (porElMenu) {
-      await page.waitForURL("**/cases**", { timeout: 30_000 });
-    } else {
-      await page.goto("/cases");
+    // Visible Y accionable: un enlace que existe en el DOM pero esta fuera de
+    // pantalla no sirve de nada a quien lo intenta pulsar.
+    await expect(
+      enlace,
+      `${testInfo.project.name}: el enlace de expedientes debe verse en el menu`,
+    ).toBeVisible({ timeout: 15_000 });
+
+    await enlace.click({ timeout: 15_000 });
+    await page.waitForURL("**/cases**", { timeout: 30_000 });
+    await pantallaUtil(page);
+    await sinDesbordeHorizontal(page, "Expedientes tras navegar por el menu");
+
+    // Y una segunda navegacion completa desde el menu, ya en otra pantalla.
+    if (enPantallaPequena) {
+      await expect(abridor).toBeVisible({ timeout: 15_000 });
+      await abridor.click();
     }
+    const enlaceTareas = page.getByRole("link", { name: /tareas/i }).first();
+    await expect(enlaceTareas).toBeVisible({ timeout: 15_000 });
+    await enlaceTareas.click({ timeout: 15_000 });
+    await page.waitForURL("**/tasks**", { timeout: 30_000 });
 
     await pantallaUtil(page);
-    await sinDesbordeHorizontal(page, "Expedientes tras navegar");
   });
 
   test("el formulario de invitacion se puede rellenar", async ({ page }) => {

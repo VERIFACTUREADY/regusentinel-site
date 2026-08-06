@@ -57,6 +57,18 @@ export default function CasesPage() {
   const [batchLoading, setBatchLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  /*
+   * Resultado de la ultima accion (cambiar estado, lote, borrar).
+   *
+   * Antes no existia: `updateCaseStatus` tenia un `catch {}` vacio y no miraba
+   * `res.ok`, y las de lote no tenian `try` siquiera. Una accion que fallaba
+   * dejaba la pantalla igual que si hubiera funcionado, o —peor— con el
+   * spinner girando para siempre, porque la excepcion se llevaba por delante
+   * el `setBatchLoading(false)`.
+   */
+  const [avisoAccion, setAvisoAccion] = useState<
+    { tipo: "ok" | "err"; texto: string } | null
+  >(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -170,44 +182,90 @@ export default function CasesPage() {
 
   async function updateCaseStatus(caseId: string, newStatus: string) {
     setUpdatingStatus(caseId);
+    setAvisoAccion(null);
     try {
       const res = await fetch(`/api/cases/${caseId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (res.ok) {
-        setCases((prev) => prev.map((c) => c.id === caseId ? { ...c, status: newStatus } : c));
+
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => ({}));
+        throw new Error(cuerpo.error ?? `El servidor ha respondido ${res.status}.`);
       }
-    } catch {}
-    setUpdatingStatus(null);
+
+      // La lista solo se actualiza si el servidor lo ha aceptado. Cambiarla
+      // antes de saberlo mostraria un estado que no existe en la base.
+      setCases((prev) => prev.map((c) => (c.id === caseId ? { ...c, status: newStatus } : c)));
+      setAvisoAccion({ tipo: "ok", texto: "Estado actualizado." });
+    } catch (e) {
+      setAvisoAccion({
+        tipo: "err",
+        texto: `No se ha podido cambiar el estado: ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      });
+    } finally {
+      // En `finally`: si no, un fallo de red deja el selector bloqueado.
+      setUpdatingStatus(null);
+    }
   }
 
   async function batchChangeStatus(newStatus: string) {
     setBatchLoading(true);
-    const res = await fetch("/api/cases/batch", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: Array.from(selected), action: "status", status: newStatus }),
-    });
-    if (res.ok) {
+    setAvisoAccion(null);
+    const cuantos = selected.size;
+    try {
+      const res = await fetch("/api/cases/batch", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selected), action: "status", status: newStatus }),
+      });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => ({}));
+        throw new Error(cuerpo.error ?? `El servidor ha respondido ${res.status}.`);
+      }
       setRefreshKey((k) => k + 1);
+      setAvisoAccion({ tipo: "ok", texto: `${cuantos} expediente(s) actualizados.` });
+    } catch (e) {
+      setAvisoAccion({
+        tipo: "err",
+        texto: `No se han podido actualizar: ${e instanceof Error ? e.message : "error de red"}`,
+      });
+    } finally {
+      // Antes no habia `try`: un error de red se llevaba por delante esta
+      // linea y el boton se quedaba girando para siempre.
+      setBatchLoading(false);
     }
-    setBatchLoading(false);
   }
 
   async function batchDelete() {
     if (!confirm(`Eliminar ${selected.size} expediente(s)? Esta accion es reversible desde la base de datos.`)) return;
     setBatchLoading(true);
-    const res = await fetch("/api/cases/batch", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: Array.from(selected), action: "delete" }),
-    });
-    if (res.ok) {
+    setAvisoAccion(null);
+    const cuantos = selected.size;
+    try {
+      const res = await fetch("/api/cases/batch", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selected), action: "delete" }),
+      });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => ({}));
+        throw new Error(cuerpo.error ?? `El servidor ha respondido ${res.status}.`);
+      }
       setRefreshKey((k) => k + 1);
+      setAvisoAccion({ tipo: "ok", texto: `${cuantos} expediente(s) eliminados.` });
+    } catch (e) {
+      // Especialmente grave callarselo aqui: el usuario cree que ha borrado.
+      setAvisoAccion({
+        tipo: "err",
+        texto: `No se han podido eliminar: ${e instanceof Error ? e.message : "error de red"}`,
+      });
+    } finally {
+      setBatchLoading(false);
     }
-    setBatchLoading(false);
   }
 
   function exportCSV() {
@@ -308,6 +366,20 @@ export default function CasesPage() {
           ))}
         </select>
       </div>
+
+      {avisoAccion && (
+        <p
+          role="status"
+          data-testid="aviso-accion"
+          className={`mb-4 text-sm rounded-md px-3 py-2 ${
+            avisoAccion.tipo === "ok"
+              ? "bg-green-50 text-green-700 border border-green-200"
+              : "bg-red-50 text-red-700 border border-red-200"
+          }`}
+        >
+          {avisoAccion.texto}
+        </p>
+      )}
 
       {/* Batch action bar */}
       {selected.size > 0 && (
