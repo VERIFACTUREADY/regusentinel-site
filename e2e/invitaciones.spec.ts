@@ -43,7 +43,7 @@ test.describe("Invitaciones", () => {
     await page.goto("/users");
     await page.getByRole("button", { name: /Invitar miembro/ }).click();
     await page.fill('input[type="email"]', correo);
-    await page.getByRole("button", { name: /^Invitar$/ }).click();
+    await page.getByRole("button", { name: "Enviar invitacion" }).click();
 
     // El alta se completa aunque el correo no salga: la membresía es correcta.
     await expect(page.locator(`text=${correo}`).first()).toBeVisible({ timeout: 20_000 });
@@ -65,9 +65,20 @@ test.describe("Invitaciones", () => {
     await page.goto(`/reset-password?token=${invitado!.magicToken}`);
     await page.fill('input[name="new-password"]', contrasena);
     await page.fill('input[name="confirm-password"]', contrasena);
-    await page.getByRole("button", { name: /Guardar|Cambiar|Establecer/i }).click();
+    await page.getByRole("button", { name: /Guardar contrase/i }).click();
 
-    await page.waitForURL("**/login**", { timeout: 30_000 });
+    // La pantalla confirma el cambio antes de mandar a iniciar sesión.
+    await expect(page.getByRole("link", { name: /Iniciar sesi/i })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // Y el token queda consumido: un enlace de invitación no es reutilizable.
+    const tras = await prisma.user.findUnique({
+      where: { email: correo },
+      select: { magicToken: true, passwordHash: true },
+    });
+    expect(tras!.magicToken).toBeNull();
+    expect(tras!.passwordHash).not.toBeNull();
 
     // Entra, y entra dentro de la organización que lo invitó.
     await login(page, correo, contrasena);
@@ -83,7 +94,7 @@ test.describe("Invitaciones", () => {
     await page.goto("/users");
     await page.getByRole("button", { name: /Invitar miembro/ }).click();
     await page.fill('input[type="email"]', correo);
-    await page.getByRole("button", { name: /^Invitar$/ }).click();
+    await page.getByRole("button", { name: "Enviar invitacion" }).click();
 
     // En esta suite no hay SMTP, así que el envío falla. La interfaz debe
     // decirlo en vez de dar el envío por bueno.
@@ -100,7 +111,7 @@ test.describe("Invitaciones", () => {
     await page.goto("/users");
     await page.getByRole("button", { name: /Invitar miembro/ }).click();
     await page.fill('input[type="email"]', correo);
-    await page.getByRole("button", { name: /^Invitar$/ }).click();
+    await page.getByRole("button", { name: "Enviar invitacion" }).click();
     await expect(page.getByText(/NO se ha podido enviar el correo/i)).toBeVisible({
       timeout: 20_000,
     });
