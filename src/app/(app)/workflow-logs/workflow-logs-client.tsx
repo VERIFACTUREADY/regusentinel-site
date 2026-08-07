@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 
@@ -47,6 +48,7 @@ export function WorkflowLogsClient({
   const [total, setTotal] = useState(initialTotal);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [reintentando, setReintentando] = useState<string | null>(null);
   const [avisoReintento, setAvisoReintento] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState("");
@@ -61,15 +63,31 @@ export function WorkflowLogsClient({
       const params = new URLSearchParams({ page: String(p), limit: String(LIMIT) });
       if (status) params.set("status", status);
       if (ruleId) params.set("ruleId", ruleId);
+      setErrorCarga(null);
       try {
         const res = await fetch(`/api/workflow-logs?${params}`);
-        if (res.ok) {
-          const data = await res.json();
-          setLogs(data.logs);
-          setTotal(data.total);
+        if (!res.ok) {
+          throw new Error(
+            res.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${res.status}.`,
+          );
         }
-      } catch {}
-      setLoading(false);
+        const data = await res.json();
+        if (!data || !Array.isArray(data.logs)) {
+          throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        }
+        setLogs(data.logs);
+        setTotal(data.total);
+      } catch (e) {
+        setLogs([]);
+        setTotal(0);
+        setErrorCarga(e instanceof Error ? e.message : "No se han podido cargar las ejecuciones.");
+      } finally {
+        // En `finally`: antes un fallo de red dejaba `setLoading(false)` sin
+        // ejecutar y la pantalla cargando para siempre.
+        setLoading(false);
+      }
     },
     []
   );
@@ -221,7 +239,13 @@ export function WorkflowLogsClient({
 
       {/* Log table */}
       <div className="bg-white rounded-lg border overflow-hidden">
-        {loading ? (
+        {errorCarga ? (
+          <AvisoError
+            mensaje={errorCarga}
+            que="las ejecuciones"
+            onReintentar={() => fetchLogs(page, filterStatus, filterRule)}
+          />
+        ) : loading ? (
           <div className="py-12 text-center text-gray-400">Cargando...</div>
         ) : logs.length === 0 ? (
           <div className="py-12 text-center text-gray-400">

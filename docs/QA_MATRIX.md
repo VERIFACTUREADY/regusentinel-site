@@ -178,6 +178,13 @@ pantallas y repetir la corrección a mano garantiza que la próxima nazca rota.
 | `notifications` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `search-modal` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `users` (panel de invitaciones) | ✅ | ✅ | ✅ | — |
+| `audit` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
+| `workflow-logs` | ✅ | ✅ | ✅ | **Corregido, SIN prueba** |
+
+`workflow-logs` recibe la primera página del componente de servidor y sólo llama
+al API al cambiar de filtro o de página. La prueba de estado de error necesita
+un montaje distinto del que usan las demás y **no está hecha**: la corrección
+está, la red de seguridad no.
 
 Cada una se comprueba en los tres estados, y en el de error se exige **además
 que el estado vacío NO aparezca**: confundirlos es exactamente el defecto.
@@ -185,9 +192,8 @@ que el estado vacío NO aparezca**: confundirlos es exactamente el defecto.
 ### Pendientes
 
 ```
-audit/audit-log-viewer.tsx             documents/documents-client.tsx
-cases/[id]/page.tsx                    messages/page.tsx
-cases/kanban/page.tsx                  tasks/timeline/page.tsx
-workflow-logs/workflow-logs-client.tsx components/dashboard/usage-widget.tsx
+documents/documents-client.tsx         messages/page.tsx
+cases/[id]/page.tsx                    tasks/timeline/page.tsx
+cases/kanban/page.tsx                  components/dashboard/usage-widget.tsx
 components/layout/notification-bell.tsx
 ```

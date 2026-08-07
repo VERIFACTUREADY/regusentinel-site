@@ -25,8 +25,17 @@ async function login(page: Page, email: string, password = E2E.password) {
   await page.waitForURL("**/dashboard", { timeout: 45_000 });
 }
 
+interface Pantalla {
+  nombre: string;
+  ruta: string;
+  api: string;
+  apiClave: string;
+  /** Accion que provoca la carga, si no ocurre sola al abrir la pantalla. */
+  disparar?: (page: Page) => Promise<void>;
+}
+
 /** Pantallas con su ruta de datos y la ruta de navegador que las muestra. */
-const PANTALLAS = [
+const PANTALLAS: Pantalla[] = [
   { nombre: "Expedientes", ruta: "/cases", api: "**/api/cases?**", apiClave: "/api/cases" },
   { nombre: "Tareas", ruta: "/tasks", api: "**/api/tasks?**", apiClave: "/api/tasks" },
   {
@@ -35,6 +44,7 @@ const PANTALLAS = [
     api: "**/api/approvals**",
     apiClave: "/api/approvals",
   },
+  { nombre: "Auditoria", ruta: "/audit", api: "**/api/audit-logs?**", apiClave: "/api/audit-logs" },
   {
     nombre: "Avisos",
     ruta: "/notifications",
@@ -100,6 +110,7 @@ test.describe("Estados de carga", () => {
       });
 
       await page.goto(p.ruta);
+      if (p.disparar) await p.disparar(page);
       await expect(page.getByTestId("carga-error").first()).toBeVisible({ timeout: 20_000 });
 
       roto = false;

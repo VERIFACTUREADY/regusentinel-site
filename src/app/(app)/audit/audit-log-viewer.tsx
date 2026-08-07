@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -47,6 +48,8 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
 
   const [action, setAction] = useState("");
   const [userId, setUserId] = useState("");
@@ -58,6 +61,7 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
+    setErrorCarga(null);
     const params = new URLSearchParams();
     params.set("page", String(page));
     params.set("limit", String(PAGE_SIZE));
@@ -68,20 +72,39 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
     if (search) params.set("search", search);
 
     fetch(`/api/audit-logs?${params}`, { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data && !controller.signal.aborted) {
-          setLogs(data.logs);
-          setTotal(data.total);
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(
+            res.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${res.status}.`,
+          );
         }
+        return res.json();
       })
-      .catch(() => {})
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        if (!data || !Array.isArray(data.logs)) {
+          throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        }
+        setErrorCarga(null);
+        setLogs(data.logs);
+        setTotal(data.total);
+      })
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        // Un registro de auditoria vacio por un fallo de carga es
+        // especialmente enganoso: aparenta que no ha pasado nada.
+        setLogs([]);
+        setTotal(0);
+        setErrorCarga(e instanceof Error ? e.message : "No se ha podido cargar la auditoria.");
+      })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => controller.abort();
-  }, [page, action, userId, from, to, search]);
+  }, [page, action, userId, from, to, search, reintento]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -245,7 +268,17 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {loading ? (
+              {errorCarga ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8">
+                    <AvisoError
+                      mensaje={errorCarga}
+                      que="la auditoria"
+                      onReintentar={() => setReintento((n) => n + 1)}
+                    />
+                  </td>
+                </tr>
+              ) : loading ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-12 text-center text-gray-400">
                     Cargando...
