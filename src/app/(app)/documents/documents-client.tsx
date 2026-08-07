@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 
@@ -50,6 +51,7 @@ export function DocumentsClient({
   const [total, setTotal] = useState(initialTotal);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filterSource, setFilterSource] = useState("");
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -62,15 +64,32 @@ export function DocumentsClient({
     const params = new URLSearchParams({ page: String(p), limit: String(LIMIT) });
     if (q) params.set("search", q);
     if (source) params.set("source", source);
+    setErrorCarga(null);
     try {
       const res = await fetch(`/api/documents?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        setDocs(data.documents);
-        setTotal(data.total);
+      if (!res.ok) {
+        throw new Error(
+          res.status === 401
+            ? "Tu sesion ha caducado. Vuelve a entrar."
+            : `El servidor ha respondido ${res.status}.`,
+        );
       }
-    } catch {}
-    setLoading(false);
+      const data = await res.json();
+      if (!data || !Array.isArray(data.documents)) {
+        throw new Error("La respuesta del servidor no tiene el formato esperado.");
+      }
+      setDocs(data.documents);
+      setTotal(data.total);
+    } catch (e) {
+      // Lista vacia por fallo = "no hay documentos", que es justo lo contrario
+      // de lo que puede estar pasando.
+      setDocs([]);
+      setTotal(0);
+      setErrorCarga(e instanceof Error ? e.message : "Error de red. Comprueba tu conexion.");
+    } finally {
+      // En `finally`: antes un fallo de red dejaba la pantalla cargando.
+      setLoading(false);
+    }
   }, []);
 
   function handleSearch(value: string) {
@@ -180,7 +199,9 @@ export function DocumentsClient({
 
       {/* Table */}
       <div className="bg-white rounded-lg border overflow-hidden">
-        {loading ? (
+        {errorCarga ? (
+          <AvisoError mensaje={errorCarga} que="los documentos" onReintentar={() => fetchDocs(page, search, filterSource)} />
+        ) : loading ? (
           <div className="py-12 text-center text-gray-400">Cargando...</div>
         ) : docs.length === 0 ? (
           <div className="py-12 text-center text-gray-400">

@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { CASE_STATUS_COLORS } from "@/lib/constants";
@@ -31,20 +32,42 @@ export default function KanbanPage() {
   const [columns, setColumns] = useState<Record<string, KanbanCase[]>>({});
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
   const [dragging, setDragging] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/cases/kanban")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          setColumns(data.columns);
-          setTotal(data.total);
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : r.status === 403
+                ? "No tienes permiso para ver esto."
+                : `El servidor ha respondido ${r.status}.`,
+          );
         }
+        return r.json();
       })
-      .catch(() => {})
+      .then((data) => {
+        if (!data || typeof data.columns !== "object") {
+          throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        }
+        setErrorCarga(null);
+        setColumns(data.columns);
+        setTotal(data.total);
+      })
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        // El fallo de red llega aqui igual que el del servidor: en ambos casos
+        // hay que decirlo, no dejar la pantalla como si no hubiera datos.
+        setColumns({});
+        setTotal(0);
+        setErrorCarga(e instanceof Error ? e.message : "Error de red. Comprueba tu conexion.");
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [reintento]);
 
   async function moveCase(caseId: string, newStatus: string) {
     const res = await fetch(`/api/cases/${caseId}`, {
@@ -92,6 +115,18 @@ export default function KanbanPage() {
 
   function agingDays(updatedAt: string): number {
     return Math.floor((Date.now() - new Date(updatedAt).getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  if (errorCarga) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <AvisoError
+          mensaje={errorCarga}
+          que="el tablero"
+          onReintentar={() => setReintento((n) => n + 1)}
+        />
+      </div>
+    );
   }
 
   if (loading) {

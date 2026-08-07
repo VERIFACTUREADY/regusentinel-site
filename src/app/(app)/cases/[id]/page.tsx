@@ -64,6 +64,7 @@ export default function CaseDetailPage() {
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
+  const [errorAnalisis, setErrorAnalisis] = useState<string | null>(null);
   const [templates, setTemplates] = useState<any[]>([]);
   const [caseTemplates, setCaseTemplates] = useState<any[]>([]);
   const [applyTplOpen, setApplyTplOpen] = useState(false);
@@ -245,11 +246,21 @@ El equipo de gestión`;
   async function fetchAnalysis() {
     try {
       const res = await fetch(`/api/cases/${caseId}/analyze`);
-      if (res.ok) {
-        const data = await res.json();
-        setAnalysis(data.analysis);
+      if (!res.ok) {
+        throw new Error(
+          res.status === 401
+            ? "Tu sesion ha caducado. Vuelve a entrar."
+            : `El servidor ha respondido ${res.status}.`,
+        );
       }
-    } catch {}
+      const data = await res.json();
+      setErrorAnalisis(null);
+      setAnalysis(data.analysis);
+    } catch (e) {
+      // Antes: `catch {}`. El analisis simplemente no aparecia y el usuario no
+      // sabia si es que no habia ninguno o si habia fallado.
+      setErrorAnalisis(e instanceof Error ? e.message : "Error de red. Comprueba tu conexion.");
+    }
   }
 
   async function openChat() {

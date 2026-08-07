@@ -46,6 +46,42 @@ const PANTALLAS: Pantalla[] = [
   },
   { nombre: "Auditoria", ruta: "/audit", api: "**/api/audit-logs?**", apiClave: "/api/audit-logs" },
   {
+    nombre: "Automatizaciones",
+    ruta: "/workflow-logs",
+    api: "**/api/workflow-logs?**",
+    apiClave: "/api/workflow-logs",
+    /*
+     * Esta pantalla recibe la primera pagina del componente de servidor y solo
+     * llama al API al cambiar de filtro o de pagina. Interceptar la carga
+     * inicial no dispara nada, asi que la prueba provoca la peticion como lo
+     * haria una persona: pulsando el filtro de estado.
+     *
+     * El boton lleva dentro un contador, asi que su nombre accesible es "Error 3"
+     * y no "Error": buscarlo con coincidencia exacta no lo encontraba.
+     */
+    disparar: async (page: Page) => {
+      await page.getByRole("button", { name: /^Error/ }).first().click();
+    },
+  },
+  {
+    nombre: "Documentos",
+    ruta: "/documents",
+    api: "**/api/documents?**",
+    apiClave: "/api/documents",
+    // Como automatizaciones: la primera pagina llega del componente de
+    // servidor y solo se llama al API al buscar o cambiar de pagina.
+    disparar: async (page: Page) => {
+      await page.locator('input[type="text"], input[type="search"]').first().fill("acta");
+    },
+  },
+  { nombre: "Kanban", ruta: "/cases/kanban", api: "**/api/cases/kanban**", apiClave: "/api/cases/kanban" },
+  {
+    nombre: "Linea de tiempo",
+    ruta: "/tasks/timeline",
+    api: "**/api/tasks/timeline**",
+    apiClave: "/api/tasks/timeline",
+  },
+  {
     nombre: "Avisos",
     ruta: "/notifications",
     api: "**/api/notifications?**",
@@ -81,6 +117,7 @@ test.describe("Estados de carga", () => {
       );
 
       await page.goto(p.ruta);
+      if (p.disparar) await p.disparar(page);
 
       // Escritorio y movil pintan cada uno su bloque; el DOM contiene los dos.
       const aviso = page.getByTestId("carga-error").first();
@@ -126,7 +163,22 @@ test.describe("Estados de carga", () => {
         route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ cases: [], tasks: [], approvals: [], logs: [], total: 0 }),
+          /*
+           * Cuerpo valido y vacio que sirve a todas: cada pantalla lee su clave
+           * y las demas la ignoran. `columns` y `documents` son obligatorias
+           * para kanban y documentos, que validan la forma de la respuesta y
+           * tratarian su ausencia como un error — con razon.
+           */
+          body: JSON.stringify({
+            cases: [],
+            tasks: [],
+            approvals: [],
+            logs: [],
+            documents: [],
+            columns: {},
+            items: [],
+            total: 0,
+          }),
         }),
       );
 

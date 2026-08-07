@@ -30,18 +30,32 @@ export function NotificationBell() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [count, setCount] = useState(0);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function fetchUnread() {
       fetch("/api/notifications/unread")
-        .then((r) => (r.ok ? r.json() : null))
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`El servidor ha respondido ${r.status}.`);
+          return r.json();
+        })
         .then((data) => {
-          if (!data) return;
+          if (!data) throw new Error("Respuesta inesperada del servidor.");
+          setErrorCarga(null);
           setCount(data.unreadCount ?? 0);
           setAlerts(data.alerts ?? []);
         })
-        .catch(() => {});
+        .catch((e: unknown) => {
+          /*
+           * La campana no puede seguir mostrando el contador anterior como si
+           * fuera actual: se pone a cero y se marca el fallo, de modo que al
+           * abrirla se explique en vez de aparentar "sin avisos".
+           */
+          setCount(0);
+          setAlerts([]);
+          setErrorCarga(e instanceof Error ? e.message : "Error de red.");
+        });
     }
     fetchUnread();
     const interval = setInterval(fetchUnread, 60_000);

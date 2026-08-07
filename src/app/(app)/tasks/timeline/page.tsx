@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/constants";
@@ -25,6 +26,8 @@ interface TimelineData {
 export default function TimelinePage() {
   const [data, setData] = useState<TimelineData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
   const [assignee, setAssignee] = useState("");
   const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
 
@@ -40,11 +43,29 @@ export default function TimelinePage() {
     const params = new URLSearchParams();
     if (assignee) params.set("assignee", assignee);
     fetch(`/api/tasks/timeline?${params}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setData(d); })
-      .catch(() => {})
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${r.status}.`,
+          );
+        }
+        return r.json();
+      })
+      .then((d) => {
+        if (!d) throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        setErrorCarga(null);
+        setData(d);
+      })
+      .catch((e: unknown) => {
+        // No se conservan los datos anteriores: enseñarlos tras un fallo los
+        // presenta como actuales cuando ya no se sabe si lo son.
+        setData(null);
+        setErrorCarga(e instanceof Error ? e.message : "Error de red. Comprueba tu conexion.");
+      })
       .finally(() => setLoading(false));
-  }, [assignee]);
+  }, [assignee, reintento]);
 
   const grouped = useMemo(() => {
     if (!data) return {};
@@ -155,7 +176,9 @@ export default function TimelinePage() {
       </div>
 
       {/* Timeline */}
-      {loading ? (
+      {errorCarga ? (
+        <AvisoError mensaje={errorCarga} que="la linea de tiempo" onReintentar={() => setReintento((n) => n + 1)} />
+      ) : loading ? (
         <div className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">
           Cargando...
         </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -59,22 +60,42 @@ function ThreadPanel({
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(() => {
     setLoading(true);
+    setErrorCarga(null);
     fetch(`/api/cases/${conv.caseId}/portal-messages`)
-      .then((r) => (r.ok ? r.json() : []))
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${r.status}.`,
+          );
+        }
+        return r.json();
+      })
       .then((data) => {
+        if (!Array.isArray(data)) {
+          throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        }
         setMessages(data);
         // El marcado como leido es ahora una escritura explicita: el GET del
         // hilo ya no muta la base de datos.
         fetch(`/api/cases/${conv.caseId}/portal-messages`, { method: "PUT" }).catch(() => {});
         onMarkRead(conv.caseId);
       })
-      .catch(() => {})
+      .catch((e: unknown) => {
+        // Un hilo vacio por un fallo de carga aparenta que el familiar no ha
+        // escrito nada, que es lo contrario de lo que puede estar pasando.
+        setMessages([]);
+        setErrorCarga(e instanceof Error ? e.message : "Error de red. Comprueba tu conexion.");
+      })
       .finally(() => setLoading(false));
-  }, [conv.caseId, onMarkRead]);
+  }, [conv.caseId, onMarkRead, reintento]);
 
   useEffect(() => {
     load();
@@ -138,7 +159,9 @@ function ThreadPanel({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
-        {loading ? (
+        {errorCarga ? (
+          <AvisoError mensaje={errorCarga} que="los mensajes" onReintentar={() => setReintento((n) => n + 1)} />
+        ) : loading ? (
           <div className="text-center py-8 text-gray-400 text-sm">Cargando mensajes...</div>
         ) : messages.length === 0 ? (
           <div className="text-center py-8 text-gray-400 text-sm">Sin mensajes en este expediente.</div>
