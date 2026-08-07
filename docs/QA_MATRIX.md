@@ -10,9 +10,9 @@ ejerce como la ejercería una persona. Las columnas que dicen «API» señalan
 justamente eso — hay red de seguridad en el servidor, pero nadie ha comprobado
 que el botón la llame.
 
-Suites: `e2e/smoke.spec.ts`, `e2e/calendar.spec.ts`, `e2e/invitaciones.spec.ts`,
-`e2e/correo-real.spec.ts`. Todas corren con el vigilante de
-`e2e/vigilancia.ts` activo (ver «Detección global» al final).
+Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
+`acciones-expedientes`, `sesion-y-roles` y `navegacion.responsive`. Todas corren
+con el vigilante de `e2e/vigilancia.ts` activo (ver «Detección global»).
 
 ## Leyenda
 
@@ -99,10 +99,32 @@ Suites: `e2e/smoke.spec.ts`, `e2e/calendar.spec.ts`, `e2e/invitaciones.spec.ts`,
 |---|---|---|
 | Alta desde la interfaz | ✅ | `smoke.spec.ts` |
 | Referencias únicas en altas simultáneas | ✅ | `smoke.spec.ts` |
-| Listado, filtros, buscador | ❌ | |
+| Listado | ✅ | `expedientes.spec.ts` |
+| Búsqueda por referencia | ✅ | `expedientes.spec.ts` |
+| Búsqueda por nombre del causante | ✅ | `expedientes.spec.ts` |
+| Filtro de estado (llega al servidor) | ✅ | `expedientes.spec.ts` |
+| Filtros de provincia / urgencia | ✅ | `expedientes.spec.ts` |
+| Presets y limpiar | ✅ | `expedientes.spec.ts` |
+| Abrir expediente desde la lista | ✅ | `expedientes.spec.ts` |
+| Selección múltiple y «seleccionar todo» | ✅ | `expedientes.spec.ts` |
+| Cambio de estado en lote (éxito) | ✅ | `expedientes.spec.ts` |
+| Cambio de estado en lote (error) | ✅ | `acciones-expedientes.spec.ts` |
+| Borrado en lote (error, sin spinner infinito) | ✅ | `acciones-expedientes.spec.ts` |
+| Cambio de estado por fila (éxito y error) | ✅ | `acciones-expedientes.spec.ts` |
+| Exportar CSV (con contenido comprobado) | ✅ | `expedientes.spec.ts` |
+| Pantalla de importación CSV se abre | ✅ | `expedientes.spec.ts` |
+| Kanban: carga y tarjeta → expediente | ✅ | `expedientes.spec.ts` |
+| Validación del asistente (paso 1) | ✅ | `expedientes.spec.ts` |
+| **Crear expediente (asistente completo)** | ❌ | El recorrido supera los pasos 1 y 2 pero no alcanza «Crear expediente»; no he identificado en qué paso se detiene |
 | Edición | ❌ | |
-| Eliminación | ❌ | |
-| Estado de error de carga | ❌ | **Se traga el fallo** (ver «Deuda» abajo) |
+| Eliminación individual | ❌ | |
+| Paginación | ❌ | El seed tiene un solo expediente: no hay segunda página que probar |
+| Importación CSV real y sus errores | ❌ | |
+| Mover tarjeta en Kanban | ❌ | |
+| Etiquetas `<label>` asociadas a sus campos | ❌ | **Defecto encontrado**: en el asistente de alta los `<label>` no tienen `htmlFor` ni envuelven el input, así que un lector de pantalla no anuncia el nombre del campo |
+| Estado de carga / vacío / error + «Reintentar» | ✅ | `estados-carga.spec.ts` |
+| Sesión caducada distinguida | ✅ | `estados-carga.spec.ts` |
+| «Nuevo expediente» e «Importar CSV» ocultos a VIEWER | ✅ | `sesion-y-roles.spec.ts` |
 
 ### `/billing` — Facturación
 
@@ -114,15 +136,26 @@ Suites: `e2e/smoke.spec.ts`, `e2e/calendar.spec.ts`, `e2e/invitaciones.spec.ts`,
 
 ### Sin cobertura de interfaz
 
-`/dashboard`, `/today`, `/tasks`, `/tasks/timeline`, `/documents`, `/messages`,
-`/notifications`, `/approvals`, `/reports` (+ `isd`, `pipeline`, `portal`,
-`team`), `/templates`, `/templates/[id]`, `/case-templates`, `/workflow-rules`,
-`/workflow-logs`, `/audit`, `/settings` (+ `general`, `branding`,
-`integrations`, `notifications`, `users`), `/profile`, `/cases/kanban`,
-`/cases/import`, `/cases/[id]`, `/cases/[id]/isd`, `/admin/*`.
+**Con estados de carga probados** (carga, vacío, error y «Reintentar», vía
+`estados-carga.spec.ts`), pero **sin sus interacciones propias probadas**:
 
-**❌ Ninguna tiene prueba de navegador.** Muchas tienen pruebas de API o de
-unidad, que por el criterio de arriba no cuentan como cobertura funcional.
+`/tasks`, `/tasks/timeline`, `/documents`, `/notifications`, `/approvals`,
+`/audit`, `/workflow-logs`, `/cases/kanban`.
+
+Que la pantalla resista un fallo de carga no significa que sus botones estén
+probados. Crear una tarea, subir un documento, aprobar o mover una tarjeta
+siguen sin cobertura.
+
+**Sin ninguna cobertura de interfaz:**
+
+`/dashboard`, `/today`, `/messages`, `/reports` (+ `isd`, `pipeline`, `portal`,
+`team`), `/templates`, `/templates/[id]`, `/case-templates`, `/workflow-rules`,
+`/settings` (+ `general`, `branding`, `integrations`, `notifications`,
+`users`), `/profile`, `/cases/import`, `/cases/[id]`, `/cases/[id]/isd`,
+`/admin/*`.
+
+Varias tienen pruebas de API o de unidad, que por el criterio de arriba no
+cuentan como cobertura funcional.
 
 ---
 
@@ -180,14 +213,14 @@ pantallas y repetir la corrección a mano garantiza que la próxima nazca rota.
 | `approvals` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `notifications` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `search-modal` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
-| `users` (panel de invitaciones) | ✅ | ✅ | ✅ | — |
+| `users` (panel de invitaciones) | ✅ | ✅ | ✅ | ❌ sin prueba de navegador |
 | `documents` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `cases/kanban` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `tasks/timeline` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
-| `messages` | ✅ | ✅ | ✅ | — |
-| `usage-widget` | ✅ | ✅ | ✅ | — |
-| `notification-bell` | ✅ | ✅ | — | — |
-| `cases/[id]` (análisis) | ✅ | ✅ | — | — |
+| `messages` | ✅ | ✅ | ✅ | ❌ sin prueba de navegador |
+| `usage-widget` | ✅ | ✅ | ✅ | ❌ sin prueba de navegador |
+| `notification-bell` | ✅ | ✅ | — | ❌ sin prueba de navegador |
+| `cases/[id]` (análisis) | ✅ | ✅ | — | ❌ sin prueba de navegador |
 | `audit` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `workflow-logs` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` (vía filtro) |
 
