@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { RolProvider } from "./rol-context";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -176,6 +177,10 @@ export function AppShell({
   );
 
   return (
+    // El rol baja por contexto para que las pantallas de cliente puedan dejar
+    // de ofrecer lo que el usuario no puede hacer. No es control de acceso:
+    // quien decide sigue siendo el servidor.
+    <RolProvider rol={role ?? null}>
     <div className="min-h-screen flex flex-col bg-gray-50">
       <SearchModal />
       {isDemoOrg && <DemoBanner />}
@@ -278,6 +283,7 @@ export function AppShell({
         </div>
       </div>
     </div>
+    </RolProvider>
   );
 }
 

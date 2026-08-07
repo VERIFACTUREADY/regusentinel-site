@@ -1,5 +1,7 @@
 "use client";
 
+import { useRol } from "@/components/layout/rol-context";
+import { hasPermission } from "@/lib/rbac";
 import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
@@ -57,6 +59,18 @@ export default function CasesPage() {
   const [batchLoading, setBatchLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
+
+  /*
+   * Un VIEWER es de solo lectura, pero esta pantalla le ofrecia "Nuevo
+   * expediente" e "Importar CSV" igual que a todos: pulsaba, rellenaba el
+   * formulario y el servidor le respondia 403. Un boton que solo sirve para
+   * llevarte a un rechazo es peor que no tenerlo.
+   *
+   * Esto NO sustituye al control del servidor, que sigue siendo el que decide:
+   * es para no prometer lo que no se puede cumplir.
+   */
+  const rol = useRol();
+  const puedeCrear = Boolean(rol && hasPermission(rol as never, "cases.create"));
   /*
    * Resultado de la ultima accion (cambiar estado, lote, borrar).
    *
@@ -300,14 +314,18 @@ export default function CasesPage() {
           >
             Exportar CSV
           </button>
+          {puedeCrear && (
           <Link href="/cases/import"
             className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm font-medium text-center">
             Importar CSV
           </Link>
+          )}
+          {puedeCrear && (
           <Link href="/cases/new"
             className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 text-sm font-medium text-center">
             Nuevo expediente
           </Link>
+          )}
         </div>
       </div>
 

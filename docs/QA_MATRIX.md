@@ -78,8 +78,11 @@ Suites: `e2e/smoke.spec.ts`, `e2e/calendar.spec.ts`, `e2e/invitaciones.spec.ts`,
 | Enlace caducado / reutilizado | ✅ | `invitaciones.spec.ts` |
 | Enlace anterior anulado tras reenvío | ✅ | `correo-real.spec.ts` |
 | `autoComplete` para gestores de contraseñas | 🟡 | Atributos puestos; sin prueba automática |
-| Logout | ❌ | |
-| Persistencia de sesión entre recargas | ❌ | |
+| Logout (botón «Salir») | ✅ | `sesion-y-roles.spec.ts` |
+| Sesión sobrevive a recargar | ✅ | `sesion-y-roles.spec.ts` |
+| Sesión viva en pestaña nueva | ✅ | `sesion-y-roles.spec.ts` |
+| Navegador nuevo NO hereda sesión | ✅ | `sesion-y-roles.spec.ts` |
+| Perder la cookie devuelve al login | ✅ | `sesion-y-roles.spec.ts` |
 
 ### `/portal/[token]` — Portal familiar
 
@@ -127,10 +130,10 @@ unidad, que por el criterio de arriba no cuentan como cobertura funcional.
 
 | Dimensión | Estado |
 |---|---|
-| OWNER | ✅ en las suites existentes |
-| OPERATOR | 🟡 sólo en control de acceso a invitaciones y miembros |
-| MANAGER | 🟡 sólo como rol asignado en `correo-real.spec.ts` |
-| VIEWER | ❌ sin ninguna prueba |
+| OWNER | ✅ usuarios, facturación y ajustes + acción reservada visible |
+| MANAGER | ✅ opera e invita; **no** puede crear otro OWNER (403 del servidor) |
+| OPERATOR | ✅ trabaja; sin administración, y el servidor lo rechaza (403) |
+| VIEWER | ✅ consulta; sin botones de escritura, y el servidor lo rechaza |
 | Escritorio | ✅ proyecto `escritorio`, suite completa |
 | Tablet | ✅ `navegacion.responsive.spec.ts` — 10 pruebas (820×1180, Chromium táctil) |
 | Móvil | ✅ `navegacion.responsive.spec.ts` — 10 pruebas (Pixel 5) |
@@ -178,22 +181,29 @@ pantallas y repetir la corrección a mano garantiza que la próxima nazca rota.
 | `notifications` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `search-modal` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `users` (panel de invitaciones) | ✅ | ✅ | ✅ | — |
+| `documents` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
+| `cases/kanban` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
+| `tasks/timeline` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
+| `messages` | ✅ | ✅ | ✅ | — |
+| `usage-widget` | ✅ | ✅ | ✅ | — |
+| `notification-bell` | ✅ | ✅ | — | — |
+| `cases/[id]` (análisis) | ✅ | ✅ | — | — |
 | `audit` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
-| `workflow-logs` | ✅ | ✅ | ✅ | **Corregido, SIN prueba** |
+| `workflow-logs` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` (vía filtro) |
 
-`workflow-logs` recibe la primera página del componente de servidor y sólo llama
-al API al cambiar de filtro o de página. La prueba de estado de error necesita
-un montaje distinto del que usan las demás y **no está hecha**: la corrección
-está, la red de seguridad no.
+`workflow-logs` y `documents` reciben la primera página del componente de
+servidor y sólo llaman al API al filtrar o buscar. Sus pruebas provocan la
+petición como lo haría una persona (`disparar`), no interceptando una carga
+inicial que no existe.
 
 Cada una se comprueba en los tres estados, y en el de error se exige **además
 que el estado vacío NO aparezca**: confundirlos es exactamente el defecto.
 
 ### Pendientes
 
-```
-documents/documents-client.tsx         messages/page.tsx
-cases/[id]/page.tsx                    tasks/timeline/page.tsx
-cases/kanban/page.tsx                  components/dashboard/usage-widget.tsx
-components/layout/notification-bell.tsx
-```
+**Ninguna pendiente.** Los catorce casos originales están corregidos.
+
+Hallazgo colateral de esta fase: `/cases` mostraba «Nuevo expediente» e
+«Importar CSV» a un VIEWER, que al pulsarlos recibía un 403. Corregido con
+`RolProvider` — cortesía con el usuario, no control de acceso: quien decide
+sigue siendo el servidor, y hay prueba de las dos mitades.

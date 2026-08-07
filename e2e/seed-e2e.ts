@@ -13,6 +13,8 @@ export const E2E = {
   password: "PruebaE2E-2026!",
   owner: "owner.e2e@ejemplo.test",
   operador: "operador.e2e@ejemplo.test",
+  manager: "manager.e2e@ejemplo.test",
+  viewer: "viewer.e2e@ejemplo.test",
   expulsado: "expulsado.e2e@ejemplo.test",
   ownerSuspendido: "suspendido.e2e@ejemplo.test",
   orgSlug: "org-e2e",
@@ -48,6 +50,22 @@ async function main() {
   });
 
   // Este usuario se expulsa durante la prueba de revocación.
+  // Los cuatro roles, para poder comprobar desde la interfaz que cada uno ve y
+  // puede lo que le corresponde — y solo eso.
+  const manager = await prisma.user.create({
+    data: { email: E2E.manager, name: "Manager E2E", passwordHash: hash },
+  });
+  await prisma.membership.create({
+    data: { userId: manager.id, orgId: org.id, role: "MANAGER" },
+  });
+
+  const viewer = await prisma.user.create({
+    data: { email: E2E.viewer, name: "Viewer E2E", passwordHash: hash },
+  });
+  await prisma.membership.create({
+    data: { userId: viewer.id, orgId: org.id, role: "VIEWER" },
+  });
+
   const expulsado = await prisma.user.create({
     data: { email: E2E.expulsado, name: "Por expulsar", passwordHash: hash },
   });
