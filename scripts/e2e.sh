@@ -61,10 +61,34 @@ if curl -sf "$NEXTAUTH_URL/api/health" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Mata un proceso y toda su descendencia.
+#
+# POR QUE HACE FALTA
+# ------------------
+# `npx next start` no es el servidor: lanza `next-server` como proceso aparte.
+# El `trap` mataba solo al envoltorio, y el nieto quedaba huerfano ocupando el
+# puerto 3000. La siguiente ejecucion moria en el guardia de puerto ("ya hay
+# algo escuchando") despues de haber reconstruido la aplicacion entera, y habia
+# que buscar y matar el proceso a mano.
+matar_arbol() {
+  local pid="${1:-}"
+  [ -n "$pid" ] || return 0
+  local hijo
+  for hijo in $(pgrep -P "$pid" 2>/dev/null || true); do
+    matar_arbol "$hijo"
+  done
+  kill "$pid" 2>/dev/null || true
+}
+
+limpiar() {
+  matar_arbol "${SERVER_PID:-}"
+  matar_arbol "${SMTP_PID:-}"
+}
+
 echo "[e2e] Arrancando el SMTP de pruebas…"
 node e2e/smtp-de-pruebas.mjs --smtp "$SMTP_PORT" --http 8025 &
 SMTP_PID=$!
-trap 'kill $SMTP_PID 2>/dev/null || true' EXIT
+trap limpiar EXIT
 
 for i in $(seq 1 20); do
   if curl -sf "$BANDEJA_URL/salud" >/dev/null 2>&1; then
@@ -82,7 +106,6 @@ fi
 echo "[e2e] Arrancando el servidor…"
 npx next start -p 3000 -H 127.0.0.1 &
 SERVER_PID=$!
-trap 'kill $SERVER_PID $SMTP_PID 2>/dev/null || true' EXIT
 
 for i in $(seq 1 60); do
   if curl -sf "$NEXTAUTH_URL/api/health" >/dev/null 2>&1; then

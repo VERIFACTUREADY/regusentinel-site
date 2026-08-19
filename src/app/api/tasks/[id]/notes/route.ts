@@ -22,8 +22,17 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json(notes);
 }
 
+/**
+ * Escribir una nota es escribir.
+ *
+ * Este POST pedia `tasks.read`. Un VIEWER —que por definicion tiene solo los
+ * permisos terminados en `.read`— podia dejar notas de gestion en cualquier
+ * tarea de la organizacion: una escritura permanente, firmada con su nombre y
+ * visible para todos, colada bajo un permiso de lectura. Pide `tasks.update`,
+ * que es lo que corresponde a modificar una tarea.
+ */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const auth = await requireOrgPermission("tasks.read");
+  const auth = await requireOrgPermission("tasks.update");
   if (!auth.ok) return auth.response;
   const session = auth.session;
 

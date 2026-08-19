@@ -643,6 +643,49 @@ El equipo de gestión`;
     fetchCase();
   }
 
+  /**
+   * Cambia algo de una tarea y dice si ha ido bien.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Cinco funciones —cambiar estado, asignar, poner dependencia, poner plazo y
+   * renombrar— hacian `await fetch(...)` y a continuacion `fetchCase()`, sin
+   * mirar `res.ok` ni capturar nada. Cuando el servidor rechazaba (un asignado
+   * de otra organizacion, una dependencia ciclica, un 500), la recarga
+   * devolvia el valor ANTIGUO y el desplegable volvia solo a su sitio: el
+   * usuario veia su cambio deshacerse sin una palabra. Con la red caida era
+   * peor, porque `fetch` lanzaba y la promesa quedaba rechazada sin capturar.
+   *
+   * La recarga sigue siendo la fuente de verdad; lo que faltaba era contar el
+   * resultado.
+   */
+  async function guardarTarea(cuerpo: Record<string, unknown>, queEs: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/cases/${caseId}/tasks`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cuerpo),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+      }
+      showSuccess(`${queEs} guardado.`);
+      fetchCase();
+      return true;
+    } catch (e) {
+      showError(
+        `No se ha podido guardar ${queEs.toLowerCase()}: ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      );
+      // Se recarga igualmente para que la pantalla vuelva a lo que hay en la
+      // base y no se quede enseñando el valor que el usuario acaba de elegir.
+      fetchCase();
+      return false;
+    }
+  }
+
   async function updateTaskStatus(taskId: string, status: string, reason?: string, until?: string) {
     if (status === "BLOCKED" && reason === undefined) {
       const task = caseData?.tasks.find((t: any) => t.id === taskId);
@@ -651,39 +694,26 @@ El equipo de gestión`;
       setBlockModal({ taskId, title: task?.title || "" });
       return;
     }
-    await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    await guardarTarea(
+      {
         taskId,
         status,
         ...(status === "BLOCKED" && { blockReason: reason || null, blockedUntil: until || null }),
-      }),
-    });
-    fetchCase();
+      },
+      "El estado de la tarea",
+    );
   }
 
   async function assignTask(taskId: string, assigneeId: string | null) {
-    await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, assigneeId }),
-    });
-    fetchCase();
+    await guardarTarea({ taskId, assigneeId }, "El responsable de la tarea");
   }
 
   async function setTaskDependency(taskId: string, dependsOnId: string | null) {
-    await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, dependsOnId }),
-    });
-    fetchCase();
+    await guardarTarea({ taskId, dependsOnId }, "La dependencia de la tarea");
   }
 
   async function updateTaskDeadline(taskId: string, deadline: string | null) {
-    await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, deadline: deadline || null }),
-    });
-    fetchCase();
+    await guardarTarea({ taskId, deadline: deadline || null }, "El plazo de la tarea");
   }
 
   /**
@@ -778,18 +808,27 @@ El equipo de gestión`;
 
   async function updateTaskTitle(taskId: string, title: string) {
     if (!title.trim()) return;
-    await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, title: title.trim() }),
-    });
-    fetchCase();
+    await guardarTarea({ taskId, title: title.trim() }, "El titulo de la tarea");
   }
 
   async function deleteTask(taskId: string, title: string) {
     if (!confirm(`¿Eliminar la tarea "${title}"? Esta acción no se puede deshacer.`)) return;
-    const res = await fetch(`/api/cases/${caseId}/tasks?taskId=${encodeURIComponent(taskId)}`, { method: "DELETE" });
-    if (res.ok) fetchCase();
-    else showError("Error al eliminar la tarea");
+    try {
+      const res = await fetch(`/api/cases/${caseId}/tasks?taskId=${encodeURIComponent(taskId)}`, { method: "DELETE" });
+      // El camino del servidor ya se contaba; faltaba el de la red, que
+      // lanzaba y dejaba la promesa rechazada sin capturar: la tarea seguia en
+      // la lista y el usuario no sabia si se habia borrado o no.
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Error al eliminar la tarea");
+      }
+      showSuccess("Tarea eliminada.");
+      fetchCase();
+    } catch (e) {
+      showError(
+        `No se ha podido eliminar la tarea: ${e instanceof Error ? e.message : "error de red"}`,
+      );
+    }
   }
 
   async function deleteDocument(docId: string, fileName: string) {
@@ -799,25 +838,47 @@ El equipo de gestión`;
     else showError("Error al eliminar el documento");
   }
 
+  /**
+   * Crea la tarea y solo cierra el formulario si el servidor la ha guardado.
+   *
+   * Antes era `if (res.ok) { cerrar; limpiar; recargar }` sin `else`: un
+   * rechazo del servidor —titulo vacio tras recortar, categoria invalida,
+   * asignado de otra organizacion, 500— dejaba el formulario abierto, con los
+   * datos dentro y sin una sola palabra. El usuario volvia a pulsar "Crear
+   * tarea" pensando que no habia llegado a hacerlo.
+   */
   async function createTask() {
     if (!addTaskForm.title.trim()) return;
     setAddTaskSaving(true);
-    const res = await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: addTaskForm.title.trim(),
-        category: addTaskForm.category,
-        description: addTaskForm.description.trim() || null,
-        dueDate: addTaskForm.deadline || null,
-        assigneeId: addTaskForm.assigneeId || null,
-        sortOrder: (caseData?.tasks?.length ?? 0) + 1,
-      }),
-    });
-    setAddTaskSaving(false);
-    if (res.ok) {
+    try {
+      const res = await fetch(`/api/cases/${caseId}/tasks`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: addTaskForm.title.trim(),
+          category: addTaskForm.category,
+          description: addTaskForm.description.trim() || null,
+          dueDate: addTaskForm.deadline || null,
+          assigneeId: addTaskForm.assigneeId || null,
+          sortOrder: (caseData?.tasks?.length ?? 0) + 1,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+      }
       setAddTaskOpen(false);
       setAddTaskForm({ title: "", category: "OTROS", description: "", deadline: "", assigneeId: "" });
+      showSuccess("Tarea creada.");
       fetchCase();
+    } catch (e) {
+      // El formulario sigue abierto y con lo escrito: es lo unico que el
+      // usuario no puede recuperar si se borra.
+      showError(
+        `No se ha podido crear la tarea: ${e instanceof Error ? e.message : "error de red"}`,
+      );
+    } finally {
+      // En `finally`: si no, un fallo de red deja el boton en "Guardando…".
+      setAddTaskSaving(false);
     }
   }
 
@@ -929,28 +990,56 @@ El equipo de gestión`;
     setTaskNoteOpenId(taskId);
     if (!taskNotesCache[taskId]) {
       setTaskNotesLoading(true);
-      const res = await fetch(`/api/tasks/${taskId}/notes`);
-      const data = res.ok ? await res.json() : [];
-      setTaskNotesCache((c) => ({ ...c, [taskId]: data }));
-      setTaskNotesLoading(false);
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/notes`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+        }
+        const data = await res.json();
+        setTaskNotesCache((c) => ({ ...c, [taskId]: Array.isArray(data) ? data : [] }));
+      } catch (e) {
+        /*
+         * Era `res.ok ? await res.json() : []`: un fallo se guardaba en la
+         * cache como "no hay notas" y ademas quedaba cacheado, asi que volver a
+         * abrir el panel ya ni lo reintentaba. Las notas son el registro de lo
+         * hablado con la familia; ensenar cero cuando no se sabe es mentir.
+         */
+        showError(
+          `No se han podido cargar las notas: ${e instanceof Error ? e.message : "error de red"}`,
+        );
+        setTaskNoteOpenId(null);
+      } finally {
+        setTaskNotesLoading(false);
+      }
     }
   }
 
   async function saveTaskNote(taskId: string) {
     if (!taskNoteInput.trim()) return;
     setTaskNoteSaving(true);
-    const res = await fetch(`/api/tasks/${taskId}/notes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: taskNoteInput.trim() }),
-    });
-    if (res.ok) {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: taskNoteInput.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+      }
       const note = await res.json();
       setTaskNotesCache((c) => ({ ...c, [taskId]: [...(c[taskId] ?? []), note] }));
       setTaskNoteInput("");
       fetchCase();
+    } catch (e) {
+      // Sin borrar lo escrito.
+      showError(
+        `No se ha podido guardar la nota: ${e instanceof Error ? e.message : "error de red"}`,
+      );
+    } finally {
+      setTaskNoteSaving(false);
     }
-    setTaskNoteSaving(false);
   }
 
   async function generateChecklist() {
@@ -2318,9 +2407,17 @@ El equipo de gestión`;
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
+                          {/*
+                            El titulo editable es un `<button>`, no un `<p>` con
+                            `onClick`. Un parrafo con manejador de raton no
+                            recibe foco, no se activa con Enter y un lector de
+                            pantalla lo lee como texto: quien no usa raton no
+                            podia renombrar una tarea.
+                          */}
                           {titleEditId === task.id ? (
                             <input
                               autoFocus
+                              aria-label="Titulo de la tarea"
                               defaultValue={task.title}
                               className="font-medium text-sm border-b border-blue-400 bg-transparent focus:outline-none px-0.5"
                               onBlur={(e) => {
@@ -2335,13 +2432,15 @@ El equipo de gestión`;
                               }}
                             />
                           ) : (
-                            <p
-                              className="font-medium cursor-text hover:text-blue-600"
-                              title="Haz clic para editar el titulo"
+                            <button
+                              type="button"
+                              data-testid="titulo-tarea-ficha"
+                              className="font-medium cursor-text hover:text-blue-600 text-left"
+                              aria-label={`Editar titulo: ${task.title}`}
                               onClick={() => setTitleEditId(task.id)}
                             >
                               {task.title}
-                            </p>
+                            </button>
                           )}
                           {task.documents && task.documents.length > 0 && (
                             <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded" title={`${task.documents.length} doc(s) vinculado(s)`}>
@@ -2372,19 +2471,22 @@ El equipo de gestión`;
                             <input
                               type="date"
                               autoFocus
+                              aria-label={`Plazo de ${task.title}`}
                               defaultValue={(task.deadline ?? task.dueDate) ? new Date((task.deadline ?? task.dueDate)!).toISOString().slice(0, 10) : ""}
                               className="text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
                               onBlur={(e) => {
                                 setDeadlineEditId(null);
-                                // tasks with no system deadline use dueDate; ISD tasks update deadline
+                                // Las tareas sin plazo de sistema guardan en `dueDate`; las de
+                                // ISD, en `deadline`. Las dos ramas pasan ahora por
+                                // `guardarTarea`: la de `dueDate` era un `fetch(...).then()`
+                                // suelto, sin mirar `res.ok` ni capturar el fallo de red, asi
+                                // que un 400 o un 500 recargaba el expediente con la fecha
+                                // vieja y el usuario veia su cambio desaparecer en silencio.
                                 const val = e.target.value || null;
                                 if (task.deadline !== null && task.deadline !== undefined) {
                                   updateTaskDeadline(task.id, val);
                                 } else {
-                                  fetch(`/api/cases/${caseId}/tasks`, {
-                                    method: "PATCH", headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ taskId: task.id, dueDate: val }),
-                                  }).then(() => fetchCase());
+                                  guardarTarea({ taskId: task.id, dueDate: val }, "El plazo de la tarea");
                                 }
                               }}
                               onKeyDown={(e) => {
@@ -2402,6 +2504,7 @@ El equipo de gestión`;
                               <button
                                 onClick={() => setDeadlineEditId(task.id)}
                                 title="Editar plazo"
+                                aria-label={`Editar plazo de ${task.title}`}
                                 className={`text-xs px-2 py-0.5 rounded cursor-pointer hover:ring-1 hover:ring-blue-300 ${expired ? "bg-red-100 text-red-700 font-medium" : urgent ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600"}`}
                               >
                                 {expired ? "VENCIDO" : `${isSystemDeadline ? "Plazo" : "Vence"}: ${days}d`} - {new Date(effectiveDate!).toLocaleDateString("es-ES")}
@@ -2411,6 +2514,7 @@ El equipo de gestión`;
                             <button
                               onClick={() => setDeadlineEditId(task.id)}
                               title="Añadir plazo"
+                              aria-label={`Añadir plazo a ${task.title}`}
                               className="text-xs px-1.5 py-0.5 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50"
                             >
                               <svg className="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -2427,6 +2531,8 @@ El equipo de gestión`;
                       <div className="flex items-center gap-2 ml-4 shrink-0">
                         <button
                           onClick={() => { toggleTaskNotes(task.id); setTaskNoteInput(""); }}
+                          aria-label={`Notas de gestion de ${task.title}`}
+                          aria-expanded={taskNoteOpenId === task.id}
                           title="Notas de gestión"
                           className={`p-1.5 rounded transition relative ${taskNoteOpenId === task.id ? "text-amber-600 bg-amber-50" : "text-gray-400 hover:text-amber-600 hover:bg-amber-50"}`}
                         >
@@ -2439,6 +2545,7 @@ El equipo de gestión`;
                           value={task.assigneeId || ""}
                           onChange={(e) => assignTask(task.id, e.target.value || null)}
                           className="text-xs px-2 py-1 border rounded max-w-[120px]"
+                          aria-label={`Responsable de ${task.title}`}
                           title="Asignar a"
                         >
                           <option value="">Sin asignar</option>
@@ -2450,6 +2557,7 @@ El equipo de gestión`;
                           value={task.dependsOnId || ""}
                           onChange={(e) => setTaskDependency(task.id, e.target.value || null)}
                           className="text-xs px-2 py-1 border rounded max-w-[110px]"
+                          aria-label={`Dependencia de ${task.title}`}
                           title="Depende de"
                         >
                           <option value="">Sin dependencia</option>
@@ -2458,6 +2566,7 @@ El equipo de gestión`;
                           ))}
                         </select>
                         <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)}
+                          aria-label={`Estado de ${task.title}`}
                           className="text-xs px-2 py-1 border rounded">
                           {taskStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
@@ -2466,6 +2575,7 @@ El equipo de gestión`;
                         </span>
                         <button
                           onClick={() => deleteTask(task.id, task.title)}
+                          aria-label={`Eliminar tarea: ${task.title}`}
                           title="Eliminar tarea"
                           className="p-1.5 text-gray-300 hover:text-red-500 rounded transition-colors"
                         >
@@ -2498,8 +2608,19 @@ El equipo de gestión`;
                               </div>
                             )}
                             <div className="flex gap-2">
+                              {/*
+                                El `placeholder` no es una etiqueta: desaparece al
+                                escribir y un lector de pantalla anuncia "cuadro de
+                                edicion" sin decir de que tarea. La etiqueta va oculta
+                                a la vista pero presente en el arbol de accesibilidad,
+                                igual que en la bandeja /tasks.
+                              */}
+                              <label htmlFor={`nota-ficha-${task.id}`} className="sr-only">
+                                Nueva nota para {task.title}
+                              </label>
                               <input
                                 type="text"
+                                id={`nota-ficha-${task.id}`}
                                 value={taskNoteInput}
                                 onChange={(e) => setTaskNoteInput(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveTaskNote(task.id); } }}
@@ -2509,6 +2630,7 @@ El equipo de gestión`;
                               <button
                                 onClick={() => saveTaskNote(task.id)}
                                 disabled={taskNoteSaving || !taskNoteInput.trim()}
+                                aria-label={`Guardar nota de ${task.title}`}
                                 className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 disabled:opacity-50"
                               >
                                 Guardar
@@ -2528,9 +2650,19 @@ El equipo de gestión`;
           {addTaskOpen ? (
             <div className="bg-white p-4 rounded-lg border border-blue-200 space-y-3 mb-4">
               <h4 className="text-sm font-semibold text-gray-700">Nueva tarea</h4>
+              {/*
+                Cada campo con su `<label htmlFor>`. Antes solo tenian
+                `placeholder`, que no es una etiqueta: desaparece al escribir y
+                un lector de pantalla anuncia "cuadro de edicion" sin decir de
+                que. Es el mismo defecto que se corrigio en el asistente de alta.
+              */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
+                  <label htmlFor="tareaTitulo" className="block text-xs font-medium text-gray-500 mb-1">
+                    Titulo de la tarea *
+                  </label>
                   <input
+                    id="tareaTitulo"
                     autoFocus
                     placeholder="Titulo de la tarea *"
                     className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
@@ -2540,7 +2672,11 @@ El equipo de gestión`;
                   />
                 </div>
                 <div>
+                  <label htmlFor="tareaCategoria" className="block text-xs font-medium text-gray-500 mb-1">
+                    Categoria de la tarea
+                  </label>
                   <select
+                    id="tareaCategoria"
                     className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={addTaskForm.category}
                     onChange={(e) => setAddTaskForm((f) => ({ ...f, category: e.target.value }))}
@@ -2551,16 +2687,23 @@ El equipo de gestión`;
                   </select>
                 </div>
                 <div>
+                  <label htmlFor="tareaFecha" className="block text-xs font-medium text-gray-500 mb-1">
+                    Fecha limite (opcional)
+                  </label>
                   <input
+                    id="tareaFecha"
                     type="date"
                     className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={addTaskForm.deadline}
                     onChange={(e) => setAddTaskForm((f) => ({ ...f, deadline: e.target.value }))}
-                    placeholder="Fecha limite (opcional)"
                   />
                 </div>
                 <div>
+                  <label htmlFor="tareaResponsable" className="block text-xs font-medium text-gray-500 mb-1">
+                    Responsable de la tarea
+                  </label>
                   <select
+                    id="tareaResponsable"
                     className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={addTaskForm.assigneeId}
                     onChange={(e) => setAddTaskForm((f) => ({ ...f, assigneeId: e.target.value }))}
@@ -2572,9 +2715,12 @@ El equipo de gestión`;
                   </select>
                 </div>
                 <div className="col-span-2">
+                  <label htmlFor="tareaDescripcion" className="block text-xs font-medium text-gray-500 mb-1">
+                    Descripcion de la tarea (opcional)
+                  </label>
                   <textarea
+                    id="tareaDescripcion"
                     rows={2}
-                    placeholder="Descripcion (opcional)"
                     className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
                     value={addTaskForm.description}
                     onChange={(e) => setAddTaskForm((f) => ({ ...f, description: e.target.value }))}

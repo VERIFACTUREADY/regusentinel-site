@@ -45,7 +45,53 @@ export const E2E = {
   },
   /** Tamano de pagina del listado (`PAGE_SIZE` en /cases). */
   porPagina: 25,
+  /**
+   * Expediente dedicado al modulo de tareas.
+   *
+   * POR QUE UNO APARTE
+   * ------------------
+   * Las tareas de prueba necesitan estados, categorias, responsables y plazos
+   * repartidos para que cada filtro de /tasks devuelva algo distinto. Colgarlas
+   * de los expedientes de relleno mezclaria dos modulos: cualquier retoque aqui
+   * movería los recuentos de /cases y romperia pruebas de expedientes por un
+   * motivo que no tiene que ver con lo que comprueban.
+   */
+  tareas: {
+    caseRef: "EXP-2026-9500",
+    /** Prefijo de todos los titulos, para localizarlos sin ambigüedad. */
+    prefijo: "T-E2E",
+  },
 };
+
+/**
+ * Tareas de prueba del modulo de tareas.
+ *
+ * Repartidas a mano —no al azar— para que las pruebas puedan afirmar cantidades
+ * exactas. `dias` es el desplazamiento del plazo respecto a hoy: negativo =
+ * vencida, `null` = sin plazo (y por tanto fuera del cronograma).
+ */
+const TAREAS_E2E: {
+  titulo: string;
+  estado: "PENDING" | "IN_PROGRESS" | "BLOCKED" | "READY" | "DONE" | "SKIPPED";
+  categoria: "BANCOS" | "SEGUROS" | "SUMINISTROS" | "FISCAL" | "TELECOM" | "OTROS";
+  responsable: "owner" | "operador" | null;
+  dias: number | null;
+}[] = [
+  { titulo: "vencida del owner",        estado: "PENDING",     categoria: "BANCOS",      responsable: "owner",    dias: -5 },
+  { titulo: "de esta semana",           estado: "PENDING",     categoria: "BANCOS",      responsable: "owner",    dias: 3 },
+  { titulo: "de este mes",              estado: "IN_PROGRESS", categoria: "SEGUROS",     responsable: "owner",    dias: 20 },
+  { titulo: "lejana",                   estado: "PENDING",     categoria: "FISCAL" ,     responsable: "owner",    dias: 100 },
+  { titulo: "sin plazo",                estado: "PENDING",     categoria: "SUMINISTROS", responsable: "owner",    dias: null },
+  { titulo: "bloqueada",                estado: "BLOCKED",     categoria: "BANCOS",      responsable: "owner",    dias: 15 },
+  { titulo: "lista para revisar",       estado: "READY",       categoria: "SEGUROS",     responsable: "owner",    dias: 25 },
+  { titulo: "ya completada",            estado: "DONE",        categoria: "BANCOS",      responsable: "owner",    dias: -2 },
+  { titulo: "omitida",                  estado: "SKIPPED",     categoria: "TELECOM",     responsable: "owner",    dias: 10 },
+  { titulo: "del operador vencida",     estado: "PENDING",     categoria: "SUMINISTROS", responsable: "operador", dias: -12 },
+  { titulo: "del operador en curso",    estado: "IN_PROGRESS", categoria: "FISCAL" ,     responsable: "operador", dias: 8 },
+  { titulo: "sin asignar pendiente",    estado: "PENDING",     categoria: "TELECOM",     responsable: null,       dias: 40 },
+  { titulo: "sin asignar en curso",     estado: "IN_PROGRESS", categoria: "TELECOM",     responsable: null,       dias: 60 },
+  { titulo: "para editar",              estado: "PENDING",     categoria: "OTROS"      , responsable: null,    dias: 30 },
+];
 
 /**
  * Reparto de los expedientes de relleno.
@@ -213,6 +259,52 @@ async function main() {
         title: "Tarea asignada al owner (relleno E2E)",
         status: "PENDING",
         assigneeId: owner.id,
+      },
+    });
+  }
+
+  // ── Expediente y tareas del modulo de TAREAS ──
+  //
+  // Un expediente propio con tareas repartidas por estado, categoria,
+  // responsable y plazo. Sin este reparto los filtros de /tasks no se pueden
+  // probar: con todas las tareas iguales, cualquier filtro "funciona" porque
+  // devuelve siempre lo mismo.
+  const casoTareas = await prisma.case.create({
+    data: {
+      orgId: org.id,
+      ref: E2E.tareas.caseRef,
+      status: "IN_PROGRESS",
+      province: "Madrid",
+      categories: ["BANCOS", "SEGUROS"],
+      consentAccepted: true,
+      consentDate: new Date(),
+      // Un poco por detras del expediente principal para no alterar el orden
+      // que esperan las pruebas de expedientes.
+      createdAt: new Date(ahora - 45 * 60 * 1000),
+      deceased: { create: { fullName: "Causante de Tareas E2E", deathDate: new Date(ahora - 60 * dia) } },
+      contact: { create: { fullName: "Familiar de Tareas E2E", email: "tareas.e2e@ejemplo.test" } },
+    },
+  });
+
+  for (let i = 0; i < TAREAS_E2E.length; i++) {
+    const t = TAREAS_E2E[i];
+    await prisma.task.create({
+      data: {
+        caseId: casoTareas.id,
+        title: `${E2E.tareas.prefijo} ${t.titulo}`,
+        description: `Tarea de prueba: ${t.titulo}`,
+        category: t.categoria,
+        status: t.estado,
+        sortOrder: i,
+        deadline: t.dias === null ? null : new Date(ahora + t.dias * dia),
+        assigneeId:
+          t.responsable === "owner" ? owner.id
+          : t.responsable === "operador" ? operador.id
+          : null,
+        ...(t.estado === "BLOCKED" && {
+          blockReason: "A la espera del certificado de defuncion",
+          blockedUntil: new Date(ahora + 7 * dia),
+        }),
       },
     });
   }

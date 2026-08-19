@@ -11,9 +11,9 @@ justamente eso — hay red de seguridad en el servidor, pero nadie ha comprobado
 que el botón la llame.
 
 Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
-`expedientes`, `acciones-expedientes`, `sesion-y-roles` y
-`navegacion.responsive`. Todas corren con el vigilante de `e2e/vigilancia.ts`
-activo (ver «Detección global»).
+`expedientes`, `acciones-expedientes`, `tareas`, `tareas.responsive`,
+`sesion-y-roles` y `navegacion.responsive`. Todas corren con el vigilante de
+`e2e/vigilancia.ts` activo (ver «Detección global»).
 
 ## Leyenda
 
@@ -161,6 +161,124 @@ probarlas):
 | Botón «última página» | La paginación ofrece «Anterior» y «Siguiente». La prueba llega igualmente a la última página encadenando «Siguiente» y comprueba que ahí el botón se apaga. |
 | Ordenar el listado por columna | Las cabeceras de la tabla no son botones: el orden lo fija el servidor (urgentes primero, luego por fecha). |
 
+### `/tasks` y `/tasks/timeline` — Tareas
+
+**Inventario real del módulo.** `/tasks` es una **bandeja**: lista, filtra,
+completa, inicia, actúa en lote, anota y exporta. **No** crea, **no** edita
+campos y **no** borra — esos controles no existen ahí. Crear, renombrar,
+reasignar, cambiar plazo, cambiar estado (incluido reabrir), poner dependencias
+y borrar se hacen desde la pestaña **Tareas de la ficha del expediente**. Hay un
+tercer sitio desde el que se escribe: el resumen **«Mis tareas asignadas»** del
+escritorio, que completa. Los tres se auditan aquí. La matriz marca cada fila
+donde el producto ofrece la función, no donde sería cómodo que estuviera.
+
+#### Bandeja `/tasks`
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Listado con filtros por defecto (mis tareas + activas) | ✅ | `tareas.spec.ts` |
+| Filtro de responsable: mis tareas, sin asignar, miembro concreto | ✅ | `tareas.spec.ts` — petición **y** resultados |
+| Filtro de estado: activas, todas, pendiente, bloqueada, completada… | ✅ | `tareas.spec.ts` — petición **y** resultados |
+| Filtro de categoría | ✅ | `tareas.spec.ts` — petición **y** resultados |
+| Aviso de plazos vencidos (cuenta calculada en cliente) | ✅ | `tareas.spec.ts` — cuadra con lo que marca la lista |
+| Paginación (50 por página) | ✅ | `tareas.spec.ts` — existe si y sólo si sobra una página |
+| Completar una tarea | ✅ | `tareas.spec.ts` — avisa, persiste y se ve tras recargar |
+| Iniciar una tarea (pendiente → en curso) | ✅ | `tareas.spec.ts` |
+| Completar/iniciar: error de servidor y fallo de red | ✅ | `tareas.spec.ts` — avisa, no falsea, botón utilizable |
+| Selección múltiple | ✅ | `tareas.spec.ts` |
+| Lote: completar | ✅ | `tareas.spec.ts` |
+| Lote: reasignar | ✅ | `tareas.spec.ts` |
+| Lote: error de servidor | ✅ | `tareas.spec.ts` — no se anuncia como hecho, barra utilizable |
+| Notas de gestión: leer y escribir | ✅ | `tareas.spec.ts` |
+| Notas: fallo al cargar | ✅ | `tareas.spec.ts` — **no** se presenta como «sin notas» |
+| Notas: fallo al guardar | ✅ | `tareas.spec.ts` — avisa y el texto no se pierde |
+| Estado vacío por filtros | ✅ | `tareas.spec.ts` |
+| Estado vacío real (sin ninguna tarea) | ✅ | `tareas.spec.ts` — deja de culpar a los filtros |
+| Error de carga + «Reintentar» | ✅ | `estados-carga.spec.ts` |
+| Sesión caducada distinguida | ✅ | `tareas.spec.ts` |
+| Fallo al cargar compañeros no tumba la bandeja | ✅ | `tareas.spec.ts` |
+| Exportar CSV | ✅ | `tareas.spec.ts` — se pulsa, se descarga y se lee: BOM, cabeceras, estados traducidos y **respeta los filtros** |
+| Enlace al expediente desde la tarjeta | ✅ | `tareas.spec.ts` |
+| Enlace al cronograma | ✅ | `tareas.spec.ts` |
+
+#### Tareas dentro de la ficha del expediente
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Ver las tareas del expediente | ✅ | `tareas.spec.ts` |
+| **Crear tarea** (título, categoría, fecha, responsable, descripción) | ✅ | `tareas.spec.ts` — se crea, aparece en la ficha, en la base y en la bandeja |
+| Crear: título obligatorio (también sólo espacios) | ✅ | `tareas.spec.ts` |
+| Crear: HTTP 400, 422, 500 y fallo de red | ✅ | `tareas.spec.ts` — avisa, no crea nada, formulario utilizable |
+| Editar título (en línea) | ✅ | `tareas.spec.ts` |
+| Editar responsable | ✅ | `tareas.spec.ts` |
+| Editar estado | ✅ | `tareas.spec.ts` |
+| **Reabrir** una tarea completada (DONE → PENDING) | ✅ | `tareas.spec.ts` — persiste tras recargar |
+| Editar: HTTP 400, 500 y fallo de red | ✅ | `tareas.spec.ts` — avisa y la pantalla vuelve a lo que hay en base |
+| Eliminar: confirmación, cancelar, confirmar | ✅ | `tareas.spec.ts` |
+| Eliminar: error de servidor y fallo de red | ✅ | `tareas.spec.ts` — nunca se anuncia un borrado que no ocurrió |
+| Integración: la tarea creada pertenece a su expediente | ✅ | `tareas.spec.ts` — comprobado en base y por la referencia de la tarjeta |
+| Editar plazo (ramas `deadline` y `dueDate`) | ✅ | `tareas.spec.ts` — se cambia, persiste y se relee; y un 500 se dice en vez de tragarse |
+| Poner y quitar dependencia entre tareas | ✅ | `tareas.spec.ts` — persiste y la ficha muestra «Espera: …» |
+| Dependencia que crearía un ciclo | ✅ | `tareas.spec.ts` — rechazada **desde el navegador**, se explica y no se guarda |
+| Notas de gestión desde la ficha | ✅ | `tareas.spec.ts` — se escribe, queda en base y se lee en el panel |
+
+#### Resumen «Mis tareas asignadas» del escritorio
+
+Es el tercer sitio desde el que se escribe una tarea, así que se audita con los
+otros dos y no como parte del escritorio.
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Completar una tarea desde el resumen | ✅ | `tareas.spec.ts` — desaparece del resumen porque de verdad se guardó |
+| Completar: error de servidor | ✅ | `tareas.spec.ts` — avisa, la tarea **no** desaparece y el botón sigue utilizable |
+
+#### Cronograma `/tasks/timeline`
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Agrupación por vencidas / semanas / completadas | ✅ | `tareas.spec.ts` |
+| Recuentos de vencidas, esta semana y este mes | ✅ | `tareas.spec.ts` — cuadran con la respuesta del servidor |
+| Sólo entran tareas con plazo; las omitidas no | ✅ | `tareas.spec.ts` |
+| Filtro de responsable | ✅ | `tareas.spec.ts` — petición **y** resultados |
+| Navegar al expediente de una tarea | ✅ | `tareas.spec.ts` |
+| Estado vacío (filtro sin resultados) | ✅ | `tareas.spec.ts` |
+| Error de servidor + «Reintentar» | ✅ | `tareas.spec.ts` |
+| Fallo de red | ✅ | `tareas.spec.ts` — no se disfraza de cronograma vacío |
+| Fallo al cargar compañeros se dice | ✅ | producto corregido; aviso propio |
+
+#### Roles, accesibilidad y tamaños
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| MANAGER opera tareas | ✅ | `tareas.spec.ts` |
+| OPERATOR opera tareas | ✅ | `tareas.spec.ts` |
+| VIEWER: sin botones de escritura en la bandeja | ✅ | `tareas.spec.ts` |
+| VIEWER: el servidor rechaza PATCH, POST, DELETE, lote y **notas** | ✅ | `tareas.spec.ts` |
+| Filtros de la bandeja con etiqueta asociada | ✅ | `tareas.spec.ts` — falla si pierden el nombre accesible |
+| Formulario de nueva tarea con etiqueta en cada campo | ✅ | `tareas.spec.ts` |
+| Botones de acción con nombre accesible que incluye la tarea | ✅ | `tareas.spec.ts` |
+| Campo de plazo y cuadro de nota de la ficha con nombre accesible | ✅ | `tareas.spec.ts` — antes sólo tenían `title`/`placeholder` |
+| Editar el título con teclado | ✅ | `tareas.spec.ts` |
+| Escritorio, tablet y móvil: bandeja, filtros, completar, abrir, crear, cronograma | ✅ | `tareas.responsive.spec.ts` — sin desbordamiento horizontal |
+
+#### Funciones que **no existen** en el producto
+
+No se prueban ni se inventan; quedan declaradas:
+
+| Función | Realidad |
+|---|---|
+| Crear tarea desde `/tasks` | La bandeja no tiene botón de alta. Se crea desde la ficha del expediente. |
+| Editar campos desde `/tasks` | La bandeja sólo cambia el estado (completar/iniciar). Renombrar, reasignar, plazo y dependencia están en la ficha. |
+| Eliminar desde `/tasks` | No hay botón de borrado en la bandeja. Está en la ficha. |
+| Reabrir desde `/tasks` | Al completarse, los botones de la tarjeta desaparecen. Reabrir existe sólo en el selector de estado de la ficha. |
+| **Prioridad** de una tarea | No existe: el modelo `Task` no tiene ese campo. Lo que ordena es el plazo y `sortOrder`. |
+| **Fecha de finalización** | No existe `completedAt`. Completar cambia el estado a `DONE` y queda registrado en la auditoría, no en la tarea. |
+| Página de detalle de una tarea | No hay ruta `/tasks/[id]`. Desde la bandeja y el cronograma se navega al **expediente**. |
+| Búsqueda por texto en `/tasks` | No hay caja de búsqueda. Se filtra por responsable, estado y categoría. |
+| Filtro por expediente en `/tasks` | No existe como control. |
+| Filtros de «vencidas» / «próximas» | No son filtros: hay un **aviso** de cuántas están vencidas y el cronograma agrupa por vencidas y semanas. |
+| Navegación entre periodos en el cronograma | No hay controles de anterior/siguiente. La vista abarca de −30 días a +6 meses y agrupa por semana. |
+
 ### `/billing` — Facturación
 
 | Elemento | Estado | Prueba |
@@ -174,15 +292,15 @@ probarlas):
 **Con estados de carga probados** (carga, vacío, error y «Reintentar», vía
 `estados-carga.spec.ts`), pero **sin sus interacciones propias probadas**:
 
-`/tasks`, `/tasks/timeline`, `/documents`, `/notifications`, `/approvals`,
-`/audit`, `/workflow-logs`.
+`/documents`, `/notifications`, `/approvals`, `/audit`, `/workflow-logs`.
 
 Que la pantalla resista un fallo de carga no significa que sus botones estén
-probados. Crear una tarea, subir un documento o aprobar siguen sin cobertura.
+probados. Subir un documento o aprobar siguen sin cobertura.
 
 `/cases/kanban` ya no está en esta lista: mover tarjetas se prueba entero
 —arrastre, petición real, persistencia y los dos caminos de fallo— en
-`expedientes.spec.ts`.
+`expedientes.spec.ts`. `/tasks` y `/tasks/timeline` tampoco: tienen sección
+propia arriba, con sus acciones conducidas desde el navegador.
 
 **Sin ninguna cobertura de interfaz:**
 

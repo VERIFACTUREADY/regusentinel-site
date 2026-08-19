@@ -15,15 +15,41 @@ interface TaskItem {
 
 export function MyTasksWidget({ initialTasks }: { initialTasks: TaskItem[] }) {
   const [tasks, setTasks] = useState(initialTasks);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [guardandoId, setGuardandoId] = useState<string | null>(null);
 
+  /**
+   * Completa una tarea desde el resumen del escritorio.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Antes era `if (res.ok) { quitar de la lista }` y nada mas. Con un 403, un
+   * 404 o un 500 la tarea se quedaba en la lista sin explicacion, y si la red
+   * se caia `fetch` lanzaba y el error moria en la consola: el usuario pulsaba
+   * y no pasaba nada. Ahora, o se completa de verdad, o se dice por que no.
+   */
   async function markDone(task: TaskItem) {
-    const res = await fetch(`/api/cases/${task.caseId}/tasks`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId: task.id, status: "DONE" }),
-    });
-    if (res.ok) {
+    setAviso(null);
+    setGuardandoId(task.id);
+    try {
+      const res = await fetch(`/api/cases/${task.caseId}/tasks`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: task.id, status: "DONE" }),
+      });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => null);
+        throw new Error(cuerpo?.error ?? `El servidor ha respondido ${res.status}.`);
+      }
       setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    } catch (e) {
+      setAviso(
+        `No se ha podido completar "${task.title}": ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      );
+    } finally {
+      setGuardandoId(null);
     }
   }
 
@@ -37,6 +63,15 @@ export function MyTasksWidget({ initialTasks }: { initialTasks: TaskItem[] }) {
         <h2 className="font-semibold">Mis tareas asignadas</h2>
         <Link href="/tasks" className="text-sm text-primary hover:underline">Ver todas</Link>
       </div>
+      {aviso && (
+        <p
+          role="alert"
+          data-testid="aviso-widget-tareas"
+          className="mx-6 mt-4 text-sm rounded-md px-3 py-2 bg-red-50 text-red-700 border border-red-200"
+        >
+          {aviso}
+        </p>
+      )}
       <div className="divide-y">
         {tasks.map((task) => {
           const deadlineDays = task.deadline
@@ -68,8 +103,10 @@ export function MyTasksWidget({ initialTasks }: { initialTasks: TaskItem[] }) {
                 </span>
                 <button
                   onClick={() => markDone(task)}
+                  disabled={guardandoId === task.id}
                   title="Marcar como completada"
-                  className="p-1 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition"
+                  aria-label={`Marcar completada: ${task.title}`}
+                  className="p-1 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition disabled:opacity-50"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

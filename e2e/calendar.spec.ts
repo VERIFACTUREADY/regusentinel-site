@@ -43,19 +43,53 @@ test.describe("Calendario", () => {
   test("una tarea aparece en la casilla de su dia, no en la del dia anterior", async ({
     page,
   }) => {
-    // Vencimiento a mediodia UTC: asi la fecha es la misma en UTC y en Madrid y,
-    // si se ilumina la casilla equivocada, la culpa es del cliente y no de una
-    // ambiguedad del dato.
     const hoy = new Date();
-    const vencimiento = new Date(
-      Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 15, 12, 0, 0),
-    );
-
     const expediente = await prisma.case.findFirst({
       where: { org: { slug: E2E.orgSlug } },
       select: { id: true },
     });
     expect(expediente, "el seed debe dejar un expediente").not.toBeNull();
+
+    /*
+     * El dia se ELIGE, no se fija a mano.
+     *
+     * Antes eran el 15 y el 14 escritos a pelo, dando por hecho que ninguna
+     * otra tarea de la organizacion vencia esos dias. En cuanto el sembrado
+     * gano tareas con plazos relativos a hoy, una cayo en el 14 y la prueba
+     * fallo por datos ajenos, no por el defecto de husos horarios que vigila.
+     * Ahora se busca un dia cuyo hueco —y el del dia anterior— esten limpios,
+     * con lo que la comprobacion sigue siendo igual de exigente y deja de
+     * depender de quien mas siembre en esta base.
+     */
+    const delMes = await prisma.task.findMany({
+      where: {
+        case: { org: { slug: E2E.orgSlug } },
+        OR: [{ deadline: { not: null } }, { dueDate: { not: null } }],
+      },
+      select: { deadline: true, dueDate: true },
+    });
+    const ocupados = new Set(
+      delMes
+        .map((t) => t.deadline ?? t.dueDate!)
+        .filter(
+          (d) =>
+            d.getUTCFullYear() === hoy.getUTCFullYear() &&
+            d.getUTCMonth() === hoy.getUTCMonth(),
+        )
+        .map((d) => d.getUTCDate()),
+    );
+    // Se recorre de mayor a menor para no chocar con el dia de hoy ni con el 1.
+    const dia = Array.from({ length: 25 }, (_, i) => i + 3)
+      .reverse()
+      .find((d) => !ocupados.has(d) && !ocupados.has(d - 1));
+    expect(dia, "hace falta un par de dias libres en el mes para esta prueba").toBeDefined();
+
+    // Vencimiento a mediodia UTC: asi la fecha es la misma en UTC y en Madrid y,
+    // si se ilumina la casilla equivocada, la culpa es del cliente y no de una
+    // ambiguedad del dato.
+    const vencimiento = new Date(
+      Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), dia!, 12, 0, 0),
+    );
 
     const tarea = await prisma.task.create({
       data: {
@@ -71,12 +105,14 @@ test.describe("Calendario", () => {
       await login(page, E2E.owner);
       await page.goto("/calendar");
 
-      await expect(casillaDelDia(page, 15)).toContainText(/vencid|proxim|próxim|tarea/i);
-      // Y la casilla del 14 no debe haberse quedado la tarea.
-      await expect(casillaDelDia(page, 14)).not.toContainText(/vencid|proxim|próxim|tarea/i);
+      await expect(casillaDelDia(page, dia!)).toContainText(/vencid|proxim|próxim|tarea/i);
+      // Y la casilla del dia anterior no debe haberse quedado la tarea.
+      await expect(casillaDelDia(page, dia! - 1)).not.toContainText(
+        /vencid|proxim|próxim|tarea/i,
+      );
 
       // Al abrir el dia, el detalle trae la tarea y lleva al expediente.
-      await casillaDelDia(page, 15).click();
+      await casillaDelDia(page, dia!).click();
       const enPanel = page.getByText("Plazo de prueba del calendario");
       await expect(enPanel).toBeVisible();
       await enPanel.click();
