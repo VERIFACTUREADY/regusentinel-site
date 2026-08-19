@@ -11,8 +11,9 @@ justamente eso — hay red de seguridad en el servidor, pero nadie ha comprobado
 que el botón la llame.
 
 Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
-`acciones-expedientes`, `sesion-y-roles` y `navegacion.responsive`. Todas corren
-con el vigilante de `e2e/vigilancia.ts` activo (ver «Detección global»).
+`expedientes`, `acciones-expedientes`, `sesion-y-roles` y
+`navegacion.responsive`. Todas corren con el vigilante de `e2e/vigilancia.ts`
+activo (ver «Detección global»).
 
 ## Leyenda
 
@@ -99,32 +100,66 @@ con el vigilante de `e2e/vigilancia.ts` activo (ver «Detección global»).
 |---|---|---|
 | Alta desde la interfaz | ✅ | `smoke.spec.ts` |
 | Referencias únicas en altas simultáneas | ✅ | `smoke.spec.ts` |
+| **Crear expediente: asistente completo de 5 pasos** | ✅ | `expedientes.spec.ts` — abre desde el listado, rellena por `getByLabel`, recorre los 5 pasos, pulsa «Crear expediente», espera la navegación, comprueba la fila en base y que aparece en el listado |
+| Asistente: validación del paso 1 (nombre) | ✅ | `expedientes.spec.ts` |
+| Asistente: validación del paso 2 (teléfono o email) | ✅ | `expedientes.spec.ts` |
+| Asistente: validación del paso 3 (categoría obligatoria) | ✅ | `expedientes.spec.ts` |
+| Asistente: el servidor rechaza el alta | ✅ | `expedientes.spec.ts` — se avisa, no se navega y no queda nada en base |
+| Etiquetas `<label>` asociadas a sus campos | ✅ | `expedientes.spec.ts` — prueba dedicada que falla si un campo del asistente pierde su nombre accesible |
 | Listado | ✅ | `expedientes.spec.ts` |
 | Búsqueda por referencia | ✅ | `expedientes.spec.ts` |
 | Búsqueda por nombre del causante | ✅ | `expedientes.spec.ts` |
-| Filtro de estado (llega al servidor) | ✅ | `expedientes.spec.ts` |
-| Filtros de provincia / urgencia | ✅ | `expedientes.spec.ts` |
-| Presets y limpiar | ✅ | `expedientes.spec.ts` |
+| Filtro de estado (petición **y** resultados) | ✅ | `expedientes.spec.ts` |
+| Filtro de categoría (petición **y** resultados) | ✅ | `expedientes.spec.ts` |
+| Filtro de provincia (petición **y** resultados) | ✅ | `expedientes.spec.ts` |
+| Preset «Mis expedientes» | ✅ | `expedientes.spec.ts` |
+| Preset «Urgentes» | ✅ | `expedientes.spec.ts` |
+| Preset «ISD < 30d» | ✅ | `expedientes.spec.ts` |
+| Preset «ISD < 60d» | ✅ | `expedientes.spec.ts` |
+| Preset «Docs pendientes» | ✅ | `expedientes.spec.ts` |
+| Preset «En curso» | ✅ | `expedientes.spec.ts` |
+| Preset «Nuevos» | ✅ | `expedientes.spec.ts` |
+| Preset «Listos para enviar» | ✅ | `expedientes.spec.ts` |
+| Preset «Cerrados» | ✅ | `expedientes.spec.ts` |
+| Paginación: siguiente, anterior, última, sin repetidos ni perdidos | ✅ | `expedientes.spec.ts` — el sembrado E2E crea 30 expedientes ficticios para tener más de una página |
+| Paginación coherente al filtrar | ✅ | `expedientes.spec.ts` |
 | Abrir expediente desde la lista | ✅ | `expedientes.spec.ts` |
+| Edición del fallecido (guardar, avisar, persistir) | ✅ | `expedientes.spec.ts` |
+| Edición del solicitante (guardar y persistir) | ✅ | `expedientes.spec.ts` |
+| Edición: HTTP 422 y HTTP 500 | ✅ | `expedientes.spec.ts` — avisa, no falsea, formulario utilizable |
+| Edición: fallo de red | ✅ | `expedientes.spec.ts` — sin «Guardando…» eterno |
+| Eliminación individual: confirmar, cancelar, confirmar | ✅ | `expedientes.spec.ts` |
+| Eliminación individual: fallo de servidor y de red | ✅ | `expedientes.spec.ts` — nunca se anuncia éxito si el expediente sigue existiendo |
+| Eliminación individual: oculta a VIEWER y rechazada por el servidor | ✅ | `expedientes.spec.ts` |
 | Selección múltiple y «seleccionar todo» | ✅ | `expedientes.spec.ts` |
 | Cambio de estado en lote (éxito) | ✅ | `expedientes.spec.ts` |
 | Cambio de estado en lote (error) | ✅ | `acciones-expedientes.spec.ts` |
 | Borrado en lote (error, sin spinner infinito) | ✅ | `acciones-expedientes.spec.ts` |
 | Cambio de estado por fila (éxito y error) | ✅ | `acciones-expedientes.spec.ts` |
-| Exportar CSV (con contenido comprobado) | ✅ | `expedientes.spec.ts` |
-| Pantalla de importación CSV se abre | ✅ | `expedientes.spec.ts` |
+| Exportar CSV: cabeceras, filas, valores, BOM y tildes | ✅ | `expedientes.spec.ts` |
+| Exportar CSV: respeta el filtro de estado | ✅ | `expedientes.spec.ts` |
+| Exportar CSV: respeta la búsqueda | ✅ | `expedientes.spec.ts` |
+| Importar CSV válido y ver los expedientes creados | ✅ | `expedientes.spec.ts` |
+| Importar: cabeceras incorrectas | ✅ | `expedientes.spec.ts` |
+| Importar: fichero que no es una tabla | ✅ | `expedientes.spec.ts` |
+| Importar: filas con datos inválidos | ✅ | `expedientes.spec.ts` — se listan fila a fila y no se importa nada |
+| Importar: fichero vacío | ✅ | `expedientes.spec.ts` |
+| Importar: extensión no admitida | ✅ | `expedientes.spec.ts` — se rechaza sin llegar a enviarse |
+| Importar: error de servidor y fallo de red | ✅ | `expedientes.spec.ts` |
 | Kanban: carga y tarjeta → expediente | ✅ | `expedientes.spec.ts` |
-| Validación del asistente (paso 1) | ✅ | `expedientes.spec.ts` |
-| **Crear expediente (asistente completo)** | ❌ | El recorrido supera los pasos 1 y 2 pero no alcanza «Crear expediente»; no he identificado en qué paso se detiene |
-| Edición | ❌ | |
-| Eliminación individual | ❌ | |
-| Paginación | ❌ | El seed tiene un solo expediente: no hay segunda página que probar |
-| Importación CSV real y sus errores | ❌ | |
-| Mover tarjeta en Kanban | ❌ | |
-| Etiquetas `<label>` asociadas a sus campos | ❌ | **Defecto encontrado**: en el asistente de alta los `<label>` no tienen `htmlFor` ni envuelven el input, así que un lector de pantalla no anuncia el nombre del campo |
+| Kanban: arrastrar tarjeta, petición real, cambio visual y persistencia | ✅ | `expedientes.spec.ts` |
+| Kanban: fallo de servidor y de red al mover | ✅ | `expedientes.spec.ts` — la tarjeta se queda y el error se ve |
 | Estado de carga / vacío / error + «Reintentar» | ✅ | `estados-carga.spec.ts` |
 | Sesión caducada distinguida | ✅ | `estados-carga.spec.ts` |
 | «Nuevo expediente» e «Importar CSV» ocultos a VIEWER | ✅ | `sesion-y-roles.spec.ts` |
+
+**Funciones que no existen en el producto** (no se inventa comportamiento para
+probarlas):
+
+| Elemento | Por qué no está |
+|---|---|
+| Botón «última página» | La paginación ofrece «Anterior» y «Siguiente». La prueba llega igualmente a la última página encadenando «Siguiente» y comprueba que ahí el botón se apaga. |
+| Ordenar el listado por columna | Las cabeceras de la tabla no son botones: el orden lo fija el servidor (urgentes primero, luego por fecha). |
 
 ### `/billing` — Facturación
 
@@ -140,19 +175,28 @@ con el vigilante de `e2e/vigilancia.ts` activo (ver «Detección global»).
 `estados-carga.spec.ts`), pero **sin sus interacciones propias probadas**:
 
 `/tasks`, `/tasks/timeline`, `/documents`, `/notifications`, `/approvals`,
-`/audit`, `/workflow-logs`, `/cases/kanban`.
+`/audit`, `/workflow-logs`.
 
 Que la pantalla resista un fallo de carga no significa que sus botones estén
-probados. Crear una tarea, subir un documento, aprobar o mover una tarjeta
-siguen sin cobertura.
+probados. Crear una tarea, subir un documento o aprobar siguen sin cobertura.
+
+`/cases/kanban` ya no está en esta lista: mover tarjetas se prueba entero
+—arrastre, petición real, persistencia y los dos caminos de fallo— en
+`expedientes.spec.ts`.
 
 **Sin ninguna cobertura de interfaz:**
 
 `/dashboard`, `/today`, `/messages`, `/reports` (+ `isd`, `pipeline`, `portal`,
 `team`), `/templates`, `/templates/[id]`, `/case-templates`, `/workflow-rules`,
 `/settings` (+ `general`, `branding`, `integrations`, `notifications`,
-`users`), `/profile`, `/cases/import`, `/cases/[id]`, `/cases/[id]/isd`,
-`/admin/*`.
+`users`), `/profile`, `/cases/[id]/isd`, `/admin/*`.
+
+`/cases/import` y `/cases/[id]` salen de esta lista: la importación se prueba
+entera —fichero válido, cabeceras malas, datos inválidos, fichero vacío,
+extensión no admitida, error de servidor y fallo de red— y de la ficha se
+prueban la edición (con sus tres caminos de fallo) y la eliminación individual.
+El resto de la ficha —pestañas de tareas, documentos, portal, acciones de IA—
+sigue sin cobertura de navegador.
 
 Varias tienen pruebas de API o de unidad, que por el criterio de arriba no
 cuentan como cobertura funcional.
@@ -192,8 +236,14 @@ aunque las aserciones pasen, ante:
 `pageerror` · errores de consola · HTTP 5xx · peticiones de red fallidas ·
 página de error de Next · pantalla en blanco · carga infinita (`pantallaUtil()`).
 
-Allowlist: cinco entradas, cada una con su motivo escrito en el fichero.
+Allowlist: seis entradas, cada una con su motivo escrito en el fichero.
 Verificada inyectando una excepción: la aserción pasa y la prueba falla igual.
+
+Los errores de consola se contrastan también con la **URL** del mensaje, no sólo
+con su texto: cuando una petición no llega, el navegador escribe «Failed to load
+resource: net::ERR_FAILED» sin decir de qué recurso, y una prueba que corta la
+red a propósito —declarándolo con `permitirFalloEn`— fallaba por su propio
+escenario.
 
 ---
 
@@ -240,3 +290,11 @@ Hallazgo colateral de esta fase: `/cases` mostraba «Nuevo expediente» e
 «Importar CSV» a un VIEWER, que al pulsarlos recibía un 403. Corregido con
 `RolProvider` — cortesía con el usuario, no control de acceso: quien decide
 sigue siendo el servidor, y hay prueba de las dos mitades.
+
+Al cerrar `/cases` aparecieron seis más de la misma familia, todos corregidos y
+todos con prueba: los seis botones «Guardar» de la ficha del expediente no
+miraban `res.ok` (cerraban el panel y dejaban los datos antiguos en pantalla,
+sin decir nada) y con la red caída se quedaban en «Guardando…» para siempre;
+mover una tarjeta del Kanban fallaba en silencio; la pantalla de importación
+presentaba un 500 del servidor como «Error de conexión»; y aceptaba cualquier
+extensión de archivo pese a lo que anunciaba su propio selector.

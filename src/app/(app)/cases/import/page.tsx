@@ -14,6 +14,22 @@ interface ImportResult {
   refs: string[];
 }
 
+/**
+ * Lo que puede venir en el cuerpo de `/api/cases/import`.
+ *
+ * Todo opcional a proposito: el cliente no puede dar por hecho la forma de una
+ * respuesta que tambien puede ser un error, y darla por hecha es como se
+ * acaban leyendo `undefined` como si fueran datos.
+ */
+interface RespuestaImportacion {
+  error?: string;
+  valid?: number;
+  total?: number;
+  errors?: { row: number; field: string; message: string }[];
+  created?: number;
+  refs?: string[];
+}
+
 const TEMPLATE_CSV = `fallecido,contacto,email_contacto,telefono_contacto,provincia,categorias,fecha_fallecimiento,dni_fallecido,parentesco,urgente,notas
 "Garcia Lopez, Maria","Perez Garcia, Antonio",antonio@example.com,+34612345678,Madrid,"BANCOS,SEGUROS",2026-04-01,12345678A,Hijo,false,"Caso estándar"
 "Fernandez Ruiz, Jose","Fernandez Martin, Laura",laura@example.com,,Barcelona,SUMINISTROS,2026-03-15,87654321B,Hija,true,"Urgente por plazos"`;
@@ -21,6 +37,9 @@ const TEMPLATE_CSV = `fallecido,contacto,email_contacto,telefono_contacto,provin
 type Payload =
   | { kind: "csv"; csv: string }
   | { kind: "xlsx"; base64: string };
+
+/** Las mismas del `accept` del input, pero comprobadas de verdad. */
+const EXTENSIONES_ADMITIDAS = ["csv", "txt", "xlsx", "xls"];
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -47,8 +66,27 @@ export default function ImportCasesPage() {
     if (!file) return;
     const ext = file.name.toLowerCase().split(".").pop() ?? "";
     setError(null);
-    setFileName(file.name);
     setValidation(null);
+
+    /*
+     * El `accept` del input es una sugerencia del navegador, no una
+     * comprobacion: se puede elegir "todos los archivos" y colar un PDF. Sin
+     * esto el PDF se leia como texto y acababa en el servidor como CSV, que
+     * respondia "No se pudo leer el CSV" — verdad a medias que no dice al
+     * usuario lo unico que necesita saber: que ese tipo de archivo no vale.
+     */
+    if (!EXTENSIONES_ADMITIDAS.includes(ext)) {
+      setPayload(null);
+      setCsvPreview("");
+      setFileName(null);
+      setError(
+        `El archivo «${file.name}» no tiene una extension admitida. Acepta ${EXTENSIONES_ADMITIDAS.map((x) => `.${x}`).join(", ")}.`,
+      );
+      e.target.value = "";
+      return;
+    }
+
+    setFileName(file.name);
 
     if (ext === "xlsx" || ext === "xls") {
       const reader = new FileReader();
@@ -67,8 +105,18 @@ export default function ImportCasesPage() {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const csv = (ev.target?.result as string | null) ?? "";
-        setPayload({ kind: "csv", csv });
         setCsvPreview(csv);
+        if (!csv.trim()) {
+          /*
+           * Con un fichero vacio el boton "Validar archivo" se quedaba
+           * desactivado y no se decia por que: el usuario pulsaba sin efecto y
+           * no tenia forma de saber si la pantalla estaba rota o el archivo.
+           */
+          setPayload(null);
+          setError(`El archivo «${file.name}» esta vacio: no contiene ninguna fila.`);
+          return;
+        }
+        setPayload({ kind: "csv", csv });
       };
       reader.readAsText(file, "utf-8");
     }
@@ -91,6 +139,30 @@ export default function ImportCasesPage() {
     );
   }
 
+  /**
+   * Lee el cuerpo sin dar por hecho que es JSON.
+   *
+   * Un 500 de Next devuelve HTML: `res.json()` lanzaba y el `catch` de mas
+   * abajo lo presentaba como "Error de conexión". El usuario buscaba su wifi
+   * cuando el problema estaba en el servidor.
+   */
+  async function cuerpoJson(res: Response): Promise<RespuestaImportacion | null> {
+    try {
+      return (await res.json()) as RespuestaImportacion;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Traduce la respuesta a lo que pinta el bloque de validacion. */
+  function comoValidacion(data: RespuestaImportacion): ValidationResult {
+    return {
+      valid: typeof data.valid === "number" ? data.valid : 0,
+      errors: Array.isArray(data.errors) ? data.errors : [],
+      total: typeof data.total === "number" ? data.total : 0,
+    };
+  }
+
   async function handleValidate() {
     setStep("validating");
     setError(null);
@@ -101,16 +173,21 @@ export default function ImportCasesPage() {
         headers: { "Content-Type": "application/json" },
         body: payloadBody({ validate: true }),
       });
-      const data = await res.json();
-      if (!res.ok && !data.errors) {
-        setError(data.error || "Error de validación");
+      const data = await cuerpoJson(res);
+      if (!res.ok && !data?.errors) {
+        setError(data?.error || `El servidor ha respondido ${res.status}. No se ha validado nada.`);
         setStep("input");
         return;
       }
-      setValidation(data);
+      if (!data) {
+        setError("La respuesta del servidor no tiene el formato esperado.");
+        setStep("input");
+        return;
+      }
+      setValidation(comoValidacion(data));
       setStep("validated");
     } catch {
-      setError("Error de conexión");
+      setError("No se ha podido contactar con el servidor. Comprueba tu conexion.");
       setStep("input");
     }
   }
@@ -124,21 +201,28 @@ export default function ImportCasesPage() {
         headers: { "Content-Type": "application/json" },
         body: payloadBody(),
       });
-      const data = await res.json();
+      const data = await cuerpoJson(res);
       if (!res.ok) {
-        if (data.errors) {
-          setValidation(data);
+        if (data?.errors) {
+          setValidation(comoValidacion(data));
           setStep("validated");
         } else {
-          setError(data.error || "Error al importar");
+          // Nunca se pasa a "done" desde aqui: anunciar expedientes
+          // importados que no existen es el peor final posible.
+          setError(data?.error || `El servidor ha respondido ${res.status}. No se ha importado nada.`);
           setStep("validated");
         }
         return;
       }
-      setResult(data);
+      if (!data || typeof data.created !== "number") {
+        setError("La respuesta del servidor no tiene el formato esperado. Revisa el listado antes de reintentar.");
+        setStep("validated");
+        return;
+      }
+      setResult({ created: data.created, refs: Array.isArray(data.refs) ? data.refs : [] });
       setStep("done");
     } catch {
-      setError("Error de conexión");
+      setError("No se ha podido contactar con el servidor. No se ha importado nada.");
       setStep("validated");
     }
   }
@@ -289,7 +373,11 @@ export default function ImportCasesPage() {
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-sm text-red-700">
+            <div
+              role="alert"
+              data-testid="error-importacion"
+              className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-sm text-red-700"
+            >
               {error}
             </div>
           )}

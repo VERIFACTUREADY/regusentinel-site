@@ -7,6 +7,8 @@ import { CASE_STATUS_COLORS, TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/c
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import { buildGoogleCalendarUrl, buildIcsDataUrl } from "@/lib/calendar-export";
 import { buildCatastroConsultaUrl, buildCatastroMapaUrl } from "@/lib/catastro";
+import { useRolConocido } from "@/components/layout/rol-context";
+import { hasPermission } from "@/lib/rbac";
 
 type AppliedReductionUi = {
   type: "VIVIENDA_HABITUAL" | "EMPRESA_FAMILIAR" | "EXPLOTACION_AGRARIA" | "DISCAPACIDAD" | "OTRA";
@@ -61,6 +63,12 @@ export default function CaseDetailPage() {
   const params = useParams();
   const router = useRouter();
   const caseId = params.id as string;
+  /*
+   * Cortesia con el usuario, no control de acceso: quien decide sigue siendo
+   * el servidor. Un VIEWER no debe ver un boton que solo le lleva a un 403.
+   */
+  const rol = useRolConocido();
+  const puedeBorrar = Boolean(rol && hasPermission(rol, "cases.delete"));
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
@@ -139,6 +147,19 @@ export default function CaseDetailPage() {
     appliedReductions: [] as AppliedReductionUi[],
   });
   const [infoSaving, setInfoSaving] = useState(false);
+  /*
+   * Borrado individual del expediente.
+   *
+   * `DELETE /api/cases/[id]` existia y estaba autorizado, pero no habia forma
+   * de llegar a el desde la interfaz: solo se podia borrar en lote desde el
+   * listado, marcando la casilla del expediente. Desde la ficha, que es donde
+   * uno decide que ya no quiere ese expediente, no habia boton.
+   *
+   * La confirmacion se pinta en el DOM en vez de usar `window.confirm` para
+   * que se pueda leer, navegar con teclado y comprobar.
+   */
+  const [confirmarBorrado, setConfirmarBorrado] = useState(false);
+  const [borrando, setBorrando] = useState(false);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [addTaskForm, setAddTaskForm] = useState({ title: "", category: "OTROS", description: "", deadline: "", assigneeId: "" });
   const [addTaskSaving, setAddTaskSaving] = useState(false);
@@ -665,26 +686,94 @@ El equipo de gestión`;
     fetchCase();
   }
 
-  async function saveDeceasedInfo() {
+  /**
+   * Guarda un bloque del expediente y dice si ha ido bien.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Estas seis funciones hacian `await fetch(...)` sin mirar `res.ok`: con un
+   * 400, un 422 o un 500 cerraban el panel de edicion, recargaban el
+   * expediente y dejaban en pantalla los datos ANTIGUOS sin decir nada. El
+   * usuario veia su cambio desaparecer y no sabia si se habia guardado.
+   *
+   * Y con la red caida era peor: `fetch` lanzaba, `setInfoSaving(false)` no
+   * llegaba a ejecutarse y el boton se quedaba en "Guardando…" para siempre.
+   *
+   * Ahora: en el camino bueno se cierra el panel, se confirma y se recarga; en
+   * el malo el panel sigue abierto CON LO QUE EL USUARIO ESCRIBIO, se explica
+   * el fallo y el formulario sigue siendo utilizable.
+   */
+  async function guardarBloque(
+    cuerpo: unknown,
+    cerrar: () => void,
+    queEs: string,
+  ): Promise<boolean> {
     setInfoSaving(true);
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deceased: deceasedForm }),
-    });
-    setDeceasedEditOpen(false);
-    setInfoSaving(false);
-    fetchCase();
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cuerpo),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        const detalle =
+          (Array.isArray(data?.details) && data.details[0]?.message) ||
+          data?.error ||
+          `El servidor ha respondido ${res.status}.`;
+        throw new Error(detalle);
+      }
+      cerrar();
+      showSuccess(`${queEs}: cambios guardados.`);
+      fetchCase();
+      return true;
+    } catch (e) {
+      showError(
+        `No se han podido guardar los cambios (${queEs.toLowerCase()}): ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      );
+      return false;
+    } finally {
+      // En `finally`: si no, un fallo de red deja el boton en "Guardando…".
+      setInfoSaving(false);
+    }
+  }
+
+  /**
+   * Elimina el expediente y solo entonces sale de la ficha.
+   *
+   * Si el servidor rechaza o la red falla, NO se navega y NO se anuncia exito:
+   * anunciar un borrado que no ha ocurrido es peor que no ofrecer el boton,
+   * porque el usuario deja de buscar un expediente que sigue ahi.
+   */
+  async function eliminarExpediente() {
+    setBorrando(true);
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+      }
+      setConfirmarBorrado(false);
+      // La lista se vuelve a pedir al entrar, asi que el expediente borrado ya
+      // no aparece. `replace` evita que "atras" devuelva a una ficha muerta.
+      router.replace("/cases?borrado=1");
+    } catch (e) {
+      showError(
+        `No se ha podido eliminar el expediente: ${e instanceof Error ? e.message : "error de red"}`,
+      );
+    } finally {
+      setBorrando(false);
+    }
+  }
+
+  async function saveDeceasedInfo() {
+    await guardarBloque({ deceased: deceasedForm }, () => setDeceasedEditOpen(false), "Fallecido");
   }
 
   async function saveContactInfo() {
-    setInfoSaving(true);
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contact: contactForm }),
-    });
-    setContactEditOpen(false);
-    setInfoSaving(false);
-    fetchCase();
+    await guardarBloque({ contact: contactForm }, () => setContactEditOpen(false), "Solicitante");
   }
 
   async function updateTaskTitle(taskId: string, title: string) {
@@ -733,28 +822,26 @@ El equipo de gestión`;
   }
 
   async function saveDetailsInfo() {
-    setInfoSaving(true);
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ province: detailsForm.province, categories: detailsForm.categories, hasDeceasedInsurance: detailsForm.hasDeceasedInsurance }),
-    });
-    setDetailsEditOpen(false);
-    setInfoSaving(false);
-    fetchCase();
+    await guardarBloque(
+      {
+        province: detailsForm.province,
+        categories: detailsForm.categories,
+        hasDeceasedInsurance: detailsForm.hasDeceasedInsurance,
+      },
+      () => setDetailsEditOpen(false),
+      "Detalles",
+    );
   }
 
   async function saveFiscalInfo() {
-    setInfoSaving(true);
     const numericOrNull = (v: string) => {
       const t = v.trim();
       if (!t) return null;
       const n = Number(t.replace(/\./g, "").replace(",", "."));
       return Number.isFinite(n) ? n : null;
     };
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    await guardarBloque(
+      {
         hasUrbanProperty: fiscalForm.hasUrbanProperty,
         referenciaCatastral: fiscalForm.referenciaCatastral.trim() || null,
         propertyAcquisitionValue: numericOrNull(fiscalForm.propertyAcquisitionValue),
@@ -765,30 +852,43 @@ El equipo de gestión`;
         appliedReductions: fiscalForm.appliedReductions.filter(
           (r) => r.type && r.appliedDate && r.maintenanceYears > 0,
         ),
-      }),
-    });
-    setFiscalEditOpen(false);
-    setInfoSaving(false);
-    fetchCase();
+      },
+      () => setFiscalEditOpen(false),
+      "Datos fiscales",
+    );
   }
 
   async function saveNotes() {
     setNotesSaving(true);
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ notes: notesInput }),
-    });
-    setNotesSaving(false);
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: notesInput }),
+      });
+      if (!res.ok) throw new Error(`El servidor ha respondido ${res.status}.`);
+      showSuccess("Notas guardadas.");
+    } catch (e) {
+      showError(`No se han podido guardar las notas: ${e instanceof Error ? e.message : "error de red"}`);
+    } finally {
+      setNotesSaving(false);
+    }
   }
 
   async function saveLegitimation() {
     setLegitimationSaving(true);
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ legitimationNote: legitimationInput }),
-    });
-    setLegitimationSaving(false);
-    fetchCase();
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ legitimationNote: legitimationInput }),
+      });
+      if (!res.ok) throw new Error(`El servidor ha respondido ${res.status}.`);
+      showSuccess("Nota de legitimacion guardada.");
+      fetchCase();
+    } catch (e) {
+      showError(`No se ha podido guardar la nota: ${e instanceof Error ? e.message : "error de red"}`);
+    } finally {
+      setLegitimationSaving(false);
+    }
   }
 
   async function toggleConsent() {
@@ -1028,6 +1128,15 @@ El equipo de gestión`;
             >
               Duplicar
             </button>
+            {puedeBorrar && (
+              <button
+                onClick={() => setConfirmarBorrado(true)}
+                className="px-3 py-1 border border-red-200 rounded-md text-sm text-red-600 hover:bg-red-50"
+                title="Eliminar expediente"
+              >
+                Eliminar expediente
+              </button>
+            )}
             <select value={caseData.status} onChange={(e) => updateStatus(e.target.value)}
               className="px-3 py-1 border rounded-md text-sm">
               {statuses.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
@@ -1139,11 +1248,49 @@ El equipo de gestión`;
         </div>
       )}
 
+      {/* Confirmacion de borrado del expediente */}
+      {confirmarBorrado && (
+        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tituloBorrado"
+            data-testid="confirmar-borrado"
+            className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+          >
+            <h2 id="tituloBorrado" className="text-lg font-semibold mb-2">
+              Eliminar expediente {caseData.ref}
+            </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              El expediente dejara de aparecer en el listado y en el tablero. Sus datos se
+              conservan en la base para auditoria, pero la gestoria pierde acceso desde la
+              aplicacion.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmarBorrado(false)}
+                disabled={borrando}
+                className="px-4 py-2 border rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={eliminarExpediente}
+                disabled={borrando}
+                className="px-4 py-2 bg-red-600 text-white rounded-md text-sm hover:bg-red-700 disabled:opacity-50"
+              >
+                {borrando ? "Eliminando…" : "Si, eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast notifications */}
       {(toastError || toastSuccess) && (
         <div className="fixed bottom-6 right-6 z-[60] flex flex-col gap-2 pointer-events-none">
           {toastError && (
-            <div className="flex items-center gap-3 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium pointer-events-auto max-w-sm">
+            <div data-testid="toast-error" className="flex items-center gap-3 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium pointer-events-auto max-w-sm">
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
@@ -1152,7 +1299,7 @@ El equipo de gestión`;
             </div>
           )}
           {toastSuccess && (
-            <div className="flex items-center gap-3 bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium pointer-events-auto max-w-sm">
+            <div data-testid="toast-exito" className="flex items-center gap-3 bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium pointer-events-auto max-w-sm">
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
@@ -1263,6 +1410,7 @@ El equipo de gestión`;
                     });
                     setDeceasedEditOpen(true);
                   }}
+                  aria-label="Editar datos del fallecido"
                   className="text-xs text-gray-400 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50"
                 >
                   Editar
@@ -1271,17 +1419,24 @@ El equipo de gestión`;
             </div>
             {deceasedEditOpen ? (
               <div className="space-y-2">
+                {/*
+                  Como en el asistente de alta: estos `<label>` no estaban
+                  asociados a su campo, asi que un lector de pantalla anunciaba
+                  "cuadro de edicion" sin decir de que.
+                */}
                 <div>
-                  <label className="text-xs text-gray-500">Nombre completo</label>
+                  <label htmlFor="edFallecidoNombre" className="text-xs text-gray-500">Nombre del fallecido</label>
                   <input
+                    id="edFallecidoNombre"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={deceasedForm.fullName}
                     onChange={(e) => setDeceasedForm((f) => ({ ...f, fullName: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Fecha de fallecimiento</label>
+                  <label htmlFor="edFallecidoFecha" className="text-xs text-gray-500">Fecha de fallecimiento</label>
                   <input
+                    id="edFallecidoFecha"
                     type="date"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={deceasedForm.deathDate}
@@ -1289,8 +1444,9 @@ El equipo de gestión`;
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">DNI/NIE</label>
+                  <label htmlFor="edFallecidoDni" className="text-xs text-gray-500">DNI/NIE del fallecido</label>
                   <input
+                    id="edFallecidoDni"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={deceasedForm.dni}
                     onChange={(e) => setDeceasedForm((f) => ({ ...f, dni: e.target.value }))}
@@ -1327,6 +1483,7 @@ El equipo de gestión`;
                     });
                     setContactEditOpen(true);
                   }}
+                  aria-label="Editar datos del solicitante"
                   className="text-xs text-gray-400 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50"
                 >
                   Editar
@@ -1336,24 +1493,27 @@ El equipo de gestión`;
             {contactEditOpen ? (
               <div className="space-y-2">
                 <div>
-                  <label className="text-xs text-gray-500">Nombre completo</label>
+                  <label htmlFor="edSolicitanteNombre" className="text-xs text-gray-500">Nombre del solicitante</label>
                   <input
+                    id="edSolicitanteNombre"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={contactForm.fullName}
                     onChange={(e) => setContactForm((f) => ({ ...f, fullName: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Telefono</label>
+                  <label htmlFor="edSolicitanteTelefono" className="text-xs text-gray-500">Telefono del solicitante</label>
                   <input
+                    id="edSolicitanteTelefono"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={contactForm.phone}
                     onChange={(e) => setContactForm((f) => ({ ...f, phone: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Email</label>
+                  <label htmlFor="edSolicitanteEmail" className="text-xs text-gray-500">Email del solicitante</label>
                   <input
+                    id="edSolicitanteEmail"
                     type="email"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={contactForm.email}
@@ -1361,8 +1521,9 @@ El equipo de gestión`;
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Relacion con el fallecido</label>
+                  <label htmlFor="edSolicitanteRelacion" className="text-xs text-gray-500">Relacion con el fallecido</label>
                   <input
+                    id="edSolicitanteRelacion"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={contactForm.relationship}
                     onChange={(e) => setContactForm((f) => ({ ...f, relationship: e.target.value }))}

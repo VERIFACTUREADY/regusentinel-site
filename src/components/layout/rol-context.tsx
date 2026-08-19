@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
+import { Role } from "@prisma/client";
 
 /**
  * Rol del usuario, disponible para cualquier componente de cliente.
@@ -37,6 +38,19 @@ export function RolProvider({
   return <RolContext.Provider value={rol}>{children}</RolContext.Provider>;
 }
 
-export function useRol(): string | null {
-  return useContext(RolContext);
+/**
+ * El rol, comprobado contra el enum de la base.
+ *
+ * En el contexto viaja una cadena. Pasarla a `hasPermission`, que espera un
+ * `Role`, obligaba a escribir `rol as never` en cada pantalla. Ese `as never`
+ * no comprueba nada: solo calla al compilador, y un rol que no existiera
+ * pasaria igual y decidiria que se ensena.
+ *
+ * Aqui se comprueba de verdad, y lo que no es un rol conocido es `null` — que
+ * es exactamente lo que significa: no sabemos que puede hacer, asi que no se le
+ * ofrece nada.
+ */
+export function useRolConocido(): Role | null {
+  const rol = useContext(RolContext);
+  return rol !== null && rol in Role ? (rol as Role) : null;
 }

@@ -109,7 +109,14 @@ export const test = base.extend<{ vigilante: void }>({
         if (msg.type() !== "error") return;
         const texto = msg.text();
         if (esRuido(texto)) return;
-        if (falloEsperado(texto)) return;
+        /*
+         * Cuando una peticion no llega, el navegador escribe en consola
+         * "Failed to load resource: net::ERR_FAILED" SIN la URL: esa viaja
+         * aparte, en la localizacion del mensaje. Mirando solo el texto, una
+         * prueba que corta la red a proposito —y que lo ha declarado con
+         * permitirFalloEn— fallaba igualmente por su propio escenario.
+         */
+        if (falloEsperado(texto) || falloEsperado(msg.location()?.url ?? "")) return;
         incidencias.push({ tipo: "console.error", detalle: texto });
       });
 

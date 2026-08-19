@@ -101,8 +101,16 @@ test.describe("Acciones sobre expedientes", () => {
     await login(page, E2E.owner);
     await page.goto("/cases");
 
+    /*
+     * Se espera a que la tabla tenga filas antes de contar.
+     *
+     * Antes se preguntaba por la casilla nada mas navegar y, si todavia no
+     * habia llegado la lista, `count()` daba 0 y la prueba se SALTABA sola. Una
+     * prueba que se salta en silencio es peor que una que falla: parece
+     * cobertura y no lo es.
+     */
     const casilla = page.locator("table input[type='checkbox']").nth(1);
-    if ((await casilla.count()) === 0) test.skip();
+    await expect(casilla).toBeVisible({ timeout: 20_000 });
     await casilla.check();
 
     permitirFalloEn(page, "/api/cases/batch");
@@ -135,8 +143,16 @@ test.describe("Acciones sobre expedientes", () => {
     await login(page, E2E.owner);
     await page.goto("/cases");
 
+    /*
+     * Se espera a que la tabla tenga filas antes de contar.
+     *
+     * Antes se preguntaba por la casilla nada mas navegar y, si todavia no
+     * habia llegado la lista, `count()` daba 0 y la prueba se SALTABA sola. Una
+     * prueba que se salta en silencio es peor que una que falla: parece
+     * cobertura y no lo es.
+     */
     const casilla = page.locator("table input[type='checkbox']").nth(1);
-    if ((await casilla.count()) === 0) test.skip();
+    await expect(casilla).toBeVisible({ timeout: 20_000 });
     await casilla.check();
 
     permitirFalloEn(page, "/api/cases/batch");

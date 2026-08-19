@@ -1,6 +1,6 @@
 "use client";
 
-import { useRol } from "@/components/layout/rol-context";
+import { useRolConocido } from "@/components/layout/rol-context";
 import { hasPermission } from "@/lib/rbac";
 import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect, useRef } from "react";
@@ -69,8 +69,8 @@ export default function CasesPage() {
    * Esto NO sustituye al control del servidor, que sigue siendo el que decide:
    * es para no prometer lo que no se puede cumplir.
    */
-  const rol = useRol();
-  const puedeCrear = Boolean(rol && hasPermission(rol as never, "cases.create"));
+  const rol = useRolConocido();
+  const puedeCrear = Boolean(rol && hasPermission(rol, "cases.create"));
   /*
    * Resultado de la ultima accion (cambiar estado, lote, borrar).
    *
@@ -167,6 +167,25 @@ export default function CasesPage() {
 
     return () => controller.abort();
   }, [page, statusFilter, categoryFilter, search, urgentFilter, provinceFilter, isdExpiringFilter, myTasksFilter, refreshKey]);
+
+  /*
+   * La ficha redirige aqui con `?borrado=1` despues de eliminar. Sin este
+   * aviso el usuario aterriza en la lista sin saber si el borrado ocurrio o si
+   * simplemente ha vuelto atras.
+   *
+   * Se lee de `window.location` y no con `useSearchParams` a proposito:
+   * `useSearchParams` obliga a envolver la pantalla en un `Suspense` para que
+   * Next pueda prerenderizarla, y no compensa por un aviso.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("borrado") !== "1") return;
+    setAvisoAccion({ tipo: "ok", texto: "Expediente eliminado." });
+    params.delete("borrado");
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `?${query}` : window.location.pathname);
+  }, []);
 
   function handleSearchInput(value: string) {
     setSearchInput(value);
@@ -300,7 +319,7 @@ export default function CasesPage() {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold">Expedientes</h1>
-          <p className="text-sm text-gray-500 mt-1">{total} expediente{total !== 1 ? "s" : ""}</p>
+          <p data-testid="total-expedientes" className="text-sm text-gray-500 mt-1">{total} expediente{total !== 1 ? "s" : ""}</p>
         </div>
         <div className="flex gap-2">
           <Link href="/cases/kanban"
@@ -484,7 +503,7 @@ export default function CasesPage() {
                   />
                 </td>
                 <td className="px-4 py-3">
-                  <Link href={`/cases/${c.id}`} className="font-medium text-primary hover:underline">
+                  <Link href={`/cases/${c.id}`} data-testid="ref-expediente" className="font-medium text-primary hover:underline">
                     {c.ref}
                   </Link>
                   {c.isUrgent && (
@@ -596,7 +615,7 @@ export default function CasesPage() {
           >
             Anterior
           </button>
-          <span className="text-sm text-gray-500">{page} / {totalPages}</span>
+          <span data-testid="indicador-pagina" className="text-sm text-gray-500">{page} / {totalPages}</span>
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
