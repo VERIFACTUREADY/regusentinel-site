@@ -379,10 +379,19 @@ export default function PortalPage() {
         {/* Status progress */}
         <div className="bg-white p-6 rounded-lg border">
           <h3 className="font-semibold mb-4">Estado del expediente</h3>
-          <div className="flex gap-1">
+          {/*
+            El indicador de estado se envuelve en pantallas estrechas.
+            Antes era una sola fila de `flex-1` con etiquetas como "Pendiente de
+            documentos" dentro: un elemento flex no encoge por debajo de su
+            contenido, asi que en un movil la fila medía casi cien pixeles mas
+            que la pantalla y arrastraba a TODA la pagina del portal a
+            desplazarse en horizontal. Con `flex-wrap`, `basis` y `min-w-0` los
+            pasos bajan de linea en vez de salirse.
+          */}
+          <div className="flex flex-wrap gap-1">
             {statusOrder.map((s, i) => (
               <div key={s}
-                className={`flex-1 py-2 text-center text-xs rounded ${
+                className={`flex-1 basis-20 min-w-0 break-words py-2 text-center text-xs rounded ${
                   i <= statusIdx ? "text-white" : "bg-gray-100 text-gray-400"
                 }`}
                 style={i <= statusIdx ? { backgroundColor: primary } : undefined}

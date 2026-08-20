@@ -1451,7 +1451,11 @@ test.describe("Documentos: portal familiar", () => {
     await expect(page.getByTestId("doc-nombre").filter({ hasText: nombre })).toHaveCount(1, {
       timeout: 20_000,
     });
-    await expect(page.locator("tbody").getByText("Familia", { exact: true })).toBeVisible();
+    // La insignia se busca DENTRO de la fila de este documento: la tabla puede
+    // traer mas documentos de familia y "Familia" a secas casa con todos.
+    await expect(
+      page.locator("tr").filter({ hasText: nombre }).getByText("Familia", { exact: true }),
+    ).toBeVisible();
 
     const [descarga] = await Promise.all([
       page.waitForEvent("download", { timeout: 30_000 }),
