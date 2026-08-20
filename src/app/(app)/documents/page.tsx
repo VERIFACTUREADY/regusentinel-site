@@ -66,6 +66,7 @@ export default async function DocumentsPage() {
       totalStorageLabel={formatBytes(totalSizeBytes)}
       portalCount={portalCount}
       totalCount={stats._count.id}
+      puedeBorrar={hasPermission(session.user.role, "documents.delete")}
     />
   );
 }

@@ -363,7 +363,12 @@ describe("GET /api/portal/[token]/documents — listar documentos", () => {
     expect(body).toHaveLength(1);
     expect(body[0].downloadUrl).toBe("https://signed-url");
     expect(body[0].linkedTask.title).toBe("Subir DNI");
-    expect(presignedMock).toHaveBeenCalledWith("org1/case_abc/portal/dni.pdf");
+    // La URL se firma ademas con el nombre y el tipo, para que el navegador
+    // DESCARGUE el archivo en vez de abrirlo dentro de la pagina.
+    expect(presignedMock).toHaveBeenCalledWith("org1/case_abc/portal/dni.pdf", {
+      fileName: "DNI.pdf",
+      mimeType: undefined,
+    });
   });
 });
 

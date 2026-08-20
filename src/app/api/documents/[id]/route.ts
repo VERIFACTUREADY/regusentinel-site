@@ -15,7 +15,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   if (!doc) return NextResponse.json({ error: "Documento no encontrado" }, { status: 404 });
 
-  const downloadUrl = await getPresignedUrl(doc.fileKey);
+  const downloadUrl = await getPresignedUrl(doc.fileKey, {
+    fileName: doc.fileName,
+    mimeType: doc.mimeType,
+  });
   return NextResponse.json({ downloadUrl });
 }
 

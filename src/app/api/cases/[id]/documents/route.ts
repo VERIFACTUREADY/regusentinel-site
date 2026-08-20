@@ -22,7 +22,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const docsWithUrls = await Promise.all(
     docs.map(async (doc) => ({
       ...doc,
-      downloadUrl: await getPresignedUrl(doc.fileKey),
+      downloadUrl: await getPresignedUrl(doc.fileKey, {
+        fileName: doc.fileName,
+        mimeType: doc.mimeType,
+      }),
     }))
   );
 

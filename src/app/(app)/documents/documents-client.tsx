@@ -40,12 +40,23 @@ export function DocumentsClient({
   totalStorageLabel,
   portalCount,
   totalCount,
+  puedeBorrar,
 }: {
   initialDocs: DocEntry[];
   initialTotal: number;
   totalStorageLabel: string;
   portalCount: number;
   totalCount: number;
+  /**
+   * `documents.delete` de verdad, resuelto en el servidor.
+   *
+   * Un VIEWER tiene solo los permisos `.read`: el servidor le devuelve 403 al
+   * borrar. Antes se le pintaba igualmente la papelera, así que la única forma
+   * de descubrir que no podía era pulsarla. Ocultarla NO sustituye a la
+   * autorización del backend —que sigue ahí y se prueba aparte—, pero deja de
+   * ofrecer algo que no se puede hacer.
+   */
+  puedeBorrar: boolean;
 }) {
   const [docs, setDocs] = useState<DocEntry[]>(initialDocs);
   const [total, setTotal] = useState(initialTotal);
@@ -55,6 +66,8 @@ export function DocumentsClient({
   const [search, setSearch] = useState("");
   const [filterSource, setFilterSource] = useState("");
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [borrando, setBorrando] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<{ tipo: "ok" | "err"; texto: string } | null>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
@@ -105,34 +118,109 @@ export function DocumentsClient({
     fetchDocs(1, search, source);
   }
 
+  /*
+   * Recarga SIEMPRE que cambie la página, incluida la vuelta a la 1.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Era `if (page > 1) fetchDocs(...)`. Al pulsar "Anterior" desde la página 2
+   * el estado volvía a 1 pero no se pedía nada, así que la tabla se quedaba
+   * mostrando los documentos de la página 2 mientras el pie decía "1–30 de N".
+   * El usuario veía una página que no existía y los documentos reales de la
+   * primera página eran inalcanzables sin recargar el navegador entero.
+   *
+   * La primera carga no repite la petición: `paginaCargada` arranca en 1, que
+   * es justo lo que el servidor ya pintó.
+   */
+  const paginaCargada = useRef(1);
   useEffect(() => {
-    if (page > 1) fetchDocs(page, search, filterSource);
+    if (paginaCargada.current === page) return;
+    paginaCargada.current = page;
+    fetchDocs(page, search, filterSource);
   }, [page, search, filterSource, fetchDocs]);
 
+  /** Motivo legible de una respuesta que no ha ido bien. */
+  async function motivo(res: Response): Promise<string> {
+    const cuerpo = await res.json().catch(() => null);
+    if (cuerpo?.error) return cuerpo.error;
+    if (res.status === 401) return "Tu sesion ha caducado. Vuelve a entrar.";
+    if (res.status === 403) return "No tienes permiso para esta accion.";
+    if (res.status === 404) return "El documento ya no existe.";
+    return `El servidor ha respondido ${res.status}.`;
+  }
+
+  /**
+   * Elimina un documento y sólo lo quita de la lista si de verdad se ha
+   * borrado.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Era `if (res.ok) { quitarlo de la lista }` y nada más. Con un 403 (VIEWER),
+   * un 404, un 500 o un 502 de S3 —el caso en que el archivo sigue en el
+   * bucket— el usuario pulsaba Eliminar y no ocurría absolutamente nada: ni
+   * desaparecía ni se explicaba por qué. Y si la red se caía, `fetch` lanzaba y
+   * el error moría sin capturar.
+   */
   async function handleDelete(docId: string, fileName: string) {
     if (!confirm(`¿Eliminar "${fileName}"? Esta acción no se puede deshacer.`)) return;
-    const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
-    if (res.ok) {
+    setAviso(null);
+    setBorrando(docId);
+    try {
+      const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await motivo(res));
       setDocs((prev) => prev.filter((d) => d.id !== docId));
-      setTotal((t) => t - 1);
+      setTotal((t) => Math.max(0, t - 1));
+      setAviso({ tipo: "ok", texto: `"${fileName}" se ha eliminado.` });
+    } catch (e) {
+      setAviso({
+        tipo: "err",
+        texto: `No se ha podido eliminar "${fileName}": ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      });
+    } finally {
+      setBorrando(null);
     }
   }
 
+  /**
+   * Descarga un documento.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Tenía un `catch {}` vacío: con la red caída no pasaba nada y el usuario se
+   * quedaba mirando el botón. Y el `if (res.ok)` sin `else` hacía lo mismo con
+   * un 403, un 404 o un 500. Además `setDownloading(null)` estaba fuera de
+   * `finally`, así que una excepción dejaba el botón apagado para siempre y ni
+   * siquiera se podía reintentar.
+   */
   async function handleDownload(docId: string, fileName: string) {
+    setAviso(null);
     setDownloading(docId);
     try {
       const res = await fetch(`/api/documents/${docId}`);
-      if (res.ok) {
-        const { downloadUrl } = await res.json();
-        const a = document.createElement("a");
-        a.href = downloadUrl;
-        a.download = fileName;
-        a.target = "_blank";
-        a.rel = "noreferrer";
-        a.click();
+      if (!res.ok) throw new Error(await motivo(res));
+      const datos = await res.json().catch(() => null);
+      if (!datos?.downloadUrl) {
+        throw new Error("El servidor no ha devuelto un enlace de descarga.");
       }
-    } catch {}
-    setDownloading(null);
+      const a = document.createElement("a");
+      a.href = datos.downloadUrl;
+      a.download = fileName;
+      a.rel = "noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      setAviso({
+        tipo: "err",
+        texto: `No se ha podido descargar "${fileName}": ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      });
+    } finally {
+      setDownloading(null);
+    }
   }
 
   const adminCount = totalCount - portalCount;
@@ -168,14 +256,27 @@ export function DocumentsClient({
 
       {/* Search & filters */}
       <div className="bg-white rounded-lg border p-4 mb-4 flex flex-wrap gap-3 items-center">
+        {/*
+          El `placeholder` no es una etiqueta: desaparece al escribir y un lector
+          de pantalla anuncia "cuadro de busqueda" sin decir de que. La etiqueta
+          va oculta a la vista pero presente en el arbol de accesibilidad.
+        */}
+        <label htmlFor="buscarDocumentos" className="sr-only">
+          Buscar documentos por nombre
+        </label>
         <input
+          id="buscarDocumentos"
           type="search"
           placeholder="Buscar por nombre..."
           value={search}
           onChange={(e) => handleSearch(e.target.value)}
           className="px-3 py-1.5 border rounded-md text-sm w-64"
         />
-        <div className="flex gap-2">
+        {/*
+          Grupo de filtros con estado anunciado: sin `aria-pressed` los tres
+          botones se leen igual y no hay forma de saber cual esta aplicado.
+        */}
+        <div className="flex gap-2" role="group" aria-label="Filtrar por origen">
           {[
             { value: "", label: "Todos" },
             { value: "admin", label: "Equipo" },
@@ -184,6 +285,7 @@ export function DocumentsClient({
             <button
               key={opt.value}
               onClick={() => handleSourceFilter(opt.value)}
+              aria-pressed={filterSource === opt.value}
               className={`px-3 py-1 text-sm rounded-full border transition-colors ${
                 filterSource === opt.value
                   ? "bg-primary text-white border-primary"
@@ -194,8 +296,24 @@ export function DocumentsClient({
             </button>
           ))}
         </div>
-        <span className="ml-auto text-sm text-gray-400">{total.toLocaleString("es-ES")} resultado{total !== 1 ? "s" : ""}</span>
+        <span data-testid="total-documentos" className="ml-auto text-sm text-gray-400">
+          {total.toLocaleString("es-ES")} resultado{total !== 1 ? "s" : ""}
+        </span>
       </div>
+
+      {aviso && (
+        <p
+          role={aviso.tipo === "err" ? "alert" : "status"}
+          data-testid={aviso.tipo === "err" ? "aviso-documentos-error" : "aviso-documentos-ok"}
+          className={`mb-4 text-sm rounded-md px-3 py-2 border ${
+            aviso.tipo === "err"
+              ? "bg-red-50 text-red-700 border-red-200"
+              : "bg-green-50 text-green-700 border-green-200"
+          }`}
+        >
+          {aviso.texto}
+        </p>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-lg border overflow-hidden">
@@ -204,7 +322,7 @@ export function DocumentsClient({
         ) : loading ? (
           <div className="py-12 text-center text-gray-400">Cargando...</div>
         ) : docs.length === 0 ? (
-          <div className="py-12 text-center text-gray-400">
+          <div data-testid="carga-vacio" className="py-12 text-center text-gray-400">
             <p className="text-lg mb-1">Sin documentos</p>
             <p className="text-sm">
               {search || filterSource
@@ -233,7 +351,7 @@ export function DocumentsClient({
                         <div className="flex items-center gap-2">
                           <span className="text-base" aria-hidden>{fileIcon(doc.mimeType)}</span>
                           <div>
-                            <p className="font-medium truncate max-w-[200px]" title={doc.fileName}>
+                            <p data-testid="doc-nombre" className="font-medium truncate max-w-[200px]" title={doc.fileName}>
                               {doc.fileName}
                             </p>
                             {doc.fileSize != null && (
@@ -288,9 +406,16 @@ export function DocumentsClient({
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
+                          {/*
+                            El nombre accesible lleva el archivo: con treinta
+                            filas, "Descargar" a secas no dice cual, ni para
+                            quien navega con lector de pantalla ni para una
+                            prueba que tenga que pulsar uno concreto.
+                          */}
                           <button
                             onClick={() => handleDownload(doc.id, doc.fileName)}
                             disabled={downloading === doc.id}
+                            aria-label={`Descargar ${doc.fileName}`}
                             className="text-xs px-2 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1"
                             title="Descargar"
                           >
@@ -305,13 +430,17 @@ export function DocumentsClient({
                               </>
                             )}
                           </button>
-                          <button
-                            onClick={() => handleDelete(doc.id, doc.fileName)}
-                            title="Eliminar"
-                            className="text-gray-300 hover:text-red-500 transition-colors"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                          </button>
+                          {puedeBorrar && (
+                            <button
+                              onClick={() => handleDelete(doc.id, doc.fileName)}
+                              disabled={borrando === doc.id}
+                              aria-label={`Eliminar ${doc.fileName}`}
+                              title="Eliminar"
+                              className="text-gray-300 hover:text-red-500 transition-colors disabled:opacity-40"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -322,7 +451,7 @@ export function DocumentsClient({
 
             {totalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-gray-500">
-                <span>
+                <span data-testid="rango-documentos">
                   {(page - 1) * LIMIT + 1}–{Math.min(page * LIMIT, total)} de {total.toLocaleString("es-ES")}
                 </span>
                 <div className="flex gap-2">

@@ -184,6 +184,9 @@ export default function PortalPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadOk, setUploadOk] = useState("");
+  const [docsError, setDocsError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [msgAuthor, setMsgAuthor] = useState("");
   const [msgContent, setMsgContent] = useState("");
@@ -215,8 +218,20 @@ export default function PortalPage() {
   }
 
   async function fetchDocs() {
-    const res = await fetch(`/api/portal/${token}/documents`);
-    if (res.ok) setDocs(await res.json());
+    // Sin `else` la familia veia "no hay documentos" cuando lo que habia
+    // fallado era la peticion. Se distingue una cosa de la otra.
+    try {
+      const res = await fetch(`/api/portal/${token}/documents`);
+      if (!res.ok) throw new Error(`El servidor ha respondido ${res.status}.`);
+      setDocs(await res.json());
+      setDocsError("");
+    } catch (e) {
+      setDocsError(
+        `No se han podido cargar los documentos: ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      );
+    }
   }
 
   async function fetchMessages() {
@@ -246,16 +261,44 @@ export default function PortalPage() {
     }
   }
 
+  /**
+   * Sube un documento desde el portal de la familia.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Era `if (res.ok) { recargar }` sin `else` ni `try`. Justo aqui, que es la
+   * pantalla que usa gente sin ningun contexto tecnico en el peor momento de su
+   * vida, un rechazo por formato, por tamaño, por limite de subidas o por
+   * consentimiento no dado se traducia en que el boton volvia a su sitio y no
+   * pasaba nada. La familia no sabia si su documento habia llegado.
+   */
   async function uploadFile(file: File) {
     setUploading(true);
+    setUploadError("");
+    setUploadOk("");
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch(`/api/portal/${token}/documents`, { method: "POST", body: formData });
-    if (res.ok) {
+    try {
+      const res = await fetch(`/api/portal/${token}/documents`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${res.status}.`);
+      }
+      setUploadOk(`"${file.name}" se ha enviado correctamente.`);
       fetchDocs();
       fetchData();
+    } catch (e) {
+      setUploadError(
+        `No se ha podido enviar "${file.name}": ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      );
+    } finally {
+      setUploading(false);
     }
-    setUploading(false);
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -513,6 +556,34 @@ export default function PortalPage() {
               <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
             </label>
           </div>
+
+          {uploadError && (
+            <p
+              role="alert"
+              data-testid="portal-subida-error"
+              className="mt-3 text-sm rounded-md px-3 py-2 bg-red-50 text-red-700 border border-red-200"
+            >
+              {uploadError}
+            </p>
+          )}
+          {uploadOk && (
+            <p
+              role="status"
+              data-testid="portal-subida-ok"
+              className="mt-3 text-sm rounded-md px-3 py-2 bg-green-50 text-green-700 border border-green-200"
+            >
+              {uploadOk}
+            </p>
+          )}
+          {docsError && (
+            <p
+              role="alert"
+              data-testid="portal-docs-error"
+              className="mt-3 text-sm rounded-md px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200"
+            >
+              {docsError}
+            </p>
+          )}
 
           {docs.length > 0 && (
             <div className="mt-4 divide-y">

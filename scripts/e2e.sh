@@ -15,6 +15,18 @@ export NODE_ENV=production
 # `sendEmail` fallaba con ECONNREFUSED y las pruebas solo podian comprobar el
 # camino del fallo; el flujo que ve el usuario —recibir el correo, pinchar el
 # enlace— quedaba sin cubrir.
+# Almacenamiento de objetos REAL (MinIO). Sin esto, `src/lib/s3.ts` se carga con
+# las variables vacias y cualquier subida desde el navegador muere con un 500,
+# de modo que la funcionalidad de documentos no se puede probar de verdad.
+#
+# NO hay simulador ni respaldo en memoria a proposito: si MinIO no esta, las
+# pruebas de documentos deben FALLAR, no pasar contra un doble.
+export S3_ENDPOINT="${S3_ENDPOINT:-http://127.0.0.1:9000}"
+export S3_ACCESS_KEY="${S3_ACCESS_KEY:-minioadmin}"
+export S3_SECRET_KEY="${S3_SECRET_KEY:-minioadmin123}"
+export S3_BUCKET="${S3_BUCKET:-heredia-e2e}"
+export S3_REGION="${S3_REGION:-us-east-1}"
+
 export SMTP_HOST="${SMTP_HOST:-127.0.0.1}"
 export SMTP_PORT="${SMTP_PORT:-1025}"
 export SMTP_USER="${SMTP_USER:-pruebas}"
@@ -34,6 +46,16 @@ if [ -z "${PLAYWRIGHT_CHROMIUM_PATH:-}" ]; then
 fi
 
 echo "[e2e] Base de datos: ${DATABASE_URL}"
+echo "[e2e] Almacenamiento: ${S3_ENDPOINT} (bucket ${S3_BUCKET})"
+
+# Se avisa MUY claro si no hay almacenamiento, pero no se sustituye por nada:
+# las pruebas de documentos fallaran, que es exactamente lo que deben hacer.
+if curl -sf "${S3_ENDPOINT}/minio/health/live" >/dev/null 2>&1; then
+  node scripts/init-bucket.mjs
+else
+  echo "[e2e] AVISO: no hay almacenamiento de objetos en ${S3_ENDPOINT}." >&2
+  echo "[e2e] Las pruebas de documentos FALLARAN. No se sustituye S3 por un doble." >&2
+fi
 
 # Cierra las conexiones abiertas antes de recrear el esquema. Sin esto, una
 # ejecucion anterior deja sesiones vivas, el reset falla en parte y la suite

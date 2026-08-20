@@ -19,6 +19,53 @@ export const E2E = {
   ownerSuspendido: "suspendido.e2e@ejemplo.test",
   orgSlug: "org-e2e",
   orgSuspendidaSlug: "org-e2e-suspendida",
+  /**
+   * Segunda organizacion, sana y ajena.
+   *
+   * POR QUE EXISTE
+   * --------------
+   * El aislamiento entre organizaciones no se puede demostrar con una sola:
+   * hace falta un documento REAL de otro tenant contra el que apuntar. La
+   * organizacion suspendida no vale para esto, porque responde 402 por
+   * suspension y taparia el 404 de autorizacion que es lo que se quiere probar.
+   */
+  orgAjena: {
+    slug: "org-e2e-ajena",
+    owner: "owner.ajena.e2e@ejemplo.test",
+    caseRef: "EXP-2026-7000",
+    documento: "SECRETO-DE-LA-ORGANIZACION-AJENA.pdf",
+  },
+  /**
+   * Documentos de relleno para /documents.
+   *
+   * La pagina lista de 30 en 30: sin pasar de 30 el bloque de paginacion no se
+   * pinta siquiera y "Siguiente"/"Anterior" quedarian sin cubrir. El prefijo
+   * comun permite buscarlos y los dos origenes (equipo/familia) permiten
+   * comprobar que el filtro cambia de verdad los resultados.
+   */
+  documentos: {
+    prefijo: "D-E2E",
+    /** Cuantos se siembran en el expediente principal. */
+    total: 36,
+    /** Nombre unico buscable, para la prueba de busqueda por nombre. */
+    unico: "D-E2E-unico-escritura-notarial.pdf",
+    /**
+     * Portal familiar propio para las pruebas de documentos.
+     *
+     * Con token aparte a proposito: `smoke.spec.ts` comprueba que el portal
+     * principal sigue SIN consentimiento aceptado, y estas pruebas lo aceptan
+     * para poder subir. Compartir token haria que una suite rompiera a la otra
+     * segun el orden de ejecucion.
+     */
+    portal: {
+      caseRef: "EXP-2026-9600",
+      token: "token-e2e-documentos-000000000000000000",
+      /** Documento interno del expediente: la familia NO debe verlo. */
+      interno: "D-E2E-INTERNO-NO-VISIBLE-PARA-FAMILIA.pdf",
+      /** Documento compartido con la familia. */
+      compartido: "D-E2E-compartido-con-familia.pdf",
+    },
+  },
   caseRef: "EXP-2026-9001",
   portalToken: "token-e2e-portal-de-pruebas-0000000000",
   /**
@@ -190,6 +237,118 @@ async function main() {
       fileKey: "e2e/compartido.pdf",
       visibleToFamily: true,
       isPortalUpload: true,
+    },
+  });
+
+  // ── Relleno de documentos: paginacion, busqueda y filtro de origen ──
+  //
+  // `fileKey` apunta a objetos que NO existen en el almacenamiento, y es
+  // deliberado: estas filas solo sirven para listar, buscar, filtrar y paginar,
+  // que no tocan S3. Lo que se descarga y se compara byte a byte en las pruebas
+  // es siempre un archivo subido de verdad desde el navegador.
+  for (let i = 0; i < E2E.documentos.total; i++) {
+    const deFamilia = i % 3 === 0;
+    await prisma.document.create({
+      data: {
+        caseId: caso.id,
+        fileName: `${E2E.documentos.prefijo}-relleno-${String(i + 1).padStart(2, "0")}.pdf`,
+        fileKey: `e2e/relleno-${i + 1}.pdf`,
+        mimeType: "application/pdf",
+        fileSize: 1024 * (i + 1),
+        isPortalUpload: deFamilia,
+        visibleToFamily: deFamilia,
+        // Hacia atras y separados, para que el orden por fecha sea estable y la
+        // paginacion no baile entre ejecuciones.
+        createdAt: new Date(Date.now() - (i + 2) * 60 * 60 * 1000),
+      },
+    });
+  }
+
+  // Uno con nombre unico, para la busqueda por nombre.
+  await prisma.document.create({
+    data: {
+      caseId: caso.id,
+      fileName: E2E.documentos.unico,
+      fileKey: "e2e/unico.pdf",
+      mimeType: "application/pdf",
+      fileSize: 4242,
+      isPortalUpload: false,
+      visibleToFamily: false,
+      createdAt: new Date(Date.now() - 60 * 60 * 1000),
+    },
+  });
+
+  // ── Portal familiar propio de las pruebas de documentos ──
+  //
+  // Sin consentimiento aceptado a proposito: la prueba lo acepta desde la
+  // interfaz, que es parte del flujo real que hay que cubrir.
+  const casoPortalDocs = await prisma.case.create({
+    data: {
+      orgId: org.id,
+      ref: E2E.documentos.portal.caseRef,
+      portalToken: E2E.documentos.portal.token,
+      portalEnabled: true,
+      createdAt: new Date(Date.now() - 30 * 60 * 1000),
+      deceased: { create: { fullName: "Causante Portal Docs", deathDate: new Date("2026-04-01") } },
+      contact: {
+        create: { fullName: "Familiar Portal Docs", email: "familia.docs.e2e@ejemplo.test" },
+      },
+    },
+  });
+
+  // Interno: la familia NUNCA debe verlo desde el portal.
+  await prisma.document.create({
+    data: {
+      caseId: casoPortalDocs.id,
+      fileName: E2E.documentos.portal.interno,
+      fileKey: "e2e/portal-interno.pdf",
+      mimeType: "application/pdf",
+      fileSize: 321,
+      visibleToFamily: false,
+    },
+  });
+
+  // Compartido explicitamente con la familia.
+  await prisma.document.create({
+    data: {
+      caseId: casoPortalDocs.id,
+      fileName: E2E.documentos.portal.compartido,
+      fileKey: "e2e/portal-compartido.pdf",
+      mimeType: "application/pdf",
+      fileSize: 654,
+      visibleToFamily: true,
+    },
+  });
+
+  // ── Organizacion ajena: para probar el aislamiento entre tenants ──
+  const orgAjena = await prisma.organization.create({
+    data: {
+      name: "Gestoría Ajena E2E",
+      slug: E2E.orgAjena.slug,
+      subscription: { create: { plan: "FIRMA", status: "active" } },
+    },
+  });
+  const ownerAjeno = await prisma.user.create({
+    data: { email: E2E.orgAjena.owner, name: "Owner Ajeno E2E", passwordHash: hash },
+  });
+  await prisma.membership.create({
+    data: { userId: ownerAjeno.id, orgId: orgAjena.id, role: "OWNER" },
+  });
+  const casoAjeno = await prisma.case.create({
+    data: {
+      orgId: orgAjena.id,
+      ref: E2E.orgAjena.caseRef,
+      deceased: { create: { fullName: "Causante Ajeno", deathDate: new Date("2026-02-01") } },
+    },
+  });
+  await prisma.document.create({
+    data: {
+      caseId: casoAjeno.id,
+      fileName: E2E.orgAjena.documento,
+      fileKey: "e2e/ajeno.pdf",
+      mimeType: "application/pdf",
+      fileSize: 999,
+      visibleToFamily: false,
     },
   });
 

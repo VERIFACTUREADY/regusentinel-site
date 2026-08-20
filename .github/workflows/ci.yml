@@ -323,6 +323,18 @@ jobs:
       NEXTAUTH_URL: http://127.0.0.1:3000
       APP_URL: http://127.0.0.1:3000
       PGPASSWORD: postgres
+      # Almacenamiento de objetos REAL para la suite de navegador.
+      #
+      # Antes este job no tenia ninguna variable S3_*: `src/lib/s3.ts` las lee
+      # con `!` al cargarse, asi que cualquier subida desde el navegador moria
+      # con un 500 y la funcionalidad de documentos no se podia probar de
+      # extremo a extremo. Es el mismo MinIO y la misma version fijada que usa
+      # el job de integracion, no un simulador.
+      S3_ENDPOINT: http://127.0.0.1:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin123
+      S3_BUCKET: heredia-e2e
+      S3_REGION: us-east-1
 
     steps:
       - uses: actions/checkout@v4
@@ -333,6 +345,30 @@ jobs:
 
       - run: npm ci --legacy-peer-deps
       - run: npx prisma generate
+
+      - name: Arrancar MinIO
+        run: |
+          docker run -d --name minio-e2e \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin123 \
+            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+
+      - name: Comprobar que MinIO responde
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:9000/minio/health/live; then
+              echo "MinIO disponible tras $i intento(s)."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::MinIO no responde en 127.0.0.1:9000. Log del contenedor:"
+          docker logs minio-e2e || true
+          exit 1
+
+      - name: Inicializar el bucket
+        run: node scripts/init-bucket.mjs
 
       - name: Instalar Chromium
         run: npx playwright install --with-deps chromium

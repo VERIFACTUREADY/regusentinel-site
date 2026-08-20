@@ -94,7 +94,7 @@ describeSiHayMinio("Operaciones basicas contra MinIO", () => {
     const key = clave();
     await s3.uploadFile(key, PDF, "application/pdf");
 
-    const url = await s3.getPresignedUrl(key, 300);
+    const url = await s3.getPresignedUrl(key, { expiresIn: 300 });
     expect(url).toContain("X-Amz-Signature");
     expect(url).toContain("X-Amz-Expires=300");
 
@@ -108,7 +108,7 @@ describeSiHayMinio("Operaciones basicas contra MinIO", () => {
     const key = clave();
     await s3.uploadFile(key, PDF, "application/pdf");
 
-    const url = await s3.getPresignedUrl(key, 300);
+    const url = await s3.getPresignedUrl(key, { expiresIn: 300 });
     const manipulada = url.replace(/X-Amz-Signature=[0-9a-f]+/, "X-Amz-Signature=" + "0".repeat(64));
 
     const res = await fetch(manipulada);

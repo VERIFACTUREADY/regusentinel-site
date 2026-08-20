@@ -35,7 +35,10 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
       createdAt: doc.createdAt,
       isPortalUpload: doc.isPortalUpload,
       linkedTask: doc.task ? { title: doc.task.title, category: doc.task.category } : null,
-      downloadUrl: await getPresignedUrl(doc.fileKey),
+      downloadUrl: await getPresignedUrl(doc.fileKey, {
+        fileName: doc.fileName,
+        mimeType: doc.mimeType,
+      }),
     })),
   );
 

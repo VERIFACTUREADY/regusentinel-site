@@ -287,20 +287,169 @@ No se prueban ni se inventan; quedan declaradas:
 | APIs privadas devuelven 402 suspendido | ✅ | `smoke.spec.ts` |
 | Cambio de plan, portal de Stripe | ❌ | |
 
+### `/documents` — Documentos
+
+**Inventario real del módulo.** `/documents` es una **biblioteca**: lista,
+busca por nombre, filtra por origen, pagina de 30 en 30, descarga y borra.
+**No sube** — ahí no existe ningún control de alta. Se sube desde la pestaña
+**Documentos de la ficha del expediente** y desde el **portal familiar**. La
+matriz marca cada fila donde el producto ofrece la función, no donde sería
+cómodo que estuviera.
+
+**Todo lo de esta sección se prueba contra MinIO real**, el mismo contenedor y
+la misma versión fijada que usa el job de integración. Que la fila exista en la
+base de datos no se acepta como prueba de que el archivo esté: se comprueba el
+objeto en el bucket y se comparan los bytes.
+
+#### Subida (ficha del expediente)
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Subir un documento desde la ficha | ✅ | `documentos.spec.ts` — interfaz, base **y objeto en MinIO** |
+| Los bytes que llegan al bucket son los del archivo | ✅ | `documentos.spec.ts` — comparación byte a byte |
+| Aparece después en la biblioteca `/documents` | ✅ | `documentos.spec.ts` |
+| Vinculación automática a tarea por nombre | ✅ | `documentos.spec.ts` — sugerencias cuando no casa |
+| Archivo vacío | ✅ | `documentos.spec.ts` — se explica y no se crea nada |
+| Extensión no admitida | ✅ | `documentos.spec.ts` — dice cuáles se aceptan |
+| Ejecutable renombrado a `.pdf` | ✅ | `documentos.spec.ts` — rechazado por su **contenido**, no por lo que declara el cliente |
+| Archivo por encima del límite | ✅ | `documentos.spec.ts` — 413 con el máximo |
+| Nombre con ruta (`../../etc/passwd`) | ✅ | `documentos.spec.ts` — se sanea y la clave no escapa del ámbito |
+| Error del servidor al subir | ✅ | `documentos.spec.ts` — avisa y no aparece documento |
+| Fallo de red al subir | ✅ | `documentos.spec.ts` — avisa y el control vuelve a estar disponible |
+| Almacenamiento no disponible | ✅ | `documentos.spec.ts` — avisa y no queda fila fantasma |
+| Doble envío | ✅ | `documentos.spec.ts` — sale **una** petición y se crea **un** documento |
+
+#### Descarga
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Descargar desde `/documents` | ✅ | `documentos.spec.ts` — **bytes idénticos**, nombre y tamaño |
+| Descargar desde la ficha | ✅ | `documentos.spec.ts` — bytes idénticos |
+| Error del servidor al descargar | ✅ | `documentos.spec.ts` — avisa y el botón sigue utilizable |
+| Fallo de red al descargar | ✅ | `documentos.spec.ts` — antes era un `catch {}` mudo |
+| URL firmada, temporal y con caducidad ≤ 1 h | ✅ | `documentos.spec.ts` |
+| La URL fuerza descarga (`attachment`) | ✅ | `documentos.spec.ts` — antes se abría en línea |
+| La URL no expone credenciales | ✅ | `documentos.spec.ts` |
+| Una URL manipulada no sirve el objeto | ✅ | `documentos.spec.ts` — firma y ruta |
+
+#### Eliminación
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Confirmación, cancelar y confirmar | ✅ | `documentos.spec.ts` |
+| Borra de la interfaz, de la base **y del bucket** | ✅ | `documentos.spec.ts` |
+| HTTP 403, 404 y 500 | ✅ | `documentos.spec.ts` — avisa y la fila **no** desaparece |
+| Fallo de red | ✅ | `documentos.spec.ts` |
+| El almacenamiento no puede borrar (502) | ✅ | `documentos.spec.ts` — no se anuncia un borrado que no ocurrió |
+
+#### Biblioteca: búsqueda, filtros y paginación
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Búsqueda por nombre | ✅ | `documentos.spec.ts` — petición **y** resultados |
+| Limpiar la búsqueda | ✅ | `documentos.spec.ts` |
+| Filtro Todos / Equipo / Familia | ✅ | `documentos.spec.ts` — petición **y** resultados, los tres |
+| Búsqueda + origen combinados | ✅ | `documentos.spec.ts` |
+| Paginación de 30: siguiente, anterior y última | ✅ | `documentos.spec.ts` — sin duplicados ni documentos perdidos |
+| Volver a la página 1 recarga sus documentos | ✅ | `documentos.spec.ts` — **defecto corregido** |
+| Paginación coherente al buscar y al filtrar | ✅ | `documentos.spec.ts` |
+| Estado vacío por filtro | ✅ | `documentos.spec.ts` |
+| Error del servidor + «Reintentar» | ✅ | `documentos.spec.ts` — **no** se disfraza de biblioteca vacía |
+| Sesión caducada distinguida | ✅ | `documentos.spec.ts` |
+| Enlace al expediente desde la fila | ✅ | `documentos.spec.ts` |
+
+#### Metadatos
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| `fileName`, `fileSize`, `mimeType` reales | ✅ | `documentos.spec.ts` — el tipo lo decide el contenido |
+| Expediente correcto | ✅ | `documentos.spec.ts` |
+| `uploadedBy` correcto | ✅ | `documentos.spec.ts` |
+| `isPortalUpload` refleja el origen real | ✅ | `documentos.spec.ts` — equipo y familia |
+| Documento interno privado por defecto | ✅ | `documentos.spec.ts` |
+| Tarea vinculada | ✅ | `documentos.spec.ts` |
+| `createdAt` se muestra en la fila | ✅ | `documentos.spec.ts` |
+| Clave de objeto impredecible y dentro del ámbito | ✅ | `documentos.spec.ts` |
+
+#### Portal familiar
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Abrir con token válido y consentimiento | ✅ | `documentos.spec.ts` |
+| La familia sube un documento | ✅ | `documentos.spec.ts` — confirmación, base y **objeto en MinIO** |
+| El equipo lo ve marcado como «Familia» | ✅ | `documentos.spec.ts` |
+| El equipo lo descarga con los mismos bytes | ✅ | `documentos.spec.ts` |
+| El portal sólo ve lo que le corresponde | ✅ | `documentos.spec.ts` — el documento interno no se filtra ni en el API |
+| Archivo inválido desde el portal | ✅ | `documentos.spec.ts` — antes no producía nada en pantalla |
+| Fallo de almacenamiento desde el portal | ✅ | `documentos.spec.ts` |
+| Token inválido | ✅ | `documentos.spec.ts` |
+| Token revocado | ✅ | `documentos.spec.ts` |
+| Un portal no alcanza documentos de otro expediente | ✅ | `documentos.spec.ts` |
+
+#### Aislamiento entre organizaciones
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| No se listan documentos de otra organización | ✅ | `documentos.spec.ts` — ni buscándolos por su nombre exacto |
+| No se obtiene URL de descarga ajena | ✅ | `documentos.spec.ts` — 404 |
+| No se elimina ni modifica un documento ajeno | ✅ | `documentos.spec.ts` — 404 y nada cambia |
+| No se sube a un expediente ajeno | ✅ | `documentos.spec.ts` — 404 |
+| No se filtran metadatos sensibles en el error | ✅ | `documentos.spec.ts` — ni nombre, ni clave, ni enlace |
+
+#### Roles, accesibilidad y tamaños
+
+Política real comprobada en `src/lib/rbac.ts` antes de escribir las pruebas:
+OWNER, MANAGER, OPERATOR y MANAGED_OPS tienen `documents.create/read/update/delete`;
+**VIEWER sólo los permisos que terminan en `.read`**, es decir sólo consultar y
+descargar.
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| MANAGER sube, descarga y elimina | ✅ | `documentos.spec.ts` |
+| OPERATOR sube, descarga y elimina | ✅ | `documentos.spec.ts` |
+| VIEWER consulta y descarga | ✅ | `documentos.spec.ts` |
+| VIEWER: sin controles de subida ni borrado | ✅ | `documentos.spec.ts` |
+| VIEWER: el servidor rechaza subir, borrar y compartir | ✅ | `documentos.spec.ts` — 403 por URL directa |
+| Búsqueda con nombre accesible | ✅ | `documentos.spec.ts` — antes sólo tenía `placeholder` |
+| Filtros identificables y con estado anunciado | ✅ | `documentos.spec.ts` — `role=group` + `aria-pressed` |
+| Descargar y Eliminar dicen a qué documento pertenecen | ✅ | `documentos.spec.ts` |
+| Input de fichero con etiqueta asociada | ✅ | `documentos.spec.ts` |
+| Diálogo de confirmación y mensajes de error | ✅ | `documentos.spec.ts` — `role=alert` / `role=status` |
+| Navegación por teclado | ✅ | `documentos.spec.ts` |
+| Escritorio, tablet y móvil | ✅ | `documentos.responsive.spec.ts` — listado, búsqueda, filtros, abrir expediente, subir, descargar, eliminar, paginar y portal, sin desbordamiento horizontal |
+
+#### Funciones que **no existen** en el producto
+
+No se prueban ni se inventan; quedan declaradas:
+
+| Función | Realidad |
+|---|---|
+| Subir desde `/documents` | La biblioteca no tiene control de alta. Se sube desde la ficha del expediente o desde el portal familiar. |
+| Renombrar un documento | No existe. El nombre se fija al subir y sólo se puede borrar y volver a subir. |
+| Carpetas o etiquetas propias | No existen. La organización real es por expediente y por tarea vinculada. |
+| Previsualización dentro de la aplicación | No hay visor. La descarga se fuerza como adjunto a propósito, para no ejecutar contenido de terceros en el navegador. |
+| Versiones de un documento | No existe historial: cada subida es un documento nuevo. |
+| Filtro por expediente, por tarea o por fecha en `/documents` | No existen como control. Se filtra por origen y se busca por nombre. |
+| Descarga múltiple o en ZIP desde `/documents` | No existe. El paquete de banco es otra funcionalidad, con su propia pantalla. |
+| Papelera o recuperación tras borrar | No existe. El borrado es definitivo y así se advierte en la confirmación. |
+| Análisis antivirus de lo subido | **No existe.** Se valida tipo, tamaño y firma de contenido; no se busca malware dentro de un PDF bien formado. Documentado también en `src/lib/file-policy.ts`. |
+
 ### Sin cobertura de interfaz
 
 **Con estados de carga probados** (carga, vacío, error y «Reintentar», vía
 `estados-carga.spec.ts`), pero **sin sus interacciones propias probadas**:
 
-`/documents`, `/notifications`, `/approvals`, `/audit`, `/workflow-logs`.
+`/notifications`, `/approvals`, `/audit`, `/workflow-logs`.
 
 Que la pantalla resista un fallo de carga no significa que sus botones estén
-probados. Subir un documento o aprobar siguen sin cobertura.
+probados. Aprobar sigue sin cobertura.
 
 `/cases/kanban` ya no está en esta lista: mover tarjetas se prueba entero
 —arrastre, petición real, persistencia y los dos caminos de fallo— en
 `expedientes.spec.ts`. `/tasks` y `/tasks/timeline` tampoco: tienen sección
-propia arriba, con sus acciones conducidas desde el navegador.
+propia arriba. `/documents` tampoco: subida, descarga byte a byte, borrado,
+búsqueda, filtros, paginación, portal, aislamiento y roles se conducen desde el
+navegador contra MinIO real en `documentos.spec.ts`.
 
 **Sin ninguna cobertura de interfaz:**
 

@@ -69,6 +69,12 @@ export default function CaseDetailPage() {
    */
   const rol = useRolConocido();
   const puedeBorrar = Boolean(rol && hasPermission(rol, "cases.delete"));
+  // Documentos tienen su propio permiso: un VIEWER solo tiene los `.read`, y
+  // ofrecerle "Subir documento" o la papelera era enseñarle botones que el
+  // servidor rechaza con 403. La autorizacion del backend sigue siendo la que
+  // manda y se prueba por separado.
+  const puedeSubirDocs = Boolean(rol && hasPermission(rol, "documents.create"));
+  const puedeBorrarDocs = Boolean(rol && hasPermission(rol, "documents.delete"));
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
@@ -831,11 +837,34 @@ El equipo de gestión`;
     }
   }
 
+  /**
+   * Elimina un documento del expediente.
+   *
+   * El `else` existía, pero decía siempre "Error al eliminar el documento" y se
+   * comía el motivo real que manda el servidor —403 sin permiso, 404 si ya no
+   * está, 502 cuando el archivo sigue en el almacenamiento y la referencia NO
+   * se ha borrado—. Y sin `try`, un fallo de red no mostraba nada en absoluto.
+   */
   async function deleteDocument(docId: string, fileName: string) {
     if (!confirm(`¿Eliminar "${fileName}"? Esta acción no se puede deshacer.`)) return;
-    const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
-    if (res.ok) fetchCase();
-    else showError("Error al eliminar el documento");
+    try {
+      const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${res.status}.`);
+      }
+      showSuccess(`"${fileName}" se ha eliminado.`);
+    } catch (err) {
+      showError(
+        `No se ha podido eliminar "${fileName}": ${
+          err instanceof Error ? err.message : "error de red"
+        }`,
+      );
+    } finally {
+      // Pase lo que pase, la lista vuelve a reflejar lo que hay en la base: un
+      // borrado fallido no puede dejar la fila desaparecida de la pantalla.
+      fetchCase();
+    }
   }
 
   /**
@@ -1064,23 +1093,64 @@ El equipo de gestión`;
   }
 
   const [uploadHint, setUploadHint] = useState<{ fileName: string; suggestions: string[] } | null>(null);
+  const [subiendo, setSubiendo] = useState(false);
 
+  /**
+   * Sube un documento al expediente.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Era `if (res.ok) { ... }` sin `else` y sin `try`. El servidor rechaza por
+   * motivos muy concretos y muy frecuentes —formato no admitido, contenido que
+   * no corresponde a la extensión, archivo vacío, más de 20 MB, 403 de VIEWER,
+   * 502 si el almacenamiento no responde— y de todos ellos el usuario recibía
+   * exactamente lo mismo: nada. La lista se recargaba, el documento no estaba,
+   * y no había una sola palabra que explicara por qué.
+   *
+   * Además no había ningún estado de subida: se podía pulsar dos veces y subir
+   * el mismo archivo dos veces.
+   */
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    // El input se limpia ya: así el mismo archivo se puede reintentar y un
+    // segundo `change` no reaprovecha el anterior.
+    e.target.value = "";
+    if (subiendo) return;
+
+    setSubiendo(true);
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch(`/api/cases/${caseId}/documents`, { method: "POST", body: formData });
-    if (res.ok) {
+    try {
+      const res = await fetch(`/api/cases/${caseId}/documents`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${res.status}.`);
+      }
       const data = await res.json();
       if (!data.taskId && data.suggestions) {
         setUploadHint({ fileName: file.name, suggestions: data.suggestions });
       } else {
         setUploadHint(null);
       }
+      showSuccess(`"${data.fileName ?? file.name}" se ha subido.`);
+      fetchCase();
+    } catch (err) {
+      setUploadHint(null);
+      showError(
+        `No se ha podido subir "${file.name}": ${
+          err instanceof Error ? err.message : "error de red"
+        }`,
+      );
+      // Se recarga igualmente para que la lista refleje lo que hay de verdad y
+      // no un documento que en realidad no llegó a guardarse.
+      fetchCase();
+    } finally {
+      setSubiendo(false);
     }
-    fetchCase();
-    e.target.value = "";
   }
 
   async function handleApproval(approvalId: string, status: string) {
@@ -2802,10 +2872,28 @@ El equipo de gestión`;
       {tab === "documents" && (
         <div>
           <div className="mb-4 flex items-center gap-4">
-            <label className="inline-block px-4 py-2 bg-primary text-white rounded-md text-sm cursor-pointer hover:bg-primary/90">
-              Subir documento
-              <input type="file" className="hidden" onChange={handleFileUpload} />
-            </label>
+            {puedeSubirDocs && (
+              <label
+                className={`inline-block px-4 py-2 rounded-md text-sm ${
+                  subiendo
+                    ? "bg-gray-200 text-gray-500 cursor-wait"
+                    : "bg-primary text-white cursor-pointer hover:bg-primary/90"
+                }`}
+              >
+                {subiendo ? "Subiendo…" : "Subir documento"}
+                {/*
+                  El `<label>` envolvente da nombre accesible al input, que va
+                  oculto a la vista porque el control nativo no se puede
+                  maquetar. `getByLabel("Subir documento")` lo encuentra.
+                */}
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={subiendo}
+                />
+              </label>
+            )}
             <p className="text-xs text-gray-500">
               Los documentos se vinculan automaticamente a tareas por nombre de archivo
             </p>
@@ -2837,7 +2925,7 @@ El equipo de gestión`;
             {caseData.documents.map((doc: any) => (
               <div key={doc.id} className="px-6 py-3 flex items-center justify-between">
                 <div className="flex-1">
-                  <p className="font-medium text-sm">{doc.fileName}</p>
+                  <p data-testid="doc-ficha-nombre" className="font-medium text-sm">{doc.fileName}</p>
                   <div className="flex items-center gap-2 mt-1">
                     <p className="text-xs text-gray-400">
                       {new Date(doc.createdAt).toLocaleString("es-ES")}
@@ -2858,16 +2946,25 @@ El equipo de gestión`;
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   {doc.downloadUrl && (
-                    <a href={doc.downloadUrl} target="_blank" rel="noreferrer"
-                      className="text-sm text-primary hover:underline">Descargar</a>
+                    <a
+                      href={doc.downloadUrl}
+                      rel="noreferrer"
+                      aria-label={`Descargar ${doc.fileName}`}
+                      className="text-sm text-primary hover:underline"
+                    >
+                      Descargar
+                    </a>
                   )}
-                  <button
-                    onClick={() => deleteDocument(doc.id, doc.fileName)}
-                    title="Eliminar documento"
-                    className="text-gray-300 hover:text-red-500 transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                  </button>
+                  {puedeBorrarDocs && (
+                    <button
+                      onClick={() => deleteDocument(doc.id, doc.fileName)}
+                      aria-label={`Eliminar documento: ${doc.fileName}`}
+                      title="Eliminar documento"
+                      className="text-gray-300 hover:text-red-500 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
