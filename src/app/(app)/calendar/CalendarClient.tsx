@@ -100,7 +100,18 @@ function DayDetail({
               {d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric" })}
             </h3>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+          {/*
+            El boton solo contenia "×", que como nombre accesible es
+            literalmente el caracter de multiplicacion: inservible para un lector
+            de pantalla. `aria-hidden` en el simbolo y el nombre en `aria-label`.
+          */}
+          <button
+            onClick={onClose}
+            aria-label="Cerrar detalle"
+            className="text-gray-400 hover:text-gray-600 text-xl"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -298,8 +309,26 @@ export function CalendarClient() {
       </div>
 
       {/* Filters */}
+      {/*
+        Los dos filtros llevan `<label htmlFor>` con su `id`.
+
+        EL DEFECTO QUE CORRIGE
+        ----------------------
+        Eran dos `<select>` sin nombre accesible ninguno: un lector de pantalla
+        anunciaba "lista" dos veces seguidas sin decir de que, y las pruebas
+        tenian que pedirlos por posicion (`select >> nth=0`), que se rompe en
+        cuanto alguien añade otro desplegable a la pantalla.
+
+        Las etiquetas van en `sr-only`: presentes en el arbol de accesibilidad,
+        sin alterar el diseño. `title` NO sirve aqui —es una ayuda emergente,
+        no un nombre—, por eso no se usa.
+      */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <label htmlFor="calendarioResponsable" className="sr-only">
+          Filtrar por responsable
+        </label>
         <select
+          id="calendarioResponsable"
           value={filterAssignee}
           onChange={(e) => setFilterAssignee(e.target.value)}
           className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -307,7 +336,11 @@ export function CalendarClient() {
           <option value="">Todos los asignados</option>
           <option value="me">Solo mis tareas</option>
         </select>
+        <label htmlFor="calendarioCategoria" className="sr-only">
+          Filtrar por categoria
+        </label>
         <select
+          id="calendarioCategoria"
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value)}
           className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"

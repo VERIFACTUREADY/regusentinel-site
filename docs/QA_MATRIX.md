@@ -49,7 +49,8 @@ Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 | Respuesta 200 con forma inesperada | ✅ | «una respuesta 200 con forma inesperada…» |
 | Contadores en «—» al fallar | ✅ | «si la API falla…» |
 | Roles autorizados (OWNER, MANAGER, OPERATOR, VIEWER) | ✅ | `calendar.spec.ts` — política real: `/api/tasks/calendar` e `ical` exigen `tasks.read`, que tienen los cuatro. Para cada rol: enlace en el menú, rejilla, filtros, detalle del día, enlace al expediente y exportación `.ics` |
-| Filtros del calendario con etiqueta asociada | ❌ | Los dos `<select>` no tienen nombre accesible; las pruebas los piden por posición |
+| Filtros del calendario con etiqueta asociada | ✅ | `calendar.spec.ts` — `<label htmlFor>` + `id` (en `sr-only`); las pruebas los localizan por `getByLabel`, y una guardia falla si pierden el nombre o si dependen sólo de `title` |
+| Botón de cerrar el detalle del día | ✅ | `calendar.spec.ts` — **defecto corregido**: su nombre accesible era el carácter «×»; ahora `aria-label="Cerrar detalle"` |
 
 ### `/users` — Usuarios e invitaciones
 

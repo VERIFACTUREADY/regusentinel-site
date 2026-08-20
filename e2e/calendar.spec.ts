@@ -260,7 +260,7 @@ test.describe("Calendario", () => {
 
     await expect(page.getByText("Ningun plazo en este mes.")).toBeVisible();
 
-    await page.selectOption("select >> nth=0", "me");
+    await page.getByLabel("Filtrar por responsable").selectOption("me");
     await expect(page.getByText(/con los filtros aplicados/)).toBeVisible();
 
     // Y ofrece deshacer el filtro, en vez de dejar al usuario adivinando.
@@ -277,7 +277,7 @@ test.describe("Calendario", () => {
     // Por defecto se ven los plazos de todo el equipo.
     await expect(exportar).toHaveAttribute("href", "/api/tasks/ical?scope=all");
 
-    await page.selectOption("select >> nth=0", "me");
+    await page.getByLabel("Filtrar por responsable").selectOption("me");
     await expect(exportar).toHaveAttribute("href", "/api/tasks/ical?scope=me");
   });
 
@@ -302,7 +302,7 @@ test.describe("Calendario", () => {
     await login(page, E2E.owner);
     await page.goto("/calendar");
 
-    await page.selectOption("select >> nth=1", "FISCAL");
+    await page.getByLabel("Filtrar por categoria").selectOption("FISCAL");
 
     // Pase lo que pase, la rejilla sigue ahi.
     await expect(page.locator("div.grid.grid-cols-7 > button").first()).toBeVisible({
@@ -350,16 +350,14 @@ test.describe("Calendario: roles", () => {
       });
       await expect(page.getByTestId("carga-error")).toHaveCount(0);
 
-      // Los filtros existen y responden. Se piden por posicion, como en el resto
-      // de esta suite: los dos `<select>` del calendario no llevan etiqueta
-      // asociada (queda declarado en QA_MATRIX; la accesibilidad del calendario
-      // no entra en esta fase, que cubre sus ROLES).
-      await page.selectOption("select >> nth=1", "FISCAL");
-      await expect(page.locator("select >> nth=1")).toHaveValue("FISCAL");
+      // Los filtros existen y responden. Se piden por su nombre accesible: si
+      // alguno perdiera la etiqueta, esta prueba dejaria de encontrarlo.
+      await page.getByLabel("Filtrar por categoria").selectOption("FISCAL");
+      await expect(page.getByLabel("Filtrar por categoria")).toHaveValue("FISCAL");
 
       // El filtro de responsable tambien responde para este rol.
-      await page.selectOption("select >> nth=0", "me");
-      await expect(page.locator("select >> nth=0")).toHaveValue("me");
+      await page.getByLabel("Filtrar por responsable").selectOption("me");
+      await expect(page.getByLabel("Filtrar por responsable")).toHaveValue("me");
     });
 
     test(`${rol.nombre} abre el detalle de un dia y llega a su expediente`, async ({ page }) => {
@@ -413,4 +411,100 @@ test.describe("Calendario: roles", () => {
       expect(contenido).toContain("END:VCALENDAR");
     });
   }
+});
+
+// ───────────────────────── Accesibilidad de los filtros ─────────────────────────
+
+test.describe("Calendario: nombres accesibles", () => {
+  /**
+   * Guardia contra la regresion.
+   *
+   * Los dos filtros y el boton de cerrar el detalle no tenian nombre accesible:
+   * dos `<select>` mudos que un lector de pantalla anunciaba como "lista", y un
+   * boton cuyo unico contenido era "×". Esta prueba falla si vuelven a
+   * perderlo, y por eso comprueba tres cosas distintas: que el nombre existe,
+   * que la etiqueta esta ASOCIADA de verdad por `for`/`id` —no simplemente
+   * cerca— y que ningun `<select>` de la pantalla se queda sin nombre.
+   */
+  test("los filtros se localizan por su etiqueta, no por su posicion", async ({ page }) => {
+    await login(page, E2E.owner);
+    await page.goto("/calendar");
+    await pantallaUtil(page);
+
+    const responsable = page.getByLabel("Filtrar por responsable");
+    const categoria = page.getByLabel("Filtrar por categoria");
+    await expect(responsable).toHaveCount(1);
+    await expect(categoria).toHaveCount(1);
+
+    // Y funcionan: no basta con que exista el nombre.
+    await responsable.selectOption("me");
+    await expect(responsable).toHaveValue("me");
+    await categoria.selectOption("FISCAL");
+    await expect(categoria).toHaveValue("FISCAL");
+  });
+
+  test("la etiqueta esta asociada por for/id, no solo colocada al lado", async ({ page }) => {
+    await login(page, E2E.owner);
+    await page.goto("/calendar");
+    await pantallaUtil(page);
+
+    const asociacion = await page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll("select"));
+      return selects.map((s) => {
+        const id = s.getAttribute("id");
+        const etiqueta = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
+        return {
+          id,
+          texto: etiqueta?.textContent?.trim() ?? null,
+          // `title` NO cuenta como etiqueta: es una ayuda emergente.
+          soloTitle: !etiqueta && Boolean(s.getAttribute("title")),
+          ariaLabel: s.getAttribute("aria-label"),
+        };
+      });
+    });
+
+    expect(asociacion.length, "el calendario tiene dos filtros").toBeGreaterThanOrEqual(2);
+    for (const s of asociacion) {
+      const tieneNombre = Boolean(s.texto) || Boolean(s.ariaLabel);
+      expect(tieneNombre, `select ${s.id ?? "(sin id)"} sin nombre accesible`).toBe(true);
+      expect(s.soloTitle, `select ${s.id ?? "(sin id)"} depende solo de title`).toBe(false);
+    }
+  });
+
+  test("el detalle del dia se cierra con un boton que dice lo que hace", async ({ page }) => {
+    const expediente = await prisma.case.findFirst({
+      where: { org: { slug: E2E.orgSlug } },
+      select: { id: true },
+    });
+    const hoy = new Date();
+    const dia = 9;
+    const tarea = await prisma.task.create({
+      data: {
+        caseId: expediente!.id,
+        title: "Plazo para abrir el detalle",
+        category: "FISCAL",
+        status: "PENDING",
+        deadline: new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), dia, 12, 0, 0)),
+      },
+    });
+
+    try {
+      await login(page, E2E.owner);
+      await page.goto("/calendar");
+      await pantallaUtil(page);
+
+      await casillaDelDia(page, dia).click();
+      await expect(page.getByText("Plazo para abrir el detalle")).toBeVisible({ timeout: 20_000 });
+
+      // Antes su nombre accesible era el caracter "×".
+      const cerrar = page.getByRole("button", { name: "Cerrar detalle" });
+      await expect(cerrar).toHaveCount(1);
+      await cerrar.click();
+      await expect(page.getByText("Plazo para abrir el detalle")).toHaveCount(0, {
+        timeout: 20_000,
+      });
+    } finally {
+      await prisma.task.delete({ where: { id: tarea.id } }).catch(() => {});
+    }
+  });
 });
