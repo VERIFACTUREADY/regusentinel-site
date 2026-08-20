@@ -225,7 +225,14 @@ test.describe("Documentos en las tres pantallas", () => {
     const nombre = nombreUnico("portal");
 
     await page.goto(`/portal/${PORTAL.token}`);
+
+    // Se espera a que la pagina decida que pintar —la puerta del consentimiento
+    // o el portal ya abierto— antes de mirar si hay casilla. Consultarla antes
+    // de que exista hacia que la prueba fuera intermitente.
     const casilla = page.getByRole("checkbox", { name: /He le[ií]do y acepto/ });
+    const subir = page.getByLabel(/Seleccionar archivo/);
+    await expect(casilla.or(subir).first()).toBeAttached({ timeout: 30_000 });
+
     if (await casilla.count()) {
       // La etiqueta es lo que se pulsa: el input real va `sr-only` y el
       // recuadro dibujado encima intercepta el puntero.

@@ -1394,7 +1394,18 @@ test.describe("Documentos: portal familiar", () => {
    */
   async function abrirPortal(page: Page) {
     await page.goto(`/portal/${PORTAL.token}`);
+
+    /*
+     * Primero se espera a que la pagina decida QUE pintar: o la puerta del
+     * consentimiento o el portal ya abierto. Sin esto se consultaba la casilla
+     * antes de que existiera, se daba por hecho que no hacia falta consentir y
+     * luego se esperaba en vano un formulario de subida que estaba detras de la
+     * puerta. Era la causa de que esta prueba fuera intermitente.
+     */
     const casilla = page.getByRole("checkbox", { name: /He le[ií]do y acepto/ });
+    const subir = page.getByLabel(/Seleccionar archivo/);
+    await expect(casilla.or(subir).first()).toBeAttached({ timeout: 30_000 });
+
     if (await casilla.count()) {
       /*
        * Se pulsa la ETIQUETA, que es donde pulsa una persona.

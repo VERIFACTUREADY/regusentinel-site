@@ -12,7 +12,8 @@ que el botón la llame.
 
 Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 `expedientes`, `acciones-expedientes`, `tareas`, `tareas.responsive`,
-`sesion-y-roles` y `navegacion.responsive`. Todas corren con el vigilante de
+`documentos`, `documentos.responsive`, `sesion-y-roles` y
+`navegacion.responsive`. Todas corren con el vigilante de
 `e2e/vigilancia.ts` activo (ver «Detección global»).
 
 ## Leyenda
@@ -317,14 +318,14 @@ objeto en el bucket y se comparan los bytes.
 | Error del servidor al subir | ✅ | `documentos.spec.ts` — avisa y no aparece documento |
 | Fallo de red al subir | ✅ | `documentos.spec.ts` — avisa y el control vuelve a estar disponible |
 | Almacenamiento no disponible | ✅ | `documentos.spec.ts` — avisa y no queda fila fantasma |
-| Doble envío | ✅ | `documentos.spec.ts` — sale **una** petición y se crea **un** documento |
+| Doble envío | ✅ | `documentos.spec.ts` — el control anuncia «Subiendo…» y no se deja usar; sale **una** petición y se crea **un** documento |
 
 #### Descarga
 
 | Elemento | Estado | Prueba |
 |---|---|---|
 | Descargar desde `/documents` | ✅ | `documentos.spec.ts` — **bytes idénticos**, nombre y tamaño |
-| Descargar desde la ficha | ✅ | `documentos.spec.ts` — bytes idénticos |
+| Descargar desde la ficha | ✅ | `documentos.spec.ts` — bytes idénticos; **la descarga desde el expediente no existía**: `/api/cases/[id]` no devolvía `downloadUrl` y el enlace nunca se pintaba |
 | Error del servidor al descargar | ✅ | `documentos.spec.ts` — avisa y el botón sigue utilizable |
 | Fallo de red al descargar | ✅ | `documentos.spec.ts` — antes era un `catch {}` mudo |
 | URL firmada, temporal y con caducidad ≤ 1 h | ✅ | `documentos.spec.ts` |
@@ -417,6 +418,7 @@ descargar.
 | Diálogo de confirmación y mensajes de error | ✅ | `documentos.spec.ts` — `role=alert` / `role=status` |
 | Navegación por teclado | ✅ | `documentos.spec.ts` |
 | Escritorio, tablet y móvil | ✅ | `documentos.responsive.spec.ts` — listado, búsqueda, filtros, abrir expediente, subir, descargar, eliminar, paginar y portal, sin desbordamiento horizontal |
+| Portal familiar en móvil sin scroll lateral | ✅ | `documentos.responsive.spec.ts` — **defecto corregido**: el indicador de estado desbordaba 95 px y arrastraba a toda la página |
 
 #### Funciones que **no existen** en el producto
 
