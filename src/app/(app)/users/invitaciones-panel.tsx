@@ -72,8 +72,13 @@ export function InvitacionesPanel() {
     setAviso(null);
     try {
       const res = await fetch(`/api/invitations/${inv.id}/resend`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "No se ha podido reenviar.");
+      // `.catch(() => null)`: si la respuesta no es JSON —un 500 con pagina de
+      // error, un 502 del proxy— `res.json()` lanzaba y el usuario leia
+      // "Unexpected token '<'" en vez de un motivo.
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error ?? `El servidor ha respondido ${res.status}.`);
+      }
 
       setAviso(
         data.emailSent
@@ -85,7 +90,12 @@ export function InvitacionesPanel() {
       );
       setRecarga((n) => n + 1);
     } catch (e) {
-      setAviso({ tipo: "err", texto: e instanceof Error ? e.message : "Error" });
+      setAviso({
+        tipo: "err",
+        texto: `No se ha podido reenviar la invitacion de ${inv.email}: ${
+          e instanceof Error && e.message ? e.message : "error de red"
+        }`,
+      });
     } finally {
       setOcupado(null);
     }
@@ -99,14 +109,21 @@ export function InvitacionesPanel() {
     setAviso(null);
     try {
       const res = await fetch(`/api/invitations/${inv.id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "No se ha podido revocar.");
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error ?? `El servidor ha respondido ${res.status}.`);
+      }
 
       setAviso({ tipo: "ok", texto: `Invitacion de ${inv.email} revocada.` });
       setRecarga((n) => n + 1);
       router.refresh();
     } catch (e) {
-      setAviso({ tipo: "err", texto: e instanceof Error ? e.message : "Error" });
+      setAviso({
+        tipo: "err",
+        texto: `No se ha podido revocar la invitacion de ${inv.email}: ${
+          e instanceof Error && e.message ? e.message : "error de red"
+        }`,
+      });
     } finally {
       setOcupado(null);
     }
@@ -132,7 +149,11 @@ export function InvitacionesPanel() {
   }
 
   if (!invitaciones) {
-    return <p className="mb-6 text-sm text-gray-400">Cargando invitaciones...</p>;
+    return (
+      <p data-testid="invitaciones-cargando" className="mb-6 text-sm text-gray-400">
+        Cargando invitaciones...
+      </p>
+    );
   }
 
   // Las aceptadas ya figuran en la lista de miembros: repetirlas aqui solo
@@ -145,6 +166,8 @@ export function InvitacionesPanel() {
 
       {aviso && (
         <p
+          role={aviso.tipo === "err" ? "alert" : "status"}
+          data-testid={aviso.tipo === "err" ? "invitaciones-aviso-error" : "invitaciones-aviso"}
           className={`mb-3 text-sm ${
             aviso.tipo === "ok"
               ? "text-green-600"
@@ -158,7 +181,10 @@ export function InvitacionesPanel() {
       )}
 
       {vivas.length === 0 ? (
-        <p className="text-sm text-gray-500 bg-white border rounded-lg p-4">
+        <p
+          data-testid="invitaciones-vacio"
+          className="text-sm text-gray-500 bg-white border rounded-lg p-4"
+        >
           No hay invitaciones pendientes.
         </p>
       ) : (
@@ -184,9 +210,15 @@ export function InvitacionesPanel() {
 
               {inv.estado !== "REVOKED" && (
                 <div className="flex gap-2">
+                  {/*
+                    El nombre accesible lleva el correo: con varias invitaciones
+                    en pantalla, "Reenviar invitacion" a secas se repite igual en
+                    todas y no dice de cual.
+                  */}
                   <button
                     onClick={() => reenviar(inv)}
                     disabled={ocupado === inv.id}
+                    aria-label={`Reenviar invitacion a ${inv.email}`}
                     className="text-xs border border-gray-300 rounded px-2.5 py-1 hover:bg-gray-50 disabled:opacity-50"
                   >
                     {ocupado === inv.id ? "..." : "Reenviar invitacion"}
@@ -194,6 +226,7 @@ export function InvitacionesPanel() {
                   <button
                     onClick={() => revocar(inv)}
                     disabled={ocupado === inv.id}
+                    aria-label={`Revocar invitacion de ${inv.email}`}
                     className="text-xs border border-red-300 text-red-700 rounded px-2.5 py-1 hover:bg-red-50 disabled:opacity-50"
                   >
                     Revocar

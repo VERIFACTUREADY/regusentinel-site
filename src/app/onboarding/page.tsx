@@ -152,8 +152,9 @@ export default function OnboardingPage() {
                   <p className="text-sm text-slate-500 mt-1">Empezamos por el nombre que va en facturas y en el Portal Familia.</p>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">Nombre de la gestoría / funeraria</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider" htmlFor="altaOrganizacion">Nombre de la gestoría / funeraria</label>
                   <input
+                    id="altaOrganizacion"
                     type="text"
                     required
                     value={form.orgName}
@@ -179,8 +180,9 @@ export default function OnboardingPage() {
                   <p className="text-sm text-slate-500 mt-1">Vas a ser quien invite al resto del equipo.</p>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">Nombre completo</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider" htmlFor="altaNombre">Nombre completo</label>
                   <input
+                    id="altaNombre"
                     type="text"
                     required
                     value={form.name}
@@ -191,8 +193,9 @@ export default function OnboardingPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">Email profesional</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider" htmlFor="altaEmail">Email profesional</label>
                   <input
+                    id="altaEmail"
                     type="email"
                     required
                     value={form.email}
@@ -204,8 +207,9 @@ export default function OnboardingPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">Contraseña</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider" htmlFor="altaPassword">Contraseña</label>
                   <input
+                    id="altaPassword"
                     type="password"
                     required
                     value={form.password}

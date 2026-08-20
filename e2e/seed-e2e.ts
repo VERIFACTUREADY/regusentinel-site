@@ -20,6 +20,32 @@ export const E2E = {
   orgSlug: "org-e2e",
   orgSuspendidaSlug: "org-e2e-suspendida",
   /**
+   * Organizacion propia para las pruebas de /users.
+   *
+   * POR QUE APARTE
+   * --------------
+   * Cambiar roles y expulsar miembros altera la organizacion entera, y
+   * `sesion-y-roles.spec.ts` y las suites cerradas dan por hecho que cada
+   * usuario de `org-e2e` conserva SU rol. Con una organizacion propia se puede
+   * degradar, promover y expulsar sin romper nada de lo ya aceptado.
+   *
+   * Ademas empieza SIN ninguna invitacion, que es lo que hace deterministe la
+   * prueba del estado vacio del panel.
+   */
+  equipo: {
+    slug: "org-e2e-equipo",
+    /** Dos OWNER: hace falta un segundo para poder degradar a uno. */
+    owner: "owner.equipo.e2e@ejemplo.test",
+    owner2: "owner2.equipo.e2e@ejemplo.test",
+    manager: "manager.equipo.e2e@ejemplo.test",
+    operador: "operador.equipo.e2e@ejemplo.test",
+    viewer: "viewer.equipo.e2e@ejemplo.test",
+    /** Miembro de usar y tirar: es a quien se le cambia el rol. */
+    cambiante: "cambiante.equipo.e2e@ejemplo.test",
+    /** Miembro de usar y tirar: es a quien se expulsa. */
+    expulsable: "expulsable.equipo.e2e@ejemplo.test",
+  },
+  /**
    * Segunda organizacion, sana y ajena.
    *
    * POR QUE EXISTE
@@ -482,6 +508,34 @@ async function main() {
   await prisma.membership.create({
     data: { userId: ownerSusp.id, orgId: orgSusp.id, role: "OWNER" },
   });
+
+  // ── Organizacion propia de las pruebas de /users ──
+  const orgEquipo = await prisma.organization.create({
+    data: {
+      name: "Gestoría Equipo E2E",
+      slug: E2E.equipo.slug,
+      subscription: { create: { plan: "FIRMA", status: "active" } },
+    },
+  });
+
+  const MIEMBROS_EQUIPO: { email: string; nombre: string; rol: "OWNER" | "MANAGER" | "OPERATOR" | "VIEWER" }[] = [
+    { email: E2E.equipo.owner, nombre: "Owner Equipo", rol: "OWNER" },
+    { email: E2E.equipo.owner2, nombre: "Segundo Owner", rol: "OWNER" },
+    { email: E2E.equipo.manager, nombre: "Manager Equipo", rol: "MANAGER" },
+    { email: E2E.equipo.operador, nombre: "Operador Equipo", rol: "OPERATOR" },
+    { email: E2E.equipo.viewer, nombre: "Viewer Equipo", rol: "VIEWER" },
+    { email: E2E.equipo.cambiante, nombre: "Miembro Cambiante", rol: "OPERATOR" },
+    { email: E2E.equipo.expulsable, nombre: "Miembro Expulsable", rol: "OPERATOR" },
+  ];
+
+  for (const m of MIEMBROS_EQUIPO) {
+    const u = await prisma.user.create({
+      data: { email: m.email, name: m.nombre, passwordHash: hash },
+    });
+    await prisma.membership.create({
+      data: { userId: u.id, orgId: orgEquipo.id, role: m.rol },
+    });
+  }
 
   console.log("[seed-e2e] Datos de prueba creados.");
 }

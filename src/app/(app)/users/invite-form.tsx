@@ -80,16 +80,31 @@ export function InviteForm() {
   return (
     <div className="mb-6 bg-white border rounded-lg p-6">
       <h3 className="font-semibold mb-4">Invitar nuevo miembro</h3>
+      {/*
+        Los dos campos no tenian NINGUNA etiqueta: solo un `placeholder`, que no
+        lo es —desaparece al escribir— y un `<select>` mudo. Un lector de
+        pantalla anunciaba "cuadro de edicion" y "lista" sin decir de que.
+      */}
       <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-3">
-        <input
-          type="email"
-          required
-          placeholder="email@ejemplo.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="flex-1 px-3 py-2 border rounded-md text-sm"
-        />
+        <div className="flex-1 min-w-0">
+          <label htmlFor="invitarEmail" className="sr-only">
+            Email de la persona invitada
+          </label>
+          <input
+            id="invitarEmail"
+            type="email"
+            required
+            placeholder="email@ejemplo.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full px-3 py-2 border rounded-md text-sm"
+          />
+        </div>
+        <label htmlFor="invitarRol" className="sr-only">
+          Rol de la persona invitada
+        </label>
         <select
+          id="invitarRol"
           value={role}
           onChange={(e) => setRole(e.target.value)}
           className="px-3 py-2 border rounded-md text-sm"

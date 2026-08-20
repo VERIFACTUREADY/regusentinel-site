@@ -310,3 +310,107 @@ test.describe("Calendario", () => {
     });
   });
 });
+
+// ───────────────────────────── Roles ─────────────────────────────
+
+test.describe("Calendario: roles", () => {
+  /*
+   * POLITICA REAL, comprobada antes de escribir nada:
+   *
+   *   - `/calendar` no tiene guardia propia de servidor: es una pantalla de
+   *     cliente. Quien manda es el API que la alimenta.
+   *   - `/api/tasks/calendar` y `/api/tasks/ical` exigen `tasks.read`.
+   *   - `tasks.read` lo tienen OWNER, MANAGER, OPERATOR y VIEWER (este ultimo
+   *     porque su lista es "todos los permisos acabados en .read").
+   *   - El enlace del menu se pinta con `permission: "tasks.read"`.
+   *
+   * Conclusion: los CUATRO roles pueden usar el calendario. No se inventa una
+   * denegacion que el producto no tiene; lo que se comprueba es que a los
+   * cuatro les funciona de verdad, no solo que la pagina abre.
+   */
+  for (const rol of [
+    { nombre: "OWNER", email: E2E.owner },
+    { nombre: "MANAGER", email: E2E.manager },
+    { nombre: "OPERATOR", email: E2E.operador },
+    { nombre: "VIEWER", email: E2E.viewer },
+  ]) {
+    test(`${rol.nombre} entra por el menu y el calendario funciona`, async ({ page }) => {
+      await login(page, rol.email);
+
+      // El menu se lo ofrece, y se llega pulsando, no con page.goto.
+      const enlace = page.getByRole("link", { name: "Calendario", exact: true }).first();
+      await expect(enlace, `${rol.nombre} debe ver el enlace`).toBeVisible({ timeout: 30_000 });
+      await enlace.click();
+      await page.waitForURL("**/calendar", { timeout: 30_000 });
+      await pantallaUtil(page);
+
+      // La rejilla esta pintada y no hay error de carga.
+      await expect(page.locator("div.grid.grid-cols-7 > button").first()).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.getByTestId("carga-error")).toHaveCount(0);
+
+      // Los filtros existen y responden. Se piden por posicion, como en el resto
+      // de esta suite: los dos `<select>` del calendario no llevan etiqueta
+      // asociada (queda declarado en QA_MATRIX; la accesibilidad del calendario
+      // no entra en esta fase, que cubre sus ROLES).
+      await page.selectOption("select >> nth=1", "FISCAL");
+      await expect(page.locator("select >> nth=1")).toHaveValue("FISCAL");
+
+      // El filtro de responsable tambien responde para este rol.
+      await page.selectOption("select >> nth=0", "me");
+      await expect(page.locator("select >> nth=0")).toHaveValue("me");
+    });
+
+    test(`${rol.nombre} abre el detalle de un dia y llega a su expediente`, async ({ page }) => {
+      const hoy = new Date();
+      const expediente = await prisma.case.findFirst({
+        where: { org: { slug: E2E.orgSlug } },
+        select: { id: true },
+      });
+      const dia = 12;
+      const tarea = await prisma.task.create({
+        data: {
+          caseId: expediente!.id,
+          title: `Plazo por rol ${rol.nombre}`,
+          category: "FISCAL",
+          status: "PENDING",
+          deadline: new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), dia, 12, 0, 0)),
+        },
+      });
+
+      try {
+        await login(page, rol.email);
+        await page.goto("/calendar");
+        await pantallaUtil(page);
+
+        await casillaDelDia(page, dia).click();
+        const enPanel = page.getByText(`Plazo por rol ${rol.nombre}`);
+        await expect(enPanel).toBeVisible({ timeout: 20_000 });
+
+        // Y el enlace al expediente funciona tambien para un VIEWER.
+        await enPanel.click();
+        await expect(page).toHaveURL(new RegExp(`/cases/${expediente!.id}`), { timeout: 30_000 });
+      } finally {
+        await prisma.task.delete({ where: { id: tarea.id } }).catch(() => {});
+      }
+    });
+
+    test(`${rol.nombre} exporta el calendario en .ics`, async ({ page }) => {
+      await login(page, rol.email);
+      await page.goto("/calendar");
+      await pantallaUtil(page);
+
+      // La exportacion es un enlace, no un boton.
+      const [descarga] = await Promise.all([
+        page.waitForEvent("download", { timeout: 30_000 }),
+        page.getByRole("link", { name: /Exportar \.ics/ }).click(),
+      ]);
+      const ruta = await descarga.path();
+      expect(ruta, "la exportacion debe producir un fichero").toBeTruthy();
+      const contenido = readFileSync(ruta!, "utf8");
+      expect(contenido).toContain("BEGIN:VCALENDAR");
+      expect(contenido).toContain("END:VCALENDAR");
+    });
+  }
+});

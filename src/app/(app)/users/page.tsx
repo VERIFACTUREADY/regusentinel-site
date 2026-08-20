@@ -49,7 +49,18 @@ export default async function UsersPage() {
       )}
 
       {canInvite && <InviteForm />}
-      {canInvite && <InvitacionesPanel />}
+      {/*
+        El panel de invitaciones se pinta con `canManage`, NO con `canInvite`.
+
+        EL DEFECTO QUE CORRIGE
+        ----------------------
+        Antes dependía de `canInvite`, que es `permiso && members.length <
+        maxUsers`. Al alcanzar el límite del plan, el panel entero desaparecía:
+        las invitaciones pendientes se volvían invisibles y —lo importante— no
+        había forma de REVOCARLAS desde la aplicación. Justo cuando el equipo
+        está lleno es cuando hace falta poder retirar una invitación que sobra.
+      */}
+      {canManage && <InvitacionesPanel />}
 
       <div className="bg-white rounded-lg border">
         <div className="px-6 py-4 border-b">

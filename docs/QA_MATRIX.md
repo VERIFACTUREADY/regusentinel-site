@@ -12,8 +12,8 @@ que el botón la llame.
 
 Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 `expedientes`, `acciones-expedientes`, `tareas`, `tareas.responsive`,
-`documentos`, `documentos.responsive`, `sesion-y-roles` y
-`navegacion.responsive`. Todas corren con el vigilante de
+`documentos`, `documentos.responsive`, `usuarios`, `usuarios.responsive`,
+`autenticacion`, `sesion-y-roles` y `navegacion.responsive`. Todas corren con el vigilante de
 `e2e/vigilancia.ts` activo (ver «Detección global»).
 
 ## Leyenda
@@ -48,7 +48,8 @@ Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 | Sesión caducada distinguida del 500 | ✅ | «una sesion caducada se distingue…» |
 | Respuesta 200 con forma inesperada | ✅ | «una respuesta 200 con forma inesperada…» |
 | Contadores en «—» al fallar | ✅ | «si la API falla…» |
-| Roles autorizados | ❌ | Sólo probado como OWNER |
+| Roles autorizados (OWNER, MANAGER, OPERATOR, VIEWER) | ✅ | `calendar.spec.ts` — política real: `/api/tasks/calendar` e `ical` exigen `tasks.read`, que tienen los cuatro. Para cada rol: enlace en el menú, rejilla, filtros, detalle del día, enlace al expediente y exportación `.ics` |
+| Filtros del calendario con etiqueta asociada | ❌ | Los dos `<select>` no tienen nombre accesible; las pruebas los piden por posición |
 
 ### `/users` — Usuarios e invitaciones
 
@@ -61,12 +62,27 @@ Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 | Panel de invitaciones + estado | ✅ | «una invitacion caducada se muestra como caducada» |
 | Botón «Reenviar invitacion» | ✅ | «el boton Reenviar invitacion existe y rota el enlace» |
 | Botón «Revocar» (+ confirmación) | ✅ | «Revocar quita el acceso y anula el enlace» |
-| Estado vacío del panel | ❌ | |
-| Error de carga + «Reintentar» del panel | ❌ | Implementado, sin prueba |
-| Cambio de rol de un miembro | 🟡 | `smoke.spec.ts` vía API |
-| No degradar al último OWNER | 🟡 | `smoke.spec.ts` vía API |
+| Estado vacío del panel (sin invitaciones pendientes) | ✅ | `usuarios.spec.ts` — escenario real, sin error y sin spinner |
+| Error de carga + «Reintentar» del panel | ✅ | `usuarios.spec.ts` — HTTP 500, fallo de red y 401; «Reintentar» pide de nuevo y el panel se recupera |
+| Cambio de rol de un miembro | ✅ | `usuarios.spec.ts` — desde el selector real, persiste tras recargar y **la persona obtiene de verdad los permisos** |
+| No degradar al último OWNER | ✅ | `usuarios.spec.ts` — la interfaz no lo ofrece, el servidor lo rechaza y dos degradaciones simultáneas no dejan la organización sin OWNER |
 | OPERATOR no puede invitar | ✅ | «un OPERATOR no puede reenviar ni revocar» |
 | Organización ajena → 404 | ✅ | «no se puede tocar una invitacion de otra organizacion» |
+| Listado de miembros con rol, correo y fecha | ✅ | `usuarios.spec.ts` |
+| Contador de usuarios del plan | ✅ | `usuarios.spec.ts` — cuadra con los miembros reales |
+| Aviso al alcanzar el límite del plan | ✅ | `usuarios.spec.ts` |
+| Las invitaciones pendientes siguen visibles con el plan lleno | ✅ | `usuarios.spec.ts` — **defecto corregido**: el panel entero desaparecía y no había forma de revocarlas |
+| Cambio de rol: HTTP 400, 403, 422, 500 | ✅ | `usuarios.spec.ts` — avisa, el rol no cambia y el control sigue utilizable |
+| Cambio de rol: respuesta no-JSON y fallo de red | ✅ | `usuarios.spec.ts` — **defecto corregido**: el aviso salía vacío o con «Unexpected token» |
+| Con dos OWNER sí se puede degradar a uno | ✅ | `usuarios.spec.ts` — persiste y queda un OWNER |
+| Un MANAGER no degrada, expulsa ni crea un OWNER | ✅ | `usuarios.spec.ts` — 403 del servidor |
+| Expulsar a un miembro: confirmar, cancelar, confirmar | ✅ | `usuarios.spec.ts` |
+| Expulsar: error de servidor y fallo de red | ✅ | `usuarios.spec.ts` — nunca desaparece de la lista si no se eliminó |
+| OWNER y MANAGER administran el equipo | ✅ | `usuarios.spec.ts` — política real de `rbac.ts` |
+| OPERATOR y VIEWER: sin acceso en interfaz **y** en servidor | ✅ | `usuarios.spec.ts` — sin enlace, redirección y 403 en PATCH, DELETE e invitación |
+| Cada control dice sobre quién actúa | ✅ | `usuarios.spec.ts` — **defecto corregido**: selects y botones «Eliminar» eran indistinguibles entre filas |
+| Campos del formulario de invitación con etiqueta | ✅ | `usuarios.spec.ts` — **defecto corregido**: no tenían ninguna |
+| Escritorio, tablet y móvil | ✅ | `usuarios.responsive.spec.ts` — las dos maquetas (tabla y tarjetas), sin desbordamiento horizontal |
 
 ### `/login`, `/onboarding`, `/forgot-password`, `/reset-password`
 
@@ -79,7 +95,9 @@ Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 | Crear contraseña desde enlace de correo | ✅ | `correo-real.spec.ts` |
 | Enlace caducado / reutilizado | ✅ | `invitaciones.spec.ts` |
 | Enlace anterior anulado tras reenvío | ✅ | `correo-real.spec.ts` |
-| `autoComplete` para gestores de contraseñas | 🟡 | Atributos puestos; sin prueba automática |
+| `autoComplete` para gestores de contraseñas | ✅ | `autenticacion.spec.ts` — login (`username` + `current-password`), recuperación, alta, restablecimiento y perfil; se comprueban `autocomplete`, `type` y `name` en el DOM real. **Limitación externa declarada:** que Safari o Chrome muestren visualmente su gestor depende del navegador y su llavero, no de la aplicación; Playwright no lo expone y queda como prueba manual |
+| Cada campo de autenticación con etiqueta asociada | ✅ | `autenticacion.spec.ts` — **defecto corregido**: los cinco formularios (login, recuperar, alta, restablecer, perfil) tenían 14 `<label>` y **ninguna** asociada a su campo |
+| Las credenciales no se guardan en el navegador | ✅ | `autenticacion.spec.ts` — tras un login real se vuelca `localStorage`, `sessionStorage` e IndexedDB y se comprueba que la contraseña no aparece |
 | Logout (botón «Salir») | ✅ | `sesion-y-roles.spec.ts` |
 | Sesión sobrevive a recargar | ✅ | `sesion-y-roles.spec.ts` |
 | Sesión viva en pestaña nueva | ✅ | `sesion-y-roles.spec.ts` |
