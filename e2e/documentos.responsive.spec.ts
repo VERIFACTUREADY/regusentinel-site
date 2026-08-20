@@ -230,7 +230,7 @@ test.describe("Documentos en las tres pantallas", () => {
       await casilla.check();
       await page.getByRole("button", { name: /Aceptar y acceder al portal/ }).click();
     }
-    await expect(page.getByRole("button", { name: /Seleccionar archivo/ })).toBeVisible({
+    await expect(page.getByLabel(/Seleccionar archivo/)).toBeAttached({
       timeout: 30_000,
     });
     await pantallaUtil(page);

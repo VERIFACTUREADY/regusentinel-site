@@ -1393,7 +1393,7 @@ test.describe("Documentos: portal familiar", () => {
       await casilla.check();
       await page.getByRole("button", { name: /Aceptar y acceder al portal/ }).click();
     }
-    await expect(page.getByRole("button", { name: /Seleccionar archivo/ })).toBeVisible({
+    await expect(page.getByLabel(/Seleccionar archivo/)).toBeAttached({
       timeout: 30_000,
     });
   }
@@ -1519,7 +1519,7 @@ test.describe("Documentos: portal familiar", () => {
     await expect(page.getByText(/Enlace no valido|no encontrado/i).first()).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByRole("button", { name: /Seleccionar archivo/ })).toHaveCount(0);
+    await expect(page.getByLabel(/Seleccionar archivo/)).toHaveCount(0);
 
     const subida = await page.request.post("/api/portal/token-que-no-existe/documents", {
       multipart: {
