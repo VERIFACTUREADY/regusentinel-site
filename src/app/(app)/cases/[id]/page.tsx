@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { generateBankPack } from "@/lib/bank-pack";
 import { CASE_STATUS_COLORS, TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/constants";
@@ -1094,6 +1094,16 @@ El equipo de gestión`;
 
   const [uploadHint, setUploadHint] = useState<{ fileName: string; suggestions: string[] } | null>(null);
   const [subiendo, setSubiendo] = useState(false);
+  /*
+   * Cerrojo SINCRONO contra el doble envio.
+   *
+   * `subiendo` sirve para pintar el boton, pero no vale como guardia: `useState`
+   * es asincrono, asi que dos `change` seguidos —el doble clic del usuario
+   * impaciente— leen ambos `subiendo === false` antes de que React vuelva a
+   * pintar, y salian DOS subidas del mismo archivo. Un `ref` se actualiza en el
+   * acto y corta la segunda en seco.
+   */
+  const subiendoRef = useRef(false);
 
   /**
    * Sube un documento al expediente.
@@ -1116,8 +1126,9 @@ El equipo de gestión`;
     // El input se limpia ya: así el mismo archivo se puede reintentar y un
     // segundo `change` no reaprovecha el anterior.
     e.target.value = "";
-    if (subiendo) return;
+    if (subiendoRef.current) return;
 
+    subiendoRef.current = true;
     setSubiendo(true);
     const formData = new FormData();
     formData.append("file", file);
@@ -1149,6 +1160,7 @@ El equipo de gestión`;
       // no un documento que en realidad no llegó a guardarse.
       fetchCase();
     } finally {
+      subiendoRef.current = false;
       setSubiendo(false);
     }
   }

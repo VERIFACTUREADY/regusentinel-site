@@ -1563,6 +1563,10 @@ test.describe("Documentos: portal familiar", () => {
       select: { id: true, fileName: true },
     });
 
+    // Se abre el portal de verdad primero: sin consentimiento el API responde
+    // 403 y la prueba dependeria del orden en que corran las demas.
+    await abrirPortal(page);
+
     permitirFalloEn(page, "/portal");
     const respuesta = await page.request.get(`/api/portal/${PORTAL.token}/documents`);
     expect(respuesta.status()).toBe(200);

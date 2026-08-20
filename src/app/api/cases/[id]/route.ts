@@ -3,6 +3,7 @@ import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { getCaseDeadlines } from "@/lib/deadline-engine";
+import { getPresignedUrl } from "@/lib/s3";
 import { triggerWorkflow } from "@/lib/workflow-engine";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -51,10 +52,32 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       t.status === "BLOCKED" && t.blockedUntil ? new Date(t.blockedUntil) <= now : false,
   }));
 
+  /*
+   * Enlace de descarga de cada documento.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Esta respuesta no traía `downloadUrl`, y la pestaña Documentos de la ficha
+   * pinta el enlace como `{doc.downloadUrl && <a …>Descargar</a>}`. Resultado:
+   * el enlace NUNCA se renderizaba y desde el expediente no había forma de
+   * descargar un documento — sólo desde la biblioteca `/documents`. La lista se
+   * veía completa, así que el fallo pasaba por «no hay botón» en vez de por lo
+   * que era: una descarga rota.
+   */
+  const documents = await Promise.all(
+    c.documents.map(async (doc) => ({
+      ...doc,
+      downloadUrl: await getPresignedUrl(doc.fileKey, {
+        fileName: doc.fileName,
+        mimeType: doc.mimeType,
+      }),
+    })),
+  );
+
   // Add case-level deadlines
   const deathDate = c.deceased?.deathDate;
   const caseDeadlines = deathDate ? getCaseDeadlines(new Date(deathDate)) : null;
-  return NextResponse.json({ ...c, tasks, caseDeadlines });
+  return NextResponse.json({ ...c, tasks, documents, caseDeadlines });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
