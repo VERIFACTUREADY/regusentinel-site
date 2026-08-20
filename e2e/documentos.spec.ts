@@ -744,27 +744,33 @@ test.describe("Documentos: errores de subida", () => {
     await login(page, E2E.owner);
     await abrirPestanaDocumentos(page, caso.id);
 
-    // Se retiene la subida para que la segunda ocurra mientras la primera sigue
-    // en vuelo, que es justo el doble clic del usuario impaciente.
+    // El servidor retiene la subida seis segundos: asi el segundo intento cae
+    // con seguridad mientras la primera sigue en vuelo, que es justo el doble
+    // clic del usuario impaciente.
     let enVuelo = 0;
     await page.route(`**/api/cases/${caso.id}/documents`, async (route) => {
       if (route.request().method() === "POST") {
         enVuelo++;
-        await new Promise((r) => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, 6_000));
       }
       await route.continue();
     });
 
     const entrada = page.getByLabel("Subir documento");
     await entrada.setInputFiles({ name: nombre, mimeType: "application/pdf", buffer: PDF_BYTES });
+
+    // Mientras sube, el control lo dice y no se deja usar: esa es la proteccion
+    // que ve el usuario.
+    await expect(page.getByText("Subiendo…")).toBeVisible({ timeout: 10_000 });
+
+    // Y un segundo intento en ese momento no llega a ninguna parte.
     await entrada
       .setInputFiles(
         { name: nombre, mimeType: "application/pdf", buffer: PDF_BYTES },
-        { timeout: 3_000 },
+        { timeout: 2_000 },
       )
       .catch(() => {
-        // El control esta deshabilitado mientras sube: es exactamente lo que
-        // debe pasar, y por eso el segundo intento puede no llegar a ejecutarse.
+        // Esperado: el control esta deshabilitado mientras sube.
       });
 
     await expect(page.getByTestId("toast-exito")).toBeVisible({ timeout: 30_000 });
@@ -1422,7 +1428,9 @@ test.describe("Documentos: portal familiar", () => {
     await expect(page.getByTestId("portal-subida-ok")).toContainText(/se ha enviado/i, {
       timeout: 30_000,
     });
-    await expect(page.getByText(nombre)).toBeVisible({ timeout: 20_000 });
+    // `exact` porque el nombre sale tambien dentro del aviso de exito; el de la
+    // lista es el que lo lleva como texto completo.
+    await expect(page.getByText(nombre, { exact: true })).toBeVisible({ timeout: 20_000 });
 
     // 2. Esta de verdad en el almacenamiento, bajo el ambito del portal.
     const fila = await docEnBase(nombre);

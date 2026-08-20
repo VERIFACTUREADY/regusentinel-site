@@ -585,12 +585,20 @@ export default function PortalPage() {
             </p>
           )}
 
+          {/*
+            `min-w-0` + `truncate` en el nombre, y la fecha que no encoge. Sin
+            esto, un nombre de archivo largo —que es lo normal cuando lo genera
+            un movil o un escaner— no cabia en la fila: un elemento flex no
+            encoge por debajo de su contenido salvo que se le quite el
+            `min-width: auto`, asi que la pagina entera del portal se desplazaba
+            en horizontal en el movil y la fecha se salia de la pantalla.
+          */}
           {docs.length > 0 && (
             <div className="mt-4 divide-y">
               {docs.map((doc: any) => (
-                <div key={doc.id} className="py-2 flex justify-between text-sm">
-                  <span>{doc.fileName}</span>
-                  <span className="text-gray-400">{new Date(doc.createdAt).toLocaleDateString("es-ES")}</span>
+                <div key={doc.id} className="py-2 flex justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate" title={doc.fileName}>{doc.fileName}</span>
+                  <span className="text-gray-400 shrink-0">{new Date(doc.createdAt).toLocaleDateString("es-ES")}</span>
                 </div>
               ))}
             </div>
