@@ -59,10 +59,24 @@ export function NoOrgSetup({ userName }: { userName?: string | null }) {
 
         <form onSubmit={handleCreate} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            {/*
+              La etiqueta va ASOCIADA por `htmlFor`/`id`.
+              Estaba suelta: visualmente encima del campo, pero sin relación con
+              él en el árbol de accesibilidad. Un lector de pantalla anunciaba
+              «cuadro de edición» sin decir de qué, pulsar sobre el texto no
+              enfocaba el campo, y el gestor de contraseñas no tenía forma de
+              reconocerlo. Es el mismo defecto que ya se corrigió en los cinco
+              formularios de autenticación.
+            */}
+            <label
+              htmlFor="nombreOrganizacion"
+              className="block text-sm font-medium text-slate-700 mb-1.5"
+            >
               Nombre de tu despacho u organización
             </label>
             <input
+              id="nombreOrganizacion"
+              name="organization"
               type="text"
               value={orgName}
               onChange={(e) => setOrgName(e.target.value)}
@@ -74,7 +88,11 @@ export function NoOrgSetup({ userName }: { userName?: string | null }) {
           </div>
 
           {error && (
-            <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+            <div
+              role="alert"
+              data-testid="error-crear-organizacion"
+              className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700"
+            >
               {error}
             </div>
           )}

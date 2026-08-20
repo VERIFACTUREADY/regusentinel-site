@@ -58,7 +58,7 @@ export function MyTasksWidget({ initialTasks }: { initialTasks: TaskItem[] }) {
   const now = Date.now();
 
   return (
-    <div className="bg-white rounded-lg border mb-8">
+    <div data-testid="widget-mis-tareas" className="bg-white rounded-lg border mb-8">
       <div className="px-6 py-4 border-b flex justify-between items-center">
         <h2 className="font-semibold">Mis tareas asignadas</h2>
         <Link href="/tasks" className="text-sm text-primary hover:underline">Ver todas</Link>

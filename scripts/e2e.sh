@@ -11,6 +11,16 @@ export CRON_SECRET="${CRON_SECRET:-e2e-cron}"
 export SECRETS_ENCRYPTION_KEY="${SECRETS_ENCRYPTION_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}"
 export NODE_ENV=production
 
+# Interruptor de PRUEBAS que permite hacer fallar una consulta concreta de
+# /dashboard o /today desde el navegador (ver src/lib/consulta-segura.ts).
+#
+# Sin esto, el camino de error de esas dos pantallas —que se calcula entero en
+# el servidor— no se puede probar sin tirar PostgreSQL, lo que rompe la sesion
+# y ademas impide comprobar la degradacion PARCIAL, que es justo lo que hay que
+# demostrar. La variable no existe en Vercel, asi que en produccion la cookie
+# que la activa es inerte.
+export E2E_INYECCION_FALLOS=1
+
 # La aplicacion enviara correo DE VERDAD contra el SMTP de pruebas. Sin esto,
 # `sendEmail` fallaba con ECONNREFUSED y las pruebas solo podian comprobar el
 # camino del fallo; el flujo que ve el usuario —recibir el correo, pinchar el

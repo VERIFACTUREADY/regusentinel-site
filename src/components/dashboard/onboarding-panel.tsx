@@ -14,15 +14,46 @@ interface Props {
 export function OnboardingPanel({ steps, completed, total }: Props) {
   const router = useRouter();
   const [dismissing, setDismissing] = useState(false);
+  const [dismissError, setDismissError] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
   const nextStep = steps.find((s) => !s.done);
-  const progressPct = Math.round((completed / total) * 100);
+  // `total` a cero daría `NaN%` en la barra de progreso.
+  const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
+  /**
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Antes era, literalmente:
+   *
+   *     setDismissing(true);
+   *     await fetch("/api/onboarding/dismiss", { method: "POST" });
+   *     router.refresh();
+   *
+   * Sin mirar `res.ok` y sin `try`. Con un 403 o un 500 el panel se refrescaba
+   * y volvía a salir igual, sin decir nada: el usuario pulsaba «No mostrar
+   * mas» una y otra vez sin efecto. Y si se caía la red, `fetch` rechazaba, la
+   * promesa quedaba sin capturar —error en consola— y `dismissing` se quedaba
+   * en `true` para siempre: el botón se quedaba congelado en «...».
+   */
   async function dismiss() {
     setDismissing(true);
-    await fetch("/api/onboarding/dismiss", { method: "POST" });
-    router.refresh();
+    setDismissError(null);
+    try {
+      const res = await fetch("/api/onboarding/dismiss", { method: "POST" });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => null);
+        setDismissError(
+          cuerpo?.error ?? `No se ha podido ocultar el panel (${res.status}).`,
+        );
+        setDismissing(false);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setDismissError("Error de conexion. El panel sigue visible.");
+      setDismissing(false);
+    }
   }
 
   async function seedSampleCase() {
@@ -49,7 +80,7 @@ export function OnboardingPanel({ steps, completed, total }: Props) {
   }
 
   return (
-    <div className="bg-gradient-to-br from-primary/5 to-primary/10 border-2 border-primary/20 rounded-lg p-6 mb-8">
+    <div data-testid="panel-onboarding" className="bg-gradient-to-br from-primary/5 to-primary/10 border-2 border-primary/20 rounded-lg p-6 mb-8">
       <div className="flex items-start justify-between gap-4 mb-4">
         <div>
           <p className="text-xs font-semibold text-primary uppercase tracking-wider mb-1">
@@ -66,20 +97,30 @@ export function OnboardingPanel({ steps, completed, total }: Props) {
                 : "Cuatro pasos cortos para dejar tu despacho operativo."}
           </p>
         </div>
-        <button
-          onClick={dismiss}
-          disabled={dismissing}
-          className="text-xs text-gray-500 hover:text-gray-900 whitespace-nowrap"
-          title="Ocultar panel"
-        >
-          {dismissing ? "..." : "No mostrar mas"}
-        </button>
+        <div className="text-right shrink-0">
+          <button
+            onClick={dismiss}
+            disabled={dismissing}
+            className="text-xs text-gray-500 hover:text-gray-900 whitespace-nowrap disabled:opacity-50"
+          >
+            {dismissing ? "Ocultando..." : "No mostrar mas"}
+          </button>
+          {dismissError && (
+            <p
+              role="alert"
+              data-testid="error-ocultar-onboarding"
+              className="mt-1 text-xs text-rose-700 max-w-[14rem]"
+            >
+              {dismissError}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Progress bar */}
       <div className="mb-5">
         <div className="flex justify-between text-xs text-gray-600 mb-1">
-          <span>{completed} de {total} completados</span>
+          <span data-testid="progreso-onboarding">{completed} de {total} completados</span>
           <span className="font-semibold">{progressPct}%</span>
         </div>
         <div className="w-full bg-white rounded-full h-2 border border-primary/10">

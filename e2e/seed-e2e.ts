@@ -134,6 +134,166 @@ export const E2E = {
     /** Prefijo de todos los titulos, para localizarlos sin ambigüedad. */
     prefijo: "T-E2E",
   },
+  /**
+   * Organizacion propia de /dashboard y /today.
+   *
+   * POR QUE APARTE
+   * --------------
+   * Los dos paneles son AGREGADOS: cuentan expedientes, tareas, aprobaciones y
+   * mensajes de toda la organizacion. Sobre `org-e2e` no se podria afirmar
+   * ninguna cifra exacta, porque cualquier prueba de expedientes, tareas o
+   * documentos que cree o cierre algo movería los contadores y romperia estas
+   * por un motivo ajeno. Aqui las cantidades estan puestas a mano y NADIE mas
+   * escribe en esta organizacion.
+   *
+   * Todas las cifras de PANEL (mas abajo) se derivan de estas listas, para que
+   * las pruebas no repitan numeros magicos que despues se olvide actualizar.
+   */
+  panel: {
+    slug: "org-e2e-panel",
+    owner: "owner.panel.e2e@ejemplo.test",
+    manager: "manager.panel.e2e@ejemplo.test",
+    operador: "operador.panel.e2e@ejemplo.test",
+    viewer: "viewer.panel.e2e@ejemplo.test",
+    /** Prefijo de todos los titulos de tarea, para localizarlos. */
+    prefijo: "P-E2E",
+    /** Expediente principal, con plazos repartidos alrededor de hoy. */
+    caseRef: "EXP-2026-8000",
+    /** Segundo expediente, para que «Expedientes recientes» tenga orden. */
+    caseRef2: "EXP-2026-8001",
+    /** Expediente ya cerrado ESTE MES: alimenta el KPI «Cerrados este mes». */
+    caseRefCerrado: "EXP-2026-8002",
+    /** Expediente con fallecimiento hace 165 dias: ISD critico (<30 dias). */
+    caseRefIsd: "EXP-2026-8003",
+    causanteIsd: "Causante ISD Critico E2E",
+    /** Aprobacion pendiente: alimenta el KPI y la seccion de /today. */
+    accionAprobacion: "send_email",
+    /** Mensaje sin leer de la familia. */
+    mensajeFamilia: "Mensaje de familia sin leer E2E",
+    autorMensaje: "Familiar Panel E2E",
+  },
+  /**
+   * Organizacion vecina del panel, con datos que NUNCA deben aparecer.
+   *
+   * Un contador que filtre mal por `orgId` tambien es una fuga: por eso hay
+   * aqui expedientes, tareas, aprobaciones y mensajes con marcas inconfundibles.
+   */
+  panelVecina: {
+    slug: "org-e2e-panel-vecina",
+    owner: "owner.vecina.e2e@ejemplo.test",
+    caseRef: "EXP-2026-8900",
+    causante: "NO-DEBE-VERSE-Causante-Vecino",
+    tarea: "NO-DEBE-VERSE-tarea-vecina",
+    mensaje: "NO-DEBE-VERSE-mensaje-vecino",
+  },
+  /**
+   * Organizacion recien creada para el panel de primeros pasos.
+   *
+   * Sin expedientes, sin fecha de fallecimiento y sin marca: los cuatro pasos
+   * del onboarding empiezan sin hacer, que es la unica forma de comprobar el
+   * progreso y la desaparicion del panel.
+   */
+  panelNueva: {
+    slug: "org-e2e-panel-nueva",
+    owner: "owner.nueva.e2e@ejemplo.test",
+  },
+};
+
+/**
+ * Tareas del expediente principal del panel.
+ *
+ * `dias` es el desplazamiento del PLAZO respecto a hoy, contado en dias de
+ * calendario espanol. Se reparten a mano para poder afirmar cifras exactas y
+ * para cubrir los bordes que pide la auditoria: hoy, +7, +30 y fuera de rango.
+ */
+export const TAREAS_PANEL: {
+  titulo: string;
+  estado: "PENDING" | "IN_PROGRESS" | "BLOCKED" | "READY" | "DONE" | "SKIPPED";
+  /** Responsable: `owner` es quien mira el panel en la mayoria de pruebas. */
+  responsable: "owner" | "manager" | null;
+  dias: number | null;
+  /** Dias que lleva bloqueada (solo para las BLOCKED). */
+  bloqueadaDesdeHace?: number;
+}[] = [
+  // ── Vencidas del owner (alimentan «Requiere accion inmediata» y /today) ──
+  { titulo: "vencida hace 3 dias", estado: "PENDING", responsable: "owner", dias: -3 },
+  { titulo: "vencida hace 10 dias", estado: "IN_PROGRESS", responsable: "owner", dias: -10 },
+  // ── Bordes exactos que pide la auditoria ──
+  { titulo: "vence hoy", estado: "PENDING", responsable: "owner", dias: 0 },
+  { titulo: "vence en 7 dias", estado: "PENDING", responsable: "owner", dias: 7 },
+  { titulo: "vence en 30 dias", estado: "PENDING", responsable: "owner", dias: 30 },
+  // 31 dias: queda JUSTO fuera de «Plazos proximos (30 dias)».
+  { titulo: "vence en 31 dias fuera de rango", estado: "PENDING", responsable: "owner", dias: 31 },
+  { titulo: "vence en 3 dias", estado: "PENDING", responsable: "owner", dias: 3 },
+  // ── Del equipo, vencida: /today la lista aparte de las mias ──
+  { titulo: "vencida del manager", estado: "PENDING", responsable: "manager", dias: -6 },
+  // ── Bloqueadas: los tres lados del corte de 7 dias ──
+  { titulo: "bloqueada 6 dias no entra", estado: "BLOCKED", responsable: "owner", dias: 12, bloqueadaDesdeHace: 6 },
+  { titulo: "bloqueada 8 dias si entra", estado: "BLOCKED", responsable: "owner", dias: 14, bloqueadaDesdeHace: 8 },
+  { titulo: "bloqueada 20 dias si entra", estado: "BLOCKED", responsable: "manager", dias: 16, bloqueadaDesdeHace: 20 },
+  // ── Listas y terminadas: alimentan los KPI «Listas» y la carga del equipo ──
+  { titulo: "lista para accion", estado: "READY", responsable: "owner", dias: 18 },
+  { titulo: "ya terminada", estado: "DONE", responsable: "manager", dias: -1 },
+  { titulo: "sin asignar pendiente", estado: "PENDING", responsable: null, dias: 25 },
+];
+
+/**
+ * Cifras que las pruebas afirman, calculadas AQUI a partir del reparto de
+ * arriba.
+ *
+ * Se derivan en vez de escribirse a mano para que anadir una tarea al reparto
+ * no obligue a acordarse de tocar seis numeros sueltos en dos ficheros: si
+ * alguien cambia `TAREAS_PANEL`, estos valores le siguen solos.
+ */
+export const CIFRAS_PANEL = {
+  /**
+   * KPI «Tareas pendientes»: PENDING + IN_PROGRESS de TODA la organizacion.
+   *
+   * El `+ 1` es la tarea «desbloqueada por su prerrequisito», que vive en el
+   * segundo expediente y no esta en `TAREAS_PANEL`. Se suma explicitamente en
+   * vez de dejar el numero a mano para que siga cuadrando si alguien anade
+   * tareas al reparto de arriba.
+   */
+  tareasPendientes:
+    TAREAS_PANEL.filter((t) => t.estado === "PENDING" || t.estado === "IN_PROGRESS")
+      .length + 1,
+  /** KPI «Tareas bloqueadas». */
+  tareasBloqueadas: TAREAS_PANEL.filter((t) => t.estado === "BLOCKED").length,
+  /** KPI «Listas para accion». */
+  tareasListas: TAREAS_PANEL.filter((t) => t.estado === "READY").length,
+  /** Mis tareas vencidas (owner, plazo en el pasado, sin terminar). */
+  vencidasDelOwner: TAREAS_PANEL.filter(
+    (t) =>
+      t.responsable === "owner" &&
+      t.dias !== null &&
+      t.dias < 0 &&
+      t.estado !== "DONE" &&
+      t.estado !== "SKIPPED",
+  ).length,
+  /** Bloqueadas mas de 7 dias: las que salen en el bloque «+7 dias». */
+  bloqueadasCriticas: TAREAS_PANEL.filter(
+    (t) => t.estado === "BLOCKED" && (t.bloqueadaDesdeHace ?? 0) > 7,
+  ).length,
+  /*
+   * NO hay cifra para «Plazos proximos (30 dias)» a proposito.
+   *
+   * La consulta es `deadline >= ahora`, y la tarea «vence hoy» tiene el plazo
+   * anclado a las 12:00 UTC: entra en la lista si la suite corre por la manana
+   * y no entra si corre por la tarde. Una prueba que afirmara un total exacto
+   * pasaria o fallaria segun la hora, que es justo el tipo de prueba inestable
+   * que no aporta nada. El bloque se comprueba por TITULOS —que el de 30 dias
+   * esta y el de 31 no—, que es ademas lo que interesa: el borde del rango.
+   */
+  /** KPI «Expedientes activos»: los cuatro menos el cerrado. */
+  expedientesActivos: 3,
+  /** KPI «Cerrados este mes». */
+  cerradosEsteMes: 1,
+  /** KPI «Aprobaciones pend.» y seccion de /today. */
+  aprobacionesPendientes: 2,
+  /** Expedientes con al menos un mensaje de familia sin leer. */
+  expedientesConMensajes: 1,
+  /** Mensajes de familia sin leer (contador del panel). */
+  mensajesSinLeer: 2,
 };
 
 /**
@@ -536,6 +696,298 @@ async function main() {
       data: { userId: u.id, orgId: orgEquipo.id, role: m.rol },
     });
   }
+
+  // ── Organizacion de /dashboard y /today ──────────────────────────────────
+  //
+  // Cifras fijas y nadie mas escribiendo aqui: es la unica forma de que una
+  // prueba pueda afirmar «el KPI dice 9» y que eso siga siendo cierto manana.
+  const orgPanel = await prisma.organization.create({
+    data: {
+      name: "Gestoria Panel E2E",
+      slug: E2E.panel.slug,
+      subscription: { create: { plan: "FIRMA", status: "active" } },
+      // El panel de primeros pasos se oculta: esta organizacion ya esta
+      // configurada y el panel taparia los indicadores en las capturas.
+      onboardingDismissedAt: new Date(),
+    },
+  });
+
+  const usuariosPanel: Record<string, string> = {};
+  for (const [clave, email, nombre, rol] of [
+    ["owner", E2E.panel.owner, "Owner Panel E2E", "OWNER"],
+    ["manager", E2E.panel.manager, "Manager Panel E2E", "MANAGER"],
+    ["operador", E2E.panel.operador, "Operador Panel E2E", "OPERATOR"],
+    ["viewer", E2E.panel.viewer, "Viewer Panel E2E", "VIEWER"],
+  ] as const) {
+    const u = await prisma.user.create({
+      data: { email, name: nombre, passwordHash: hash },
+    });
+    await prisma.membership.create({
+      data: { userId: u.id, orgId: orgPanel.id, role: rol },
+    });
+    usuariosPanel[clave] = u.id;
+  }
+
+  const ahoraPanel = Date.now();
+  const DIA = 24 * 60 * 60 * 1000;
+
+  // Expediente principal: cuelgan de el todas las tareas con plazo.
+  const casoPanel = await prisma.case.create({
+    data: {
+      orgId: orgPanel.id,
+      ref: E2E.panel.caseRef,
+      status: "IN_PROGRESS",
+      deceased: { create: { fullName: "Causante Panel E2E", deathDate: new Date("2026-06-01") } },
+      contact: { create: { fullName: "Solicitante Panel E2E" } },
+      createdAt: new Date(ahoraPanel - 3 * DIA),
+    },
+  });
+
+  // Segundo expediente, mas reciente: debe salir el PRIMERO en «Expedientes
+  // recientes», que ordena por fecha de creacion descendente.
+  const casoPanel2 = await prisma.case.create({
+    data: {
+      orgId: orgPanel.id,
+      ref: E2E.panel.caseRef2,
+      status: "INTAKE",
+      deceased: { create: { fullName: "Segundo Causante Panel E2E" } },
+      contact: { create: { fullName: "Segundo Solicitante Panel E2E" } },
+      createdAt: new Date(ahoraPanel - 1 * DIA),
+    },
+  });
+
+  // Cerrado ESTE MES: alimenta el KPI «Cerrados este mes». `closedAt` se pone
+  // a hoy para que caiga dentro del mes en curso cualquiera que sea el dia.
+  await prisma.case.create({
+    data: {
+      orgId: orgPanel.id,
+      ref: E2E.panel.caseRefCerrado,
+      status: "CLOSED",
+      closedAt: new Date(ahoraPanel - 1 * 60 * 60 * 1000),
+      deceased: { create: { fullName: "Causante Cerrado Panel E2E" } },
+      createdAt: new Date(ahoraPanel - 10 * DIA),
+    },
+  });
+
+  // ISD critico: el panel considera criticos los fallecimientos de hace entre
+  // 150 y 180 dias (los 6 meses del ISD menos 30). 165 cae en mitad del rango,
+  // lejos de los dos bordes, para que la prueba no dependa de la hora.
+  const casoIsd = await prisma.case.create({
+    data: {
+      orgId: orgPanel.id,
+      ref: E2E.panel.caseRefIsd,
+      status: "IN_PROGRESS",
+      isUrgent: true,
+      deceased: {
+        create: {
+          fullName: E2E.panel.causanteIsd,
+          deathDate: new Date(ahoraPanel - 165 * DIA),
+        },
+      },
+      createdAt: new Date(ahoraPanel - 2 * DIA),
+    },
+  });
+
+  // Tareas del expediente principal.
+  //
+  // El plazo se ancla a las 12:00 UTC a proposito: asi el dia civil espanol
+  // coincide con el dia UTC y estas tareas no dependen de a que hora corra la
+  // suite. Las pruebas de zona horaria usan tareas propias, con hora extrema.
+  const tareasCreadas: Record<string, string> = {};
+  for (const t of TAREAS_PANEL) {
+    const plazo =
+      t.dias === null
+        ? null
+        : new Date(new Date(ahoraPanel + t.dias * DIA).setUTCHours(12, 0, 0, 0));
+    const creada = await prisma.task.create({
+      data: {
+        caseId: casoPanel.id,
+        title: `${E2E.panel.prefijo} ${t.titulo}`,
+        status: t.estado,
+        category: "OTROS",
+        deadline: plazo,
+        assigneeId: t.responsable ? usuariosPanel[t.responsable] : null,
+        blockReason: t.estado === "BLOCKED" ? "Falta certificado de defuncion" : null,
+        // `updatedAt` es lo que mide «bloqueada desde hace N dias».
+        updatedAt: t.bloqueadaDesdeHace
+          ? new Date(ahoraPanel - t.bloqueadaDesdeHace * DIA)
+          : new Date(ahoraPanel),
+      },
+    });
+    tareasCreadas[t.titulo] = creada.id;
+  }
+
+  // Tarea LISTA PARA CONTINUAR: depende de una que ya esta terminada.
+  const prerrequisito = await prisma.task.create({
+    data: {
+      caseId: casoPanel2.id,
+      title: `${E2E.panel.prefijo} prerrequisito ya terminado`,
+      status: "DONE",
+      category: "OTROS",
+      assigneeId: usuariosPanel.owner,
+    },
+  });
+  await prisma.task.create({
+    data: {
+      caseId: casoPanel2.id,
+      title: `${E2E.panel.prefijo} desbloqueada por su prerrequisito`,
+      status: "PENDING",
+      category: "OTROS",
+      assigneeId: usuariosPanel.owner,
+      dependsOnId: prerrequisito.id,
+    },
+  });
+
+  // Aprobaciones pendientes: KPI del panel y seccion de /today.
+  for (let i = 0; i < CIFRAS_PANEL.aprobacionesPendientes; i++) {
+    await prisma.approval.create({
+      data: {
+        caseId: i === 0 ? casoPanel.id : casoPanel2.id,
+        action: E2E.panel.accionAprobacion,
+        status: "PENDING",
+        createdAt: new Date(ahoraPanel - (i + 1) * DIA),
+      },
+    });
+  }
+  // Una ya resuelta: no debe contarse en ningun sitio.
+  await prisma.approval.create({
+    data: { caseId: casoPanel.id, action: "mark_sent", status: "APPROVED", reviewedAt: new Date() },
+  });
+
+  // Mensajes de familia SIN LEER, los dos en el mismo expediente: el panel
+  // cuenta MENSAJES y /today cuenta EXPEDIENTES, y las dos cifras difieren a
+  // proposito para que una prueba no pueda pasar confundiendolas.
+  for (let i = 0; i < CIFRAS_PANEL.mensajesSinLeer; i++) {
+    await prisma.portalMessage.create({
+      data: {
+        caseId: casoPanel.id,
+        fromFamily: true,
+        authorName: E2E.panel.autorMensaje,
+        content: `${E2E.panel.mensajeFamilia} ${i + 1}`,
+        readAt: null,
+        createdAt: new Date(ahoraPanel - (i + 1) * 60 * 60 * 1000),
+      },
+    });
+  }
+  // Uno ya leido y otro nuestro: ninguno debe contar.
+  await prisma.portalMessage.create({
+    data: { caseId: casoPanel.id, fromFamily: true, content: "ya leido", readAt: new Date() },
+  });
+  await prisma.portalMessage.create({
+    data: { caseId: casoPanel.id, fromFamily: false, content: "respuesta del despacho", readAt: null },
+  });
+
+  // Actividad reciente.
+  for (let i = 0; i < 3; i++) {
+    await prisma.auditLog.create({
+      data: {
+        orgId: orgPanel.id,
+        userId: usuariosPanel.owner,
+        caseId: casoPanel.id,
+        action: `panel.e2e.accion.${i + 1}`,
+        details: `Actividad de prueba ${i + 1}`,
+        createdAt: new Date(ahoraPanel - (i + 1) * 60 * 60 * 1000),
+      },
+    });
+  }
+
+  // ── Organizacion vecina del panel: nada suyo puede aparecer en la otra ──
+  const orgVecina = await prisma.organization.create({
+    data: {
+      name: "Gestoria Vecina E2E",
+      slug: E2E.panelVecina.slug,
+      subscription: { create: { plan: "FIRMA", status: "active" } },
+      onboardingDismissedAt: new Date(),
+    },
+  });
+  const ownerVecino = await prisma.user.create({
+    data: { email: E2E.panelVecina.owner, name: "Owner Vecino E2E", passwordHash: hash },
+  });
+  await prisma.membership.create({
+    data: { userId: ownerVecino.id, orgId: orgVecina.id, role: "OWNER" },
+  });
+  const casoVecino = await prisma.case.create({
+    data: {
+      orgId: orgVecina.id,
+      ref: E2E.panelVecina.caseRef,
+      status: "IN_PROGRESS",
+      isUrgent: true,
+      deceased: {
+        create: {
+          fullName: E2E.panelVecina.causante,
+          // Tambien ISD critico: si el agregado filtrara mal, se colaria.
+          deathDate: new Date(ahoraPanel - 160 * DIA),
+        },
+      },
+    },
+  });
+  // Tareas vencidas, bloqueadas y sin asignar, todas marcadas.
+  for (const [titulo, estado, dias] of [
+    [`${E2E.panelVecina.tarea} vencida`, "PENDING", -20],
+    [`${E2E.panelVecina.tarea} bloqueada`, "BLOCKED", 5],
+    [`${E2E.panelVecina.tarea} lista`, "READY", 9],
+  ] as const) {
+    await prisma.task.create({
+      data: {
+        caseId: casoVecino.id,
+        title: titulo,
+        status: estado,
+        category: "OTROS",
+        deadline: new Date(new Date(ahoraPanel + dias * DIA).setUTCHours(12, 0, 0, 0)),
+        assigneeId: ownerVecino.id,
+        updatedAt: new Date(ahoraPanel - 30 * DIA),
+      },
+    });
+  }
+  await prisma.approval.create({
+    data: { caseId: casoVecino.id, action: "NO_DEBE_VERSE_aprobacion", status: "PENDING" },
+  });
+  await prisma.portalMessage.create({
+    data: {
+      caseId: casoVecino.id,
+      fromFamily: true,
+      authorName: "NO-DEBE-VERSE-autor",
+      content: E2E.panelVecina.mensaje,
+      readAt: null,
+    },
+  });
+  await prisma.auditLog.create({
+    data: { orgId: orgVecina.id, action: "NO_DEBE_VERSE_actividad_vecina" },
+  });
+
+  // ── Organizacion recien creada: panel de primeros pasos sin ningun paso ──
+  const orgNueva = await prisma.organization.create({
+    data: {
+      name: "Gestoria Nueva E2E",
+      slug: E2E.panelNueva.slug,
+      subscription: {
+        create: {
+          plan: "INICIA",
+          status: "trialing",
+          // La fecha de fin NO es un adorno: `isSuspended()` considera
+          // suspendido un `trialing` sin `currentPeriodEnd`, porque no hay
+          // forma de comprobar que el periodo siga vigente. Sin ella esta
+          // organizacion no llegaba al panel, sino a la pantalla de cuenta
+          // suspendida. Es la politica real y aqui se respeta.
+          currentPeriodEnd: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        },
+      },
+    },
+  });
+  const ownerNuevo = await prisma.user.create({
+    data: { email: E2E.panelNueva.owner, name: "Owner Nuevo E2E", passwordHash: hash },
+  });
+  await prisma.membership.create({
+    data: { userId: ownerNuevo.id, orgId: orgNueva.id, role: "OWNER" },
+  });
+
+  /*
+   * NO se siembra ningun usuario sin organizacion.
+   *
+   * La prueba que lo necesita TERMINA creandole una organizacion, asi que un
+   * usuario sembrado solo servia la primera vez y fallaba en el reintento de
+   * CI y en cualquier reejecucion local. Cada prueba se crea el suyo.
+   */
 
   console.log("[seed-e2e] Datos de prueba creados.");
 }

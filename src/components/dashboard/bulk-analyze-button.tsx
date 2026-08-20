@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface BulkAnalyzeResult {
   analyzed: number;
@@ -9,10 +10,19 @@ interface BulkAnalyzeResult {
   total: number;
 }
 
-export function BulkAnalyzeButton({ openCaseCount }: { openCaseCount: number }) {
+/**
+ * `openCaseCount` es `null` cuando la consulta del contador ha fallado: no se
+ * sabe cuántos expedientes abiertos hay. El botón se inhabilita, igual que con
+ * cero, pero el rótulo lo dice en vez de anunciar «Analizar todos (0)».
+ */
+export function BulkAnalyzeButton({ openCaseCount }: { openCaseCount: number | null }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<BulkAnalyzeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const desconocido = openCaseCount === null;
+  const sinExpedientes = openCaseCount === 0;
 
   async function run() {
     if (loading) return;
@@ -21,14 +31,40 @@ export function BulkAnalyzeButton({ openCaseCount }: { openCaseCount: number }) 
     setError(null);
     try {
       const res = await fetch("/api/cases/bulk-analyze", { method: "POST" });
-      const data = await res.json();
+      /*
+       * EL DEFECTO QUE CORRIGE
+       * ----------------------
+       * Antes era `const data = await res.json()` ANTES de mirar `res.ok`. Con
+       * una respuesta que no fuera JSON —un 502 del proxy con HTML, un 401 que
+       * redirige al login— `res.json()` lanzaba y el usuario veía como aviso
+       * «Unexpected token '<', "<!DOCTYPE"... is not valid JSON», que no
+       * significa nada para nadie. Ahora se mira el estado primero y el cuerpo
+       * se lee con red de seguridad.
+       */
+      const cuerpo = await res.json().catch(() => null);
       if (!res.ok) {
-        setError(data.error || "Error al analizar");
-      } else {
-        setResult(data);
+        setError(
+          cuerpo?.error ??
+            (res.status === 403
+              ? "No tienes permiso para lanzar el analisis."
+              : `El servidor ha respondido ${res.status}.`),
+        );
+        return;
       }
-    } catch (e: any) {
-      setError(e.message || "Error de red");
+      if (!cuerpo || typeof cuerpo.analyzed !== "number") {
+        setError("La respuesta del servidor no tiene el formato esperado.");
+        return;
+      }
+      setResult(cuerpo);
+      /*
+       * Sin esto, los contadores de «Insights IA» y el score medio se quedaban
+       * con los valores de antes del analisis: el boton decia «12 analizados»
+       * y el panel de al lado seguia marcando 0. `refresh()` vuelve a pedir el
+       * componente de servidor y los numeros cuadran.
+       */
+      router.refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error de red");
     } finally {
       setLoading(false);
     }
@@ -59,12 +95,23 @@ export function BulkAnalyzeButton({ openCaseCount }: { openCaseCount: number }) 
 
   return (
     <div className="flex items-center gap-3">
-      {error && <span className="text-xs text-red-600">{error}</span>}
+      {error && (
+        <span role="alert" data-testid="error-analisis-masivo" className="text-xs text-red-600">
+          {error}
+        </span>
+      )}
       <button
         onClick={run}
-        disabled={loading || openCaseCount === 0}
+        disabled={loading || sinExpedientes || desconocido}
+        data-testid="boton-analisis-masivo"
         className="px-4 py-1.5 text-sm bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-2"
-        title={openCaseCount === 0 ? "No hay expedientes abiertos" : `Analizar todos los expedientes abiertos (${openCaseCount})`}
+        title={
+          desconocido
+            ? "No se ha podido consultar cuantos expedientes abiertos hay"
+            : sinExpedientes
+              ? "No hay expedientes abiertos"
+              : `Analizar todos los expedientes abiertos (${openCaseCount})`
+        }
       >
         {loading ? (
           <>
@@ -79,7 +126,7 @@ export function BulkAnalyzeButton({ openCaseCount }: { openCaseCount: number }) 
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            Analizar todos ({openCaseCount})
+            {desconocido ? "Analizar todos (—)" : `Analizar todos (${openCaseCount})`}
           </>
         )}
       </button>

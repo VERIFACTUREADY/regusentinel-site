@@ -70,7 +70,7 @@ export function UsageWidget() {
   const membersNearLimit = membersPct >= 80;
 
   return (
-    <div className="bg-white p-5 rounded-xl border">
+    <div data-testid="widget-uso-del-plan" className="bg-white p-5 rounded-xl border">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold text-sm text-gray-900">Uso del plan</h3>
         <span className="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full font-medium">

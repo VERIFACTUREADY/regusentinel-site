@@ -2,7 +2,17 @@ import { getVerifiedSession, getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { isdDeadlineFor, isdExtensionRequestDeadlineFor } from "@/lib/deadline-engine";
+import { isdDeadlineFor } from "@/lib/deadline-engine";
+import { consultar, listaDe, type Resultado } from "@/lib/consulta-segura";
+import { BloqueFallido, AvisoDatosIncompletos } from "@/components/dashboard/fallo-bloque";
+import {
+  diaSemanaES,
+  partesCivilesES,
+  inicioDelDiaDeES,
+  finDelDiaDeES,
+  sumarDiasES,
+  diasCivilesEntreES,
+} from "@/lib/fecha-es";
 
 export const metadata = {
   title: "Resumen del día — Heredia",
@@ -13,26 +23,42 @@ const MONTH_NAMES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const WEEKDAY_NAMES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 
+/**
+ * La fecha del encabezado se compone con el calendario español, no con la hora
+ * local del servidor: en Vercel y en la CI el proceso corre en UTC y entre las
+ * 00:00 y las 02:00 de Madrid el título mostraba el día de AYER.
+ */
 function formatDate(now: Date): string {
-  return `${WEEKDAY_NAMES[now.getDay()]}, ${now.getDate()} de ${MONTH_NAMES[now.getMonth()]} de ${now.getFullYear()}`;
+  const { anio, mes, dia } = partesCivilesES(now);
+  return `${WEEKDAY_NAMES[diaSemanaES(now)]}, ${dia} de ${MONTH_NAMES[mes - 1]} de ${anio}`;
 }
 
+/** Días de calendario de retraso, contados por fecha civil española. */
 function daysOverdue(deadline: Date, now: Date): number {
-  return Math.floor((now.getTime() - deadline.getTime()) / 86400000);
+  return Math.max(0, diasCivilesEntreES(deadline, now));
 }
 
+/** Días de calendario que faltan, contados por fecha civil española. */
 function daysUntil(deadline: Date, now: Date): number {
-  return Math.ceil((deadline.getTime() - now.getTime()) / 86400000);
+  return diasCivilesEntreES(now, deadline);
 }
 
 function isdDeadline(deathDate: Date): Date {
-  const d = new Date(deathDate);
   return isdDeadlineFor(deathDate);
-  return d;
 }
 
-async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
-  try { return await fn(); } catch { return fallback; }
+/**
+ * Fecha de vencimiento efectiva de una tarea: el plazo legal si lo tiene y, si
+ * no, la fecha prevista.
+ *
+ * Devuelve `null` cuando no hay ninguna de las dos. Antes se escribía
+ * `new Date(task.deadline ?? task.dueDate)`, y con las dos a nulo eso da el
+ * 1 de enero de 1970: la tarjeta anunciaba «hace 20.686d» con toda seriedad.
+ * El fallo estaba tapado por un `as any[]` que apagaba la comprobación de
+ * nulos; al quitarlo, TypeScript lo señaló solo.
+ */
+function fechaLimite(task: { deadline: Date | null; dueDate: Date | null }): Date | null {
+  return task.deadline ?? task.dueDate ?? null;
 }
 
 export default async function TodayPage() {
@@ -49,10 +75,19 @@ export default async function TodayPage() {
   const orgId = session.user.orgId;
   const userId = session.user.id;
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const todayEnd = new Date(todayStart.getTime() + 86400000 - 1);
-  const weekEnd = new Date(now.getTime() + 7 * 86400000);
-  const thirtyDaysOut = new Date(now.getTime() + 30 * 86400000);
+  // Cortes del día y de la semana en el calendario ESPAÑOL. Con la hora local
+  // del servidor (UTC) «hoy» empezaba a las 02:00 de Madrid en verano: durante
+  // esas dos horas «Para hoy» enseñaba las tareas de ayer.
+  const todayStart = inicioDelDiaDeES(now);
+  const todayEnd = finDelDiaDeES(now);
+  /*
+   * «Esta semana» llega hasta el FINAL del septimo dia, no hasta su medianoche.
+   *
+   * `sumarDiasES(now, 7)` devuelve las 00:00 del dia +7, y con ese corte una
+   * tarea que vencia ese mismo dia a las dos de la tarde quedaba fuera de la
+   * seccion: desaparecia de «Esta semana» sin aparecer en ninguna otra.
+   */
+  const weekEnd = finDelDiaDeES(sumarDiasES(now, 7));
 
   const [
     myOverdueTasks,
@@ -66,12 +101,25 @@ export default async function TodayPage() {
     readyToStartTasks,
   ] = await Promise.all([
     // My overdue tasks
-    safe(() => prisma.task.findMany({
+    consultar("misTareasVencidas", () => prisma.task.findMany({
       where: {
         assigneeId: userId,
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
         status: { notIn: ["DONE", "SKIPPED"] },
-        OR: [{ deadline: { lt: now } }, { deadline: null, dueDate: { lt: now } }],
+        /*
+         * VENCIDA = de un dia YA PASADO, no «anterior a este instante».
+         *
+         * Con `lt: now`, una tarea con plazo hoy a las 14:00 pasaba a contarse
+         * como vencida a las 14:01 y aparecia A LA VEZ en «Mis tareas
+         * vencidas» y en «Para hoy», que usa el dia entero. Las tres secciones
+         * de tareas propias —vencidas, hoy y esta semana— se presentan como
+         * tramos distintos, asi que no pueden solaparse. Ademas el corte
+         * dependia de la hora a la que se mirase la pantalla.
+         */
+        OR: [
+          { deadline: { lt: todayStart } },
+          { deadline: null, dueDate: { lt: todayStart } },
+        ],
       },
       select: {
         id: true, title: true, status: true, deadline: true, dueDate: true,
@@ -79,10 +127,10 @@ export default async function TodayPage() {
       },
       orderBy: { deadline: "asc" },
       take: 20,
-    }), [] as any[]),
+    })),
 
     // My tasks due today
-    safe(() => prisma.task.findMany({
+    consultar("misTareasDeHoy", () => prisma.task.findMany({
       where: {
         assigneeId: userId,
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
@@ -98,10 +146,10 @@ export default async function TodayPage() {
       },
       orderBy: { deadline: "asc" },
       take: 20,
-    }), [] as any[]),
+    })),
 
     // My tasks due this week (excluding today)
-    safe(() => prisma.task.findMany({
+    consultar("misTareasDeLaSemana", () => prisma.task.findMany({
       where: {
         assigneeId: userId,
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
@@ -117,15 +165,21 @@ export default async function TodayPage() {
       },
       orderBy: { deadline: "asc" },
       take: 10,
-    }), [] as any[]),
+    })),
 
     // All org overdue tasks (not mine, for managers)
-    safe(() => prisma.task.findMany({
+    consultar("tareasVencidasDelEquipo", () => prisma.task.findMany({
       where: {
         assigneeId: { not: userId },
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
         status: { notIn: ["DONE", "SKIPPED"] },
-        OR: [{ deadline: { lt: now } }, { deadline: null, dueDate: { lt: now } }],
+        // Mismo criterio de «vencida» que en las tareas propias: un dia ya
+        // pasado. Si no, las dos secciones contarian cosas distintas con la
+        // misma palabra.
+        OR: [
+          { deadline: { lt: todayStart } },
+          { deadline: null, dueDate: { lt: todayStart } },
+        ],
       },
       select: {
         id: true, title: true, deadline: true, dueDate: true,
@@ -134,10 +188,10 @@ export default async function TodayPage() {
       },
       orderBy: { deadline: "asc" },
       take: 15,
-    }), [] as any[]),
+    })),
 
     // ISD at-risk cases (open, deadline within 30 days)
-    safe(() => prisma.case.findMany({
+    consultar("isdEnRiesgo", () => prisma.case.findMany({
       where: {
         orgId,
         deletedAt: null,
@@ -155,10 +209,10 @@ export default async function TodayPage() {
         contact: { select: { fullName: true } },
       },
       take: 20,
-    }), [] as any[]),
+    })),
 
     // Pending approvals
-    safe(() => prisma.approval.findMany({
+    consultar("aprobacionesPendientes", () => prisma.approval.findMany({
       where: { case: { orgId, deletedAt: null }, status: "PENDING" },
       select: {
         id: true, action: true, createdAt: true,
@@ -167,10 +221,10 @@ export default async function TodayPage() {
       },
       orderBy: { createdAt: "asc" },
       take: 10,
-    }), [] as any[]),
+    })),
 
     // Unread portal messages
-    safe(() => prisma.case.findMany({
+    consultar("mensajesSinLeer", () => prisma.case.findMany({
       where: {
         orgId,
         deletedAt: null,
@@ -187,10 +241,10 @@ export default async function TodayPage() {
         },
       },
       take: 10,
-    }), [] as any[]),
+    })),
 
     // Cases with blocked tasks
-    safe(() => prisma.case.findMany({
+    consultar("expedientesBloqueados", () => prisma.case.findMany({
       where: {
         orgId,
         deletedAt: null,
@@ -208,10 +262,10 @@ export default async function TodayPage() {
       },
       orderBy: { updatedAt: "desc" },
       take: 10,
-    }), [] as any[]),
+    })),
 
     // My tasks whose dependency was just resolved (dependsOn is now DONE/SKIPPED)
-    safe(() => prisma.task.findMany({
+    consultar("listasParaContinuar", () => prisma.task.findMany({
       where: {
         assigneeId: userId,
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
@@ -226,33 +280,91 @@ export default async function TodayPage() {
       },
       orderBy: { updatedAt: "desc" },
       take: 10,
-    }), [] as any[]),
+    })),
   ]);
 
-  // Compute ISD days remaining for each at-risk case
-  const isdCases = (isdAtRiskCases as any[])
-    .map((c) => {
-      if (!c.deceased?.deathDate) return null;
-      const deadline = isdDeadline(new Date(c.deceased.deathDate));
-      const days = daysUntil(deadline, now);
-      return { ...c, isdDeadline: deadline, daysLeft: days };
+  /*
+   * Listas ya desenvueltas para pintar.
+   *
+   * `listaDe` devuelve `[]` cuando la consulta falló, pero eso NO se usa nunca
+   * como si fuera un resultado: cada bloque comprueba antes su propio
+   * `Resultado.ok` y, si falló, pinta el aviso en vez de la lista. El array
+   * vacío existe sólo para que el `.map` de más abajo no tenga que
+   * comprobarlo.
+   */
+  const vencidas = listaDe(myOverdueTasks);
+  const deHoy = listaDe(myTasksToday);
+  const deLaSemana = listaDe(myTasksThisWeek);
+  const vencidasEquipo = listaDe(orgOverdueTasks);
+  const aprobaciones = listaDe(pendingApprovals);
+  const mensajes = listaDe(unreadMessages);
+  const bloqueados = listaDe(blockedCases);
+  const listas = listaDe(readyToStartTasks);
+
+  /*
+   * Plazo ISD de cada expediente en riesgo.
+   *
+   * `flatMap` en lugar de `.map().filter(Boolean)`: `filter(Boolean)` no
+   * estrecha el tipo, y para compensarlo el código anterior remataba con
+   * `as any[]`, que apagaba la comprobación de toda la lista. Con `flatMap`
+   * los expedientes sin fecha de fallecimiento se descartan y lo que queda
+   * está tipado de verdad.
+   */
+  const isdCases = listaDe(isdAtRiskCases)
+    .flatMap((c) => {
+      const fallecimiento = c.deceased?.deathDate;
+      if (!fallecimiento) return [];
+      const deadline = isdDeadline(new Date(fallecimiento));
+      return [{ ...c, isdDeadline: deadline, daysLeft: daysUntil(deadline, now) }];
     })
-    .filter(Boolean)
-    .sort((a, b) => a!.daysLeft - b!.daysLeft) as any[];
+    .sort((a, b) => a.daysLeft - b.daysLeft);
 
-  const totalUrgent =
-    (myOverdueTasks as any[]).length +
-    isdCases.filter((c) => c.daysLeft <= 7).length +
-    (pendingApprovals as any[]).length;
+  const isdCriticos = isdCases.filter((c) => c.daysLeft <= 7);
 
-  const hasAnything =
-    (myOverdueTasks as any[]).length > 0 ||
-    (myTasksToday as any[]).length > 0 ||
+  const totalUrgent = vencidas.length + isdCriticos.length + aprobaciones.length;
+
+  /*
+   * «TODO AL DÍA» SÓLO SI DE VERDAD SE SABE QUE NO HAY NADA.
+   * --------------------------------------------------------
+   * Antes `hasAnything` se calculaba sobre listas que `safe()` devolvía vacías
+   * TAMBIÉN cuando la consulta había reventado. Con PostgreSQL caído, esta
+   * pantalla enseñaba un tranquilizador «Todo al día» con un tic verde: el
+   * peor mensaje posible, porque invita a cerrar el portátil.
+   *
+   * Ahora hay tres estados distintos, y el orden importa:
+   *   1. alguna fuente ha fallado  -> aviso de pantalla incompleta, y el tic
+   *      verde NO se pinta bajo ningún concepto;
+   *   2. todo cargó y hay trabajo  -> las secciones;
+   *   3. todo cargó y no hay nada  -> «Todo al día», que ahora sí significa
+   *      lo que dice.
+   */
+  const consultas: Record<string, Resultado<unknown>> = {
+    "mis tareas vencidas": myOverdueTasks,
+    "las tareas de hoy": myTasksToday,
+    "las tareas de esta semana": myTasksThisWeek,
+    "las tareas vencidas del equipo": orgOverdueTasks,
+    "los plazos ISD": isdAtRiskCases,
+    "las aprobaciones pendientes": pendingApprovals,
+    "los mensajes de las familias": unreadMessages,
+    "los expedientes bloqueados": blockedCases,
+    "las tareas listas para continuar": readyToStartTasks,
+  };
+  const bloquesCaidos = Object.entries(consultas)
+    .filter(([, r]) => !r.ok)
+    .map(([nombre]) => nombre);
+  const hayFallos = bloquesCaidos.length > 0;
+
+  const hayContenido =
+    vencidas.length > 0 ||
+    deHoy.length > 0 ||
     isdCases.length > 0 ||
-    (pendingApprovals as any[]).length > 0 ||
-    (unreadMessages as any[]).length > 0 ||
-    (blockedCases as any[]).length > 0 ||
-    (readyToStartTasks as any[]).length > 0;
+    aprobaciones.length > 0 ||
+    mensajes.length > 0 ||
+    bloqueados.length > 0 ||
+    listas.length > 0;
+
+  // La condición es «no hay fallos Y no hay nada», nunca sólo lo segundo.
+  const todoAlDia = !hayFallos && !hayContenido;
 
   return (
     <div className="max-w-4xl">
@@ -262,44 +374,75 @@ export default async function TodayPage() {
         <p className="text-sm text-gray-500 mt-1 capitalize">{formatDate(now)}</p>
       </div>
 
+      {/* Lo que no se ha podido consultar, antes que nada */}
+      <AvisoDatosIncompletos bloques={bloquesCaidos} />
+
       {/* Urgent alert strip */}
       {totalUrgent > 0 && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
-          <span className="text-2xl">🚨</span>
+        <div
+          role="alert"
+          data-testid="franja-accion-inmediata"
+          className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3"
+        >
+          <span className="text-2xl" aria-hidden="true">🚨</span>
           <div>
-            <p className="font-semibold text-red-800">
+            <p className="font-semibold text-red-800" data-testid="contador-accion-inmediata">
               {totalUrgent} elemento{totalUrgent !== 1 ? "s" : ""} requiere{totalUrgent === 1 ? "" : "n"} acción inmediata
             </p>
-            <p className="text-sm text-red-600 mt-0.5">
-              {(myOverdueTasks as any[]).length > 0 && `${(myOverdueTasks as any[]).length} tarea${(myOverdueTasks as any[]).length !== 1 ? "s" : ""} vencida${(myOverdueTasks as any[]).length !== 1 ? "s" : ""}`}
-              {(myOverdueTasks as any[]).length > 0 && isdCases.filter((c) => c.daysLeft <= 7).length > 0 && " · "}
-              {isdCases.filter((c) => c.daysLeft <= 7).length > 0 && `${isdCases.filter((c) => c.daysLeft <= 7).length} plazo${isdCases.filter((c) => c.daysLeft <= 7).length !== 1 ? "s" : ""} ISD crítico${isdCases.filter((c) => c.daysLeft <= 7).length !== 1 ? "s" : ""}`}
-              {(pendingApprovals as any[]).length > 0 && ((myOverdueTasks as any[]).length > 0 || isdCases.filter((c) => c.daysLeft <= 7).length > 0) && " · "}
-              {(pendingApprovals as any[]).length > 0 && `${(pendingApprovals as any[]).length} aprobación${(pendingApprovals as any[]).length !== 1 ? "es" : ""} pendiente${(pendingApprovals as any[]).length !== 1 ? "s" : ""}`}
+            <p className="text-sm text-red-600 mt-0.5" data-testid="desglose-accion-inmediata">
+              {[
+                vencidas.length > 0
+                  ? `${vencidas.length} tarea${vencidas.length !== 1 ? "s" : ""} vencida${vencidas.length !== 1 ? "s" : ""}`
+                  : null,
+                isdCriticos.length > 0
+                  ? `${isdCriticos.length} plazo${isdCriticos.length !== 1 ? "s" : ""} ISD crítico${isdCriticos.length !== 1 ? "s" : ""}`
+                  : null,
+                aprobaciones.length > 0
+                  ? `${aprobaciones.length} ${aprobaciones.length === 1 ? "aprobación pendiente" : "aprobaciones pendientes"}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
           </div>
         </div>
       )}
 
-      {!hasAnything && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
-          <p className="text-3xl mb-2">✅</p>
+      {todoAlDia && (
+        <div
+          data-testid="todo-al-dia"
+          className="bg-green-50 border border-green-200 rounded-xl p-6 text-center"
+        >
+          <p className="text-3xl mb-2" aria-hidden="true">✅</p>
           <p className="font-semibold text-green-800">Todo al día</p>
           <p className="text-sm text-green-600 mt-1">No hay tareas vencidas, plazos críticos ni mensajes sin responder.</p>
         </div>
       )}
 
+      {/* Un bloque de aviso por cada consulta caída, en su sitio de la página */}
+      {hayFallos && (
+        <div className="space-y-3 mb-6" data-testid="bloques-fallidos">
+          {bloquesCaidos.map((nombre) => (
+            <BloqueFallido
+              key={nombre}
+              que={nombre}
+              id={nombre.replace(/\s+/g, "-")}
+            />
+          ))}
+        </div>
+      )}
+
       <div className="space-y-6">
         {/* My overdue tasks */}
-        {(myOverdueTasks as any[]).length > 0 && (
+        {vencidas.length > 0 && (
           <Section
             title="Mis tareas vencidas"
-            count={(myOverdueTasks as any[]).length}
+            count={vencidas.length}
             color="red"
             icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
           >
             <ul className="divide-y divide-gray-100">
-              {(myOverdueTasks as any[]).map((task) => (
+              {vencidas.map((task) => (
                 <li key={task.id} className="py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <Link href={`/cases/${task.case.id}`} className="font-medium text-sm hover:text-primary truncate block">
@@ -310,9 +453,7 @@ export default async function TodayPage() {
                       {task.case.deceased?.fullName && ` · ${task.case.deceased.fullName}`}
                     </p>
                   </div>
-                  <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
-                    hace {daysOverdue(new Date(task.deadline ?? task.dueDate), now)}d
-                  </span>
+                  <VencimientoPill fecha={fechaLimite(task)} ahora={now} />
                 </li>
               ))}
             </ul>
@@ -320,15 +461,15 @@ export default async function TodayPage() {
         )}
 
         {/* My tasks today */}
-        {(myTasksToday as any[]).length > 0 && (
+        {deHoy.length > 0 && (
           <Section
             title="Para hoy"
-            count={(myTasksToday as any[]).length}
+            count={deHoy.length}
             color="amber"
             icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
           >
             <ul className="divide-y divide-gray-100">
-              {(myTasksToday as any[]).map((task) => (
+              {deHoy.map((task) => (
                 <li key={task.id} className="py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <Link href={`/cases/${task.case.id}`} className="font-medium text-sm hover:text-primary truncate block">
@@ -366,7 +507,7 @@ export default async function TodayPage() {
                       {c.ref}
                       {c.contact?.fullName && ` · ${c.contact.fullName}`}
                       {" · ISD vence "}
-                      {c.isdDeadline.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
+                      {c.isdDeadline.toLocaleDateString("es-ES", { day: "numeric", month: "short", timeZone: "Europe/Madrid" })}
                     </p>
                   </div>
                   <IsdBadge daysLeft={c.daysLeft} />
@@ -377,16 +518,16 @@ export default async function TodayPage() {
         )}
 
         {/* Pending approvals */}
-        {(pendingApprovals as any[]).length > 0 && (
+        {aprobaciones.length > 0 && (
           <Section
             title="Aprobaciones pendientes"
-            count={(pendingApprovals as any[]).length}
+            count={aprobaciones.length}
             color="purple"
             icon="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
             action={{ href: "/approvals", label: "Ir a aprobaciones →" }}
           >
             <ul className="divide-y divide-gray-100">
-              {(pendingApprovals as any[]).map((ap) => (
+              {aprobaciones.map((ap) => (
                 <li key={ap.id} className="py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <Link href={`/cases/${ap.case.id}`} className="font-medium text-sm hover:text-primary truncate block">
@@ -398,7 +539,7 @@ export default async function TodayPage() {
                     </p>
                   </div>
                   <span className="text-xs text-gray-400 shrink-0">
-                    {new Date(ap.createdAt).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
+                    {new Date(ap.createdAt).toLocaleDateString("es-ES", { day: "numeric", month: "short", timeZone: "Europe/Madrid" })}
                   </span>
                 </li>
               ))}
@@ -407,16 +548,16 @@ export default async function TodayPage() {
         )}
 
         {/* Unread portal messages */}
-        {(unreadMessages as any[]).length > 0 && (
+        {mensajes.length > 0 && (
           <Section
             title="Mensajes sin responder"
-            count={(unreadMessages as any[]).length}
+            count={mensajes.length}
             color="blue"
             icon="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
             action={{ href: "/messages", label: "Ir a mensajes →" }}
           >
             <ul className="divide-y divide-gray-100">
-              {(unreadMessages as any[]).map((c) => {
+              {mensajes.map((c) => {
                 const lastMsg = c.portalMessages[0];
                 return (
                   <li key={c.id} className="py-3 flex items-start justify-between gap-3">
@@ -442,15 +583,15 @@ export default async function TodayPage() {
         )}
 
         {/* Blocked cases */}
-        {(blockedCases as any[]).length > 0 && (
+        {bloqueados.length > 0 && (
           <Section
             title="Expedientes bloqueados"
-            count={(blockedCases as any[]).length}
+            count={bloqueados.length}
             color="gray"
             icon="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
           >
             <ul className="divide-y divide-gray-100">
-              {(blockedCases as any[]).map((c) => (
+              {bloqueados.map((c) => (
                 <li key={c.id} className="py-3">
                   <div className="flex items-start justify-between gap-3">
                     <Link href={`/cases/${c.id}`} className="font-medium text-sm hover:text-primary">
@@ -475,15 +616,15 @@ export default async function TodayPage() {
         )}
 
         {/* Tasks whose dependency was just resolved */}
-        {(readyToStartTasks as any[]).length > 0 && (
+        {listas.length > 0 && (
           <Section
             title="Listas para continuar"
-            count={(readyToStartTasks as any[]).length}
+            count={listas.length}
             color="green"
             icon="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
           >
             <ul className="divide-y divide-gray-100">
-              {(readyToStartTasks as any[]).map((t: any) => (
+              {listas.map((t: any) => (
                 <li key={t.id} className="py-3">
                   <Link href={`/cases/${t.case.id}`} className="text-sm font-medium hover:text-primary">
                     {t.title}
@@ -498,15 +639,15 @@ export default async function TodayPage() {
         )}
 
         {/* My upcoming tasks this week */}
-        {(myTasksThisWeek as any[]).length > 0 && (
+        {deLaSemana.length > 0 && (
           <Section
             title="Esta semana"
-            count={(myTasksThisWeek as any[]).length}
+            count={deLaSemana.length}
             color="indigo"
             icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
           >
             <ul className="divide-y divide-gray-100">
-              {(myTasksThisWeek as any[]).map((task) => (
+              {deLaSemana.map((task) => (
                 <li key={task.id} className="py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <Link href={`/cases/${task.case.id}`} className="font-medium text-sm hover:text-primary truncate block">
@@ -517,9 +658,7 @@ export default async function TodayPage() {
                       {task.case.deceased?.fullName && ` · ${task.case.deceased.fullName}`}
                     </p>
                   </div>
-                  <span className="text-xs text-gray-500 shrink-0">
-                    {new Date(task.deadline ?? task.dueDate).toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })}
-                  </span>
+                  <FechaCorta fecha={fechaLimite(task)} />
                 </li>
               ))}
             </ul>
@@ -527,16 +666,16 @@ export default async function TodayPage() {
         )}
 
         {/* Team overdue (for managers) */}
-        {(orgOverdueTasks as any[]).length > 0 && (
+        {vencidasEquipo.length > 0 && (
           <Section
             title="Tareas del equipo vencidas"
-            count={(orgOverdueTasks as any[]).length}
+            count={vencidasEquipo.length}
             color="pink"
             icon="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
             action={{ href: "/tasks", label: "Ver todas las tareas →" }}
           >
             <ul className="divide-y divide-gray-100">
-              {(orgOverdueTasks as any[]).map((task) => (
+              {vencidasEquipo.map((task) => (
                 <li key={task.id} className="py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <Link href={`/cases/${task.case.id}`} className="font-medium text-sm hover:text-primary truncate block">
@@ -547,9 +686,7 @@ export default async function TodayPage() {
                       {task.assignee && ` · ${task.assignee.name || task.assignee.email}`}
                     </p>
                   </div>
-                  <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
-                    hace {daysOverdue(new Date(task.deadline ?? task.dueDate), now)}d
-                  </span>
+                  <VencimientoPill fecha={fechaLimite(task)} ahora={now} />
                 </li>
               ))}
             </ul>
@@ -602,6 +739,41 @@ function Section({
       </div>
       <div className="px-5">{children}</div>
     </div>
+  );
+}
+
+/**
+ * Antigüedad del vencimiento. Si la tarea no tiene ni plazo ni fecha prevista
+ * se dice, en lugar de inventar un «hace 20.686d» contando desde 1970.
+ */
+function VencimientoPill({ fecha, ahora }: { fecha: Date | null; ahora: Date }) {
+  if (!fecha) {
+    return (
+      <span className="text-xs text-gray-400 whitespace-nowrap shrink-0">sin fecha</span>
+    );
+  }
+  return (
+    <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
+      hace {daysOverdue(fecha, ahora)}d
+    </span>
+  );
+}
+
+/** Día y día de la semana, en el calendario español. */
+function FechaCorta({ fecha }: { fecha: Date | null }) {
+  if (!fecha) {
+    return <span className="text-xs text-gray-400 shrink-0">sin fecha</span>;
+  }
+  return (
+    <span className="text-xs text-gray-500 shrink-0">
+      {fecha.toLocaleDateString("es-ES", {
+        weekday: "short",
+        day: "numeric",
+        // Sin esto el servidor formatea en UTC y una tarea de las 00:30 de
+        // Madrid aparece con el día —y el nombre del día— de la víspera.
+        timeZone: "Europe/Madrid",
+      })}
+    </span>
   );
 }
 

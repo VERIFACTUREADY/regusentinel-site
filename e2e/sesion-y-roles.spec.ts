@@ -94,6 +94,17 @@ test.describe("Roles", () => {
       await page.goto(ruta);
       await expect(page, `OWNER debe poder abrir ${ruta}`).toHaveURL(new RegExp(ruta));
       await pantallaUtil(page);
+      /*
+       * Se espera a que la navegacion termine del todo.
+       *
+       * `/settings` redirige a `/settings/general`. `toHaveURL(/\/settings/)`
+       * casa ya con la URL de partida, asi que el bucle seguia adelante con la
+       * redireccion todavia en vuelo y el `goto` siguiente la interrumpia:
+       * «Navigation to "/users" is interrupted by another navigation to
+       * "/settings/general"». Fallaba una vez de cada tantas, sin que nada
+       * hubiera cambiado en la aplicacion.
+       */
+      await page.waitForLoadState("load");
     }
 
     // Y la accion reservada esta a la vista.

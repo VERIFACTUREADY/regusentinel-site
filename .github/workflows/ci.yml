@@ -335,6 +335,10 @@ jobs:
       S3_SECRET_KEY: minioadmin123
       S3_BUCKET: heredia-e2e
       S3_REGION: us-east-1
+      # Permite forzar el fallo de UNA consulta concreta de /dashboard o /today
+      # desde el navegador, para poder comprobar que la pantalla lo dice en vez
+      # de ensenar un cero falso. Solo lo lee este job; en Vercel no existe.
+      E2E_INYECCION_FALLOS: "1"
 
     steps:
       - uses: actions/checkout@v4

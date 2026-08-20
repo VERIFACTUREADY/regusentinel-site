@@ -13,7 +13,8 @@ que el botón la llame.
 Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 `expedientes`, `acciones-expedientes`, `tareas`, `tareas.responsive`,
 `documentos`, `documentos.responsive`, `usuarios`, `usuarios.responsive`,
-`autenticacion`, `sesion-y-roles` y `navegacion.responsive`. Todas corren con el vigilante de
+`autenticacion`, `sesion-y-roles`, `navegacion.responsive`, `dashboard`, `today`
+y `panel.responsive`. Todas corren con el vigilante de
 `e2e/vigilancia.ts` activo (ver «Detección global»).
 
 ## Leyenda
@@ -28,6 +29,108 @@ Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 ---
 
 ## Pantallas
+
+### `/dashboard` — Panel
+
+Inventario completo de lo que existe de verdad en la pantalla y en sus nueve
+componentes hijos (`onboarding-panel`, `demo-highlights`, `my-tasks-widget`,
+`usage-widget`, `deadline-calendar`, `bulk-analyze-button`, `risk-radar-widget`,
+`action-queue-widget`, `no-org-setup`). Pruebas en `dashboard.spec.ts` y
+`panel.responsive.spec.ts`.
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| KPI «Expedientes activos» | ✅ | `dashboard.spec.ts` — cuadra con la base; la cifra se afirma exacta, no por subcadena |
+| KPI «Tareas pendientes» | ✅ | ídem |
+| KPI «Tareas bloqueadas» | ✅ | ídem |
+| KPI «Listas para accion» | ✅ | ídem |
+| KPI «Aprobaciones pend.» | ✅ | ídem |
+| KPI «Cerrados este mes» | ✅ | ídem |
+| Etiqueta junto a cada cifra | ✅ | `dashboard.spec.ts` — los seis rótulos |
+| **Un KPI con su consulta caída muestra «—», nunca 0** | ✅ | `dashboard.spec.ts` — **defecto corregido**: `safe()` devolvía `0` y el panel anunciaba «Expedientes activos: 0» con la base caída. Se comprueba que aparece «—», que el 0 **no** aparece y que la cifra no existe siquiera en el DOM |
+| Degradación parcial: los demás KPI siguen dando su dato | ✅ | `dashboard.spec.ts` |
+| Un cero REAL se sigue viendo como cero | ✅ | `dashboard.spec.ts` — organización sin datos |
+| Aviso «Esta pantalla está incompleta» enumerando lo caído | ✅ | `dashboard.spec.ts` — nombra sólo los bloques que fallaron |
+| Franja «Requiere acción inmediata» | ✅ | `dashboard.spec.ts` — vencidas, ISD crítico y mensajes de familia |
+| Enlace «Ver resumen del día →» | ✅ | `dashboard.spec.ts` — se pulsa y llega a `/today` |
+| Enlace de una tarea vencida → expediente | ✅ | `dashboard.spec.ts` |
+| Widget «Plan de acciones» (`ActionQueueWidget`) | ✅ | `dashboard.spec.ts` — datos, orden por urgencia y estado vacío |
+| **El Plan de acciones caído NO dice «Nada pendiente de acción inmediata»** | ✅ | `dashboard.spec.ts` — **defecto corregido**: el respaldo `items: []` pintaba un mensaje tranquilizador y falso |
+| Widget «Radar ISD» (`RiskRadarWidget`) | ✅ | `dashboard.spec.ts` — recuentos por severidad y expedientes |
+| **El Radar ISD caído NO dice «Todos los expedientes en orden»** | ✅ | `dashboard.spec.ts` — **defecto corregido**, mismo patrón |
+| «Mis tareas asignadas»: listado y enlace al expediente | ✅ | `dashboard.spec.ts` |
+| Completar una tarea desde el panel | ✅ | `dashboard.spec.ts` — desaparece y persiste tras recargar |
+| Completar: HTTP 403, HTTP 500 y fallo de red | ✅ | `dashboard.spec.ts` — avisa, la tarea **no** desaparece y el botón sigue utilizable |
+| Reintento tras el error | ✅ | `dashboard.spec.ts` — quitado el fallo, el segundo intento completa |
+| «Mis tareas asignadas» con su consulta caída | ✅ | `dashboard.spec.ts` |
+| Calendario de plazos: mes en curso y enlace «Ver todo» | ✅ | `dashboard.spec.ts` |
+| **Calendario: una tarea de las 00:30 de Madrid cae en SU día** | ✅ | `dashboard.spec.ts` — **defecto corregido**: se agrupaba con `setHours(0,0,0,0)` y `getDate()`, hora local del servidor (UTC), y la tarea se pintaba en la casilla de la víspera. Se comprueba la casilla concreta y la del día anterior |
+| Calendario con su consulta caída | ✅ | `dashboard.spec.ts` — lo dice; no pinta una rejilla vacía |
+| «Uso del plan»: expedientes y usuarios sobre su límite | ✅ | `dashboard.spec.ts` |
+| Cerca del límite / límite alcanzado | ✅ | `dashboard.spec.ts` — avisos distintos |
+| Enlaces «Ampliar plan» y «Gestionar suscripcion» | ✅ | `dashboard.spec.ts` — se pulsan y llegan a `/billing` |
+| Uso del plan: HTTP 401, 403, 500 y fallo de red | ✅ | `dashboard.spec.ts` — mensaje propio de cada caso |
+| Uso del plan: «Reintentar» | ✅ | `dashboard.spec.ts` — vuelve a pedirlo y el widget aparece |
+| «Plazos proximos (30 días)»: borde del rango | ✅ | `dashboard.spec.ts` — entra el de 30 días, no entra el de 31 |
+| «Tareas bloqueadas +7 días»: borde del corte | ✅ | `dashboard.spec.ts` — entran la de 8 y la de 20, no la de 6; se ve el motivo del bloqueo |
+| Los dos bloques anteriores con su consulta caída | ✅ | `dashboard.spec.ts` — cada uno lo dice por separado |
+| Carga de trabajo del equipo | ✅ | `dashboard.spec.ts` — miembros con tareas, activas/bloqueadas; quien no tiene tareas no aparece |
+| Carga del equipo con su consulta caída | ✅ | `dashboard.spec.ts` — **defecto corregido**: el bloque desaparecía entero sin dejar rastro |
+| Expedientes recientes: orden, causante, solicitante, estado, enlace | ✅ | `dashboard.spec.ts` — máximo 5, orden por fecha de creación |
+| Expedientes recientes: estado vacío real | ✅ | `dashboard.spec.ts` |
+| **Expedientes recientes caídos NO dicen «No hay expedientes»** | ✅ | `dashboard.spec.ts` — **defecto corregido**: la misma frase servía para «hay cero» y para «no he podido consultarlo» |
+| Actividad reciente: autor y acción | ✅ | `dashboard.spec.ts` |
+| **Actividad reciente caída NO dice «Sin actividad»** | ✅ | `dashboard.spec.ts` — **defecto corregido**, mismo patrón |
+| Insights IA: contadores de 30 días y score medio | ✅ | `dashboard.spec.ts` — con la consulta caída se muestra «—», no 0 |
+| Botón «Analizar todos (N)»: rótulo con el número real | ✅ | `dashboard.spec.ts` |
+| Botón inhabilitado sin expedientes abiertos | ✅ | `dashboard.spec.ts` |
+| Botón con el contador caído: dice «(—)» y no se puede pulsar | ✅ | `dashboard.spec.ts` — **defecto corregido**: anunciaba «Analizar todos (0)», cifra inventada |
+| Análisis masivo: clic real, carga, éxito y refresco posterior | ✅ | `dashboard.spec.ts` — **defecto corregido**: no refrescaba, y los contadores de IA quedaban desfasados. **No se llama al servicio de pago**: se sustituye la respuesta de nuestra propia API |
+| Análisis masivo: error del servidor y fallo de red | ✅ | `dashboard.spec.ts` — el botón sigue utilizable |
+| Análisis masivo: respuesta que no es JSON | ✅ | `dashboard.spec.ts` — **defecto corregido**: `res.json()` antes de mirar `res.ok` mostraba «Unexpected token '<'…» |
+| Análisis masivo: doble clic | ✅ | `dashboard.spec.ts` — una sola llamada |
+| Panel de primeros pasos en organización nueva | ✅ | `dashboard.spec.ts` — pasos, progreso «0 de N» y enlace del primer paso |
+| Una organización ya configurada NO recibe onboarding | ✅ | `dashboard.spec.ts` |
+| «No mostrar mas»: fallo del servidor y de red | ✅ | `dashboard.spec.ts` — **defecto corregido**: no miraba `res.ok` ni capturaba el rechazo; el panel volvía igual sin decir nada y el botón se quedaba congelado en «...» |
+| Usuario sin organización: no se le expulsa al login | ✅ | `dashboard.spec.ts` |
+| Alta de organización desde `NoOrgSetup` y vuelta al panel | ✅ | `dashboard.spec.ts` — formulario real; **defecto corregido**: la etiqueta del campo no estaba asociada (`htmlFor`/`id`) |
+| Roles OWNER, MANAGER, OPERATOR y VIEWER | ✅ | `dashboard.spec.ts` — política real: `/dashboard` no exige ningún permiso; los cuatro entran y ven los indicadores |
+| Aislamiento entre organizaciones (datos) | ✅ | `dashboard.spec.ts` — expedientes, causantes, tareas, mensajes, aprobaciones y actividad de la organización vecina; en los dos sentidos |
+| **Aislamiento en los CONTADORES** | ✅ | `dashboard.spec.ts` — un agregado que filtre mal `orgId` también es una fuga aunque no enseñe ningún nombre |
+| Escritorio, tablet y móvil | ✅ | `panel.responsive.spec.ts` — sin desbordamiento horizontal, KPI enteros, calendario pulsable, aviso de fallo legible |
+| `DemoHighlights` (atajos de la organización de demostración) | — | Sólo se pinta con `DEMO_ENABLED=true` y el slug de demo, que el entorno E2E no activa. Sus tres consultas ya no usan `safe()` |
+
+### `/today` — Resumen del día
+
+Pruebas en `today.spec.ts` y `panel.responsive.spec.ts`.
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Encabezado con la fecha del calendario español | ✅ | `today.spec.ts` — **defecto corregido**: se componía con la hora local del servidor (UTC); entre las 00:00 y las 02:00 de Madrid mostraba el día de ayer |
+| «Mis tareas vencidas»: listado, antigüedad y enlace | ✅ | `today.spec.ts` — orden cronológico, la más antigua primero |
+| **Una tarea de hoy ya no sale a la vez en «vencidas» y en «Para hoy»** | ✅ | `today.spec.ts` — **defecto corregido**: `deadline < ahora` la pasaba a vencida a partir de su hora y aparecía duplicada; ahora vencida = de un día ya pasado |
+| «Para hoy» | ✅ | `today.spec.ts` — sólo lo de hoy |
+| **«Esta semana» incluye el séptimo día completo** | ✅ | `today.spec.ts` — **defecto corregido**: el corte era la medianoche del día +7 y una tarea de esa misma tarde desaparecía de todas las secciones |
+| «Tareas del equipo vencidas», con responsable | ✅ | `today.spec.ts` — no repite las propias; enlace a `/tasks` |
+| «Plazos ISD próximos» con fecha y cuenta atrás | ✅ | `today.spec.ts` — enlace al expediente |
+| «Aprobaciones pendientes» | ✅ | `today.spec.ts` — la ya aprobada no aparece; enlace a `/approvals` |
+| «Mensajes sin responder»: autor y texto | ✅ | `today.spec.ts` — ni el leído ni el nuestro cuentan |
+| «Expedientes bloqueados» con sus tareas y motivo | ✅ | `today.spec.ts` |
+| «Listas para continuar» (prerrequisito completado) | ✅ | `today.spec.ts` |
+| **«Todo al día» con cero datos reales** | ✅ | `today.spec.ts` — aparece, y es cierto |
+| **«Todo al día» NUNCA con una consulta caída** | ✅ | `today.spec.ts` — **defecto corregido, el más grave de la fase**: `hasAnything` se calculaba sobre listas que `safe()` devolvía vacías también al fallar, así que con PostgreSQL caído la pantalla mostraba un tic verde y «Todo al día». Se prueba con una consulta caída y con las nueve |
+| Una sola tarea vencida basta para que no aparezca | ✅ | `today.spec.ts` |
+| Degradación parcial: lo que sí cargó se sigue viendo | ✅ | `today.spec.ts` — dos bloques caídos, el resto con sus datos reales |
+| Fallo por sección: vencidas, ISD, aprobaciones, mensajes, bloqueados | ✅ | `today.spec.ts` — cada uno se nombra y su sección no finge estar vacía |
+| Contador de acción inmediata: suma y desglose | ✅ | `today.spec.ts` — vencidas + ISD crítico + aprobaciones |
+| Contador: cero, uno y varias categorías | ✅ | `today.spec.ts` — con cero no aparece la franja; con uno, singular |
+| **Plural de «aprobación»** | ✅ | `today.spec.ts` — **defecto corregido**: decía «2 aprobaciónes», que no existe |
+| Roles OWNER, MANAGER, OPERATOR y VIEWER | ✅ | `today.spec.ts` — política real: sólo exige sesión con organización y rol |
+| Cada uno ve SUS tareas | ✅ | `today.spec.ts` — el VIEWER no ve las del OWNER en la sección propia, pero sí la del equipo, que es de toda la organización |
+| Usuario sin organización → `/dashboard`, no al login | ✅ | `today.spec.ts` |
+| Sin sesión → `/login` | ✅ | `today.spec.ts` |
+| Aislamiento entre organizaciones, datos y contadores | ✅ | `today.spec.ts` |
+| Escritorio, tablet y móvil | ✅ | `panel.responsive.spec.ts` |
 
 ### `/calendar` — Calendario de plazos
 
@@ -556,11 +659,13 @@ pantallas y repetir la corrección a mano garantiza que la próxima nazca rota.
 | `cases/kanban` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `tasks/timeline` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `messages` | ✅ | ✅ | ✅ | ❌ sin prueba de navegador |
-| `usage-widget` | ✅ | ✅ | ✅ | ❌ sin prueba de navegador |
+| `usage-widget` | ✅ | ✅ | ✅ | `dashboard.spec.ts` — HTTP 401, 403, 500, fallo de red y «Reintentar», desde el panel real |
 | `notification-bell` | ✅ | ✅ | — | ❌ sin prueba de navegador |
 | `cases/[id]` (análisis) | ✅ | ✅ | — | ❌ sin prueba de navegador |
 | `audit` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `workflow-logs` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` (vía filtro) |
+| `dashboard` (componente de servidor) | — no hay `fetch` | ✅ | recargar | `dashboard.spec.ts` — **defecto corregido**: `safe()` devolvía `0`/`[]`/`null` y el fallo era indistinguible del dato. Ahora cada consulta devuelve `{ ok, datos \| error }` |
+| `today` (componente de servidor) | — no hay `fetch` | ✅ | recargar | `today.spec.ts` — mismo defecto; además «Todo al día» ya no puede aparecer con una fuente caída |
 
 `workflow-logs` y `documents` reciben la primera página del componente de
 servidor y sólo llaman al API al filtrar o buscar. Sus pruebas provocan la
