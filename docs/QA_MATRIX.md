@@ -550,7 +550,7 @@ pantallas y repetir la corrección a mano garantiza que la próxima nazca rota.
 | `approvals` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `notifications` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `search-modal` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
-| `users` (panel de invitaciones) | ✅ | ✅ | ✅ | ❌ sin prueba de navegador |
+| `users` (panel de invitaciones) | ✅ | ✅ | ✅ | `usuarios.spec.ts` — vacío real, 500, fallo de red, 401 y «Reintentar» |
 | `documents` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `cases/kanban` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `tasks/timeline` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
