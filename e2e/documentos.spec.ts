@@ -1390,7 +1390,16 @@ test.describe("Documentos: portal familiar", () => {
     await page.goto(`/portal/${PORTAL.token}`);
     const casilla = page.getByRole("checkbox", { name: /He le[ií]do y acepto/ });
     if (await casilla.count()) {
-      await casilla.check();
+      /*
+       * Se pulsa la ETIQUETA, que es donde pulsa una persona.
+       *
+       * El `<input>` real va con `sr-only` —presente en el arbol de
+       * accesibilidad y alcanzable con teclado, pero clipado— y encima se
+       * dibuja el recuadro visible, que intercepta el puntero. Hacer `.check()`
+       * sobre el input oculto no es lo que hace nadie y ademas no se puede.
+       */
+      await page.getByText(/He le[ií]do y acepto el tratamiento/).click();
+      await expect(casilla).toBeChecked();
       await page.getByRole("button", { name: /Aceptar y acceder al portal/ }).click();
     }
     await expect(page.getByLabel(/Seleccionar archivo/)).toBeAttached({

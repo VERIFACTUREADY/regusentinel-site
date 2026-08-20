@@ -227,7 +227,10 @@ test.describe("Documentos en las tres pantallas", () => {
     await page.goto(`/portal/${PORTAL.token}`);
     const casilla = page.getByRole("checkbox", { name: /He le[ií]do y acepto/ });
     if (await casilla.count()) {
-      await casilla.check();
+      // La etiqueta es lo que se pulsa: el input real va `sr-only` y el
+      // recuadro dibujado encima intercepta el puntero.
+      await page.getByText(/He le[ií]do y acepto el tratamiento/).click();
+      await expect(casilla).toBeChecked();
       await page.getByRole("button", { name: /Aceptar y acceder al portal/ }).click();
     }
     await expect(page.getByLabel(/Seleccionar archivo/)).toBeAttached({
