@@ -13,8 +13,9 @@ que el botón la llame.
 Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 `expedientes`, `acciones-expedientes`, `tareas`, `tareas.responsive`,
 `documentos`, `documentos.responsive`, `usuarios`, `usuarios.responsive`,
-`autenticacion`, `sesion-y-roles`, `navegacion.responsive`, `dashboard`, `today`
-y `panel.responsive`. Todas corren con el vigilante de
+`autenticacion`, `sesion-y-roles`, `navegacion.responsive`, `dashboard`, `today`,
+`panel.responsive`, `mensajes`, `notificaciones`, `aprobaciones` y
+`avisos.responsive`. Todas corren con el vigilante de
 `e2e/vigilancia.ts` activo (ver «Detección global»).
 
 ## Leyenda
@@ -131,6 +132,114 @@ Pruebas en `today.spec.ts` y `panel.responsive.spec.ts`.
 | Sin sesión → `/login` | ✅ | `today.spec.ts` |
 | Aislamiento entre organizaciones, datos y contadores | ✅ | `today.spec.ts` |
 | Escritorio, tablet y móvil | ✅ | `panel.responsive.spec.ts` |
+
+### `/messages` — Mensajes del portal
+
+Inventario completo de la pantalla y de su panel de hilo. Pruebas en
+`mensajes.spec.ts` (39) y `avisos.responsive.spec.ts`.
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Listado de conversaciones | ✅ | `mensajes.spec.ts` — referencia, causante y vista previa del último mensaje |
+| Filtro «Sin leer» | ✅ | `mensajes.spec.ts` — sólo las que tienen pendientes; cifra exacta |
+| Filtro «Todos» | ✅ | `mensajes.spec.ts` — añade la ya leída; el expediente sin ningún mensaje sigue fuera |
+| Marca «N sin leer» del encabezado | ✅ | `mensajes.spec.ts` — la cifra pintada se comprueba con una respuesta fija; el total se contrasta contra la base |
+| Selección inicial automática | ✅ | `mensajes.spec.ts` |
+| Cambio entre conversaciones | ✅ | `mensajes.spec.ts` — el hilo cambia con ella |
+| Hilo de mensajes | ✅ | `mensajes.spec.ts` |
+| Enlace «Ver expediente →» | ✅ | `mensajes.spec.ts` — se pulsa y llega |
+| **La lista caída NO dice «No hay mensajes sin leer»** | ✅ | `mensajes.spec.ts` — **defecto corregido**: era `r.ok ? r.json() : null` + `.catch(() => {})`, así que un 401, un 403, un 500 o la red caída pintaban el estado vacío. Se comprueba en los tres códigos, en fallo de red y con forma inesperada, y que el vacío **no** aparece |
+| «Reintentar» de la lista | ✅ | `mensajes.spec.ts` |
+| Estado vacío REAL | ✅ | `mensajes.spec.ts` — organización sin conversaciones |
+| Hilo caído: no aparenta que la familia no escribió | ✅ | `mensajes.spec.ts` |
+| **Marcar leído sólo baja el contador si el servidor confirma** | ✅ | `mensajes.spec.ts` — **defecto corregido**: era un PUT al aire con `.catch(() => {})` y el contador bajaba igual |
+| Un VIEWER no puede marcar leído (política real) | ✅ | `mensajes.spec.ts` — `PUT` exige `cases.update`, que VIEWER no tiene: avisa, el contador no baja y en la base siguen sin leer |
+| Marcar leído: HTTP 500, fallo de red y «Reintentar» | ✅ | `mensajes.spec.ts` |
+| Persistencia del marcado tras recargar | ✅ | `mensajes.spec.ts` — contrastado contra la base |
+| Coherencia de filtro y contador tras leer | ✅ | `mensajes.spec.ts` |
+| Enviar respuesta: aparece y persiste | ✅ | `mensajes.spec.ts` — recarga y verificación en la base |
+| ⌘/Ctrl+Enter envía | ✅ | `mensajes.spec.ts` |
+| **La familia lo ve en su portal** | ✅ | `mensajes.spec.ts` — navegador limpio, sin sesión de gestor, entrando por el token |
+| Texto vacío o sólo espacios no se envía | ✅ | `mensajes.spec.ts` |
+| Doble envío no duplica | ✅ | `mensajes.spec.ts` — **defecto corregido**: el botón se inhabilitaba, pero ⌘Enter colaba un segundo envío. Una sola llamada |
+| Enviar: HTTP 400, 403, 500 y fallo de red | ✅ | `mensajes.spec.ts` — avisa, **no** pinta el mensaje y conserva lo escrito |
+| Enviar: respuesta que no es JSON | ✅ | `mensajes.spec.ts` — **defecto corregido**: `res.json()` sin red de seguridad mostraba «Unexpected token '<'» |
+| Enviar: 200 sin cuerpo válido | ✅ | `mensajes.spec.ts` — no se da por enviado |
+| Roles OWNER, MANAGER, OPERATOR y VIEWER | ✅ | `mensajes.spec.ts` — política real: `cases.read`, que tienen los cuatro |
+| Aislamiento entre organizaciones (lista y contador) | ✅ | `mensajes.spec.ts` |
+| Autorización de servidor en expediente ajeno | ✅ | `mensajes.spec.ts` — leer, marcar y escribir devuelven 404 y no crean nada |
+| Escritorio, tablet y móvil | ✅ | `avisos.responsive.spec.ts` — incluido el «Volver» del panel partido, que sólo existe en estrecho |
+| **En móvil se entra viendo la LISTA, no dentro de un hilo** | ✅ | `avisos.responsive.spec.ts` — **defecto corregido**: la pantalla preseleccionaba la primera conversación también en estrecho, donde el hilo tapa la lista (`hidden sm:flex`). El usuario entraba en Mensajes y aparecía dentro de una conversación que no había elegido, y que además quedaba marcada como leída. La preselección sólo ocurre ahora cuando los dos paneles caben a la vez |
+| Contador del encabezado justo al entrar | 🟡 | **Comportamiento anotado**: abrir `/messages` selecciona sola la primera conversación y eso la marca leída sin que el usuario pulse nada, así que la cifra baja a los milisegundos. El marcado ya es honesto (confirmado por el servidor); la cifra se verifica contra el API y con una respuesta fija, no sobre esa carrera |
+
+### `/notifications` y campana del encabezado
+
+Pruebas en `notificaciones.spec.ts` (36) y `avisos.responsive.spec.ts`.
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Campana: nombre accesible | ✅ | `notificaciones.spec.ts` — **defecto corregido**: sólo tenía `title`, que es una ayuda emergente, no un nombre. Ahora `aria-label` dice además cuántas hay |
+| Campana: contador | ✅ | `notificaciones.spec.ts` |
+| Contador «99+» | ✅ | `notificaciones.spec.ts` |
+| Marca de urgentes | ✅ | `notificaciones.spec.ts` |
+| Abrir y cerrar; cierre al pulsar fuera | ✅ | `notificaciones.spec.ts` |
+| Enlace de una alerta a su expediente | ✅ | `notificaciones.spec.ts` |
+| «Ver todas las notificaciones» | ✅ | `notificaciones.spec.ts` |
+| Estado vacío REAL | ✅ | `notificaciones.spec.ts` — cero alertas: sin contador, y el desplegable lo dice |
+| **El fallo de carga NO dice «Sin notificaciones pendientes»** | ✅ | `notificaciones.spec.ts` — **defecto corregido**: `errorCarga` se guardaba y no se pintaba en ninguna parte. Ahora el botón marca «!» en vez de un 0 inventado, y el desplegable explica el fallo. Probado en 401, 500 y fallo de red |
+| «Reintentar» de la campana | ✅ | `notificaciones.spec.ts` |
+| **Descartar baja el contador UNA sola vez** | ✅ | `notificaciones.spec.ts` — **defecto corregido**: `setCount(c => c-1)` más `count - dismissed.size` restaban dos veces; con tres alertas, descartar una dejaba 1 en vez de 2 |
+| **Descartar se confirma con el servidor, con marcha atrás** | ✅ | `notificaciones.spec.ts` — **defecto corregido**: era un POST al aire con `.catch(() => {})`. Con 403, 404, 500 o red caída la alerta vuelve a su sitio y se avisa |
+| Descartar: doble clic | ✅ | `notificaciones.spec.ts` — una sola llamada |
+| Descartar un aviso ALMACENADO persiste | ✅ | `notificaciones.spec.ts` — se elige por id; el servidor lo deja en `read` y no vuelve |
+| Descartar un aviso SINTÉTICO no persiste | — | Por diseño: los avisos vivos (`portal:`, `overdue:`, `isd:`…) se recalculan en cada petición y no hay fila que marcar; el API responde `{ ok: true, synthetic: true }` |
+| Botones «Descartar» con nombre que identifica la alerta | ✅ | `notificaciones.spec.ts` — **defecto corregido**: todos se llamaban «Descartar» y eran indistinguibles |
+| Descartar con teclado, y el botón visible al enfocarlo | ✅ | `notificaciones.spec.ts` — **defecto corregido**: `opacity-0` sin `focus:opacity-100` lo dejaba enfocable pero invisible |
+| Historial: listado, tipo, canal, destinatario, expediente, estado | ✅ | `notificaciones.spec.ts` |
+| Error del envío en las fallidas | ✅ | `notificaciones.spec.ts` |
+| Filtros Tipo, Canal y Estado | ✅ | `notificaciones.spec.ts` — cifras exactas derivadas del sembrado |
+| Combinación de filtros | ✅ | `notificaciones.spec.ts` |
+| **Etiquetas de los filtros asociadas por `htmlFor`/`id`** | ✅ | `notificaciones.spec.ts` — **defecto corregido**: estaban sueltas. Se localizan por `getByLabel` y una guardia comprueba que el `for` apunta a un control real |
+| «Limpiar» | ✅ | `notificaciones.spec.ts` |
+| Resultado vacío por filtros, distinto del vacío absoluto | ✅ | `notificaciones.spec.ts` |
+| Paginación real (34 registros, 2 páginas) | ✅ | `notificaciones.spec.ts` — navega, y filtrar vuelve a la primera |
+| **Estado del envío legible sin depender del color (móvil)** | ✅ | `avisos.responsive.spec.ts` — **defecto corregido**: en móvil era un punto verde o rojo a secas. Ahora lleva «Enviado»/«Fallido» en `sr-only` |
+| Roles con `audit.read` | ✅ | `notificaciones.spec.ts` — política real: lo tienen los CUATRO roles. No hay rol denegado que probar y no se inventa ninguno |
+| Sin sesión → `/login` | ✅ | `notificaciones.spec.ts` |
+| Aislamiento entre organizaciones | ✅ | `notificaciones.spec.ts` |
+| Escritorio, tablet y móvil | ✅ | `avisos.responsive.spec.ts` |
+
+### `/approvals` — Aprobaciones
+
+Pruebas en `aprobaciones.spec.ts` (29) y `avisos.responsive.spec.ts`.
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Contador «N acciones pendientes de revisión» | ✅ | `aprobaciones.spec.ts` — cuadra con la base y con la pestaña |
+| Singular y plural del contador | ✅ | `aprobaciones.spec.ts` — se deja la cola en 1 para ver el singular de verdad |
+| Pestañas Pendientes / Aprobadas / Rechazadas / Todas | ✅ | `aprobaciones.spec.ts` — cada una con su cifra |
+| Fila: acción, expediente, causante, fecha | ✅ | `aprobaciones.spec.ts` |
+| Revisor y fecha de revisión | ✅ | `aprobaciones.spec.ts` |
+| Enlace al expediente | ✅ | `aprobaciones.spec.ts` |
+| Estado vacío real | ✅ | `aprobaciones.spec.ts` |
+| **Las de expedientes borrados no cuentan** | ✅ | `aprobaciones.spec.ts` — **defecto corregido**: faltaba `deletedAt: null` en el contador y en `GET /api/approvals`, así que la misma organización mostraba dos cifras distintas de pendientes en tres pantallas |
+| Aprobar: funciona y persiste | ✅ | `aprobaciones.spec.ts` — recarga; contador, pestaña y lista coherentes |
+| Rechazar: funciona y persiste | ✅ | `aprobaciones.spec.ts` |
+| El dashboard refleja el cambio | ✅ | `aprobaciones.spec.ts` |
+| **Aprobar/rechazar avisa cuando falla** | ✅ | `aprobaciones.spec.ts` — **defecto corregido**: era un `fetch` sin `try`, sin mensaje y sin `finally`; con 403/404/500 no pasaba nada en absoluto. Probado en 400, 403, 404, 409 y 500 |
+| **Fallo de red no deja el botón bloqueado** | ✅ | `aprobaciones.spec.ts` — **defecto corregido**: sin `finally`, `setActing(null)` no llegaba a ejecutarse y el botón se quedaba en «...» para siempre |
+| Respuesta que no es JSON | ✅ | `aprobaciones.spec.ts` — no muestra «Unexpected token» |
+| Doble clic no aprueba dos veces | ✅ | `aprobaciones.spec.ts` |
+| Botones con nombre que identifica la aprobación | ✅ | `aprobaciones.spec.ts` — **defecto corregido**: todas las filas tenían el mismo «Aprobar» |
+| «Ver detalle» / «Ocultar» | ✅ | `aprobaciones.spec.ts` — con `aria-expanded` |
+| Aprobación sin `details`: no aparece el botón | ✅ | `aprobaciones.spec.ts` |
+| **El detalle se muestra como TEXTO, no se ejecuta** | ✅ | `aprobaciones.spec.ts` — se siembra con `<img onerror>`, `<b>` y `<script>`: se leen tal cual y no crean ningún elemento |
+| Roles con `autopilot.approve` | ✅ | `aprobaciones.spec.ts` — política real: OWNER, MANAGER y OPERATOR |
+| Un VIEWER no entra ni por URL directa | ✅ | `aprobaciones.spec.ts` — sin enlace en el menú, y `/approvals` redirige al panel |
+| El servidor rechaza a un VIEWER | ✅ | `aprobaciones.spec.ts` — listar y aprobar devuelven 403; nada cambia |
+| Aislamiento entre organizaciones | ✅ | `aprobaciones.spec.ts` — la cola no la muestra, y aprobar la ajena devuelve 404 |
+| Paginación | — | La cola de la organización de pruebas no llega a 30; el bloque no se pinta. La paginación de esta misma pareja de controles sí se conduce en `/notifications` |
+| Escritorio, tablet y móvil | ✅ | `avisos.responsive.spec.ts` |
 
 ### `/calendar` — Calendario de plazos
 

@@ -327,6 +327,34 @@ export default function MessagesPage() {
   const [filter, setFilter] = useState<"all" | "unread">("unread");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  /*
+   * ¿Caben los dos paneles a la vez?
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * El panel partido oculta la lista en cuanto hay una conversación
+   * seleccionada (`hidden sm:flex`), porque en pantalla estrecha el hilo
+   * ocupa el sitio de la lista. Como la pantalla seleccionaba SOLA la primera
+   * conversación al cargar, en un teléfono el usuario nunca veía la lista:
+   * entraba en Mensajes y aparecía dentro de una conversación que no había
+   * elegido —y que además quedaba marcada como leída—. Para volver a la lista
+   * había que pulsar «Volver», sin saber que había una lista detrás.
+   *
+   * Por encima de `sm` los dos paneles conviven y la preselección sí ayuda:
+   * ahí se mantiene. `640px` es el punto de corte de Tailwind que usa el
+   * propio diseño, no un número elegido aquí.
+   */
+  const cabenLosDosRef = useRef(true);
+  useEffect(() => {
+    const consulta = window.matchMedia("(min-width: 640px)");
+    const sincronizar = () => {
+      cabenLosDosRef.current = consulta.matches;
+    };
+    sincronizar();
+    consulta.addEventListener("change", sincronizar);
+    return () => consulta.removeEventListener("change", sincronizar);
+  }, []);
+
   /**
    * Carga la lista de conversaciones distinguiendo los cuatro estados.
    *
@@ -374,8 +402,11 @@ export default function MessagesPage() {
         setConversations(lista);
         setTotalUnread(cuerpo.totalUnread);
         setSelectedId((actual) => {
-          // Se conserva la seleccion si sigue en la lista; si no, la primera.
+          // Se conserva la seleccion si sigue en la lista.
           if (actual && lista.some((c) => c.caseId === actual)) return actual;
+          // En pantalla estrecha NO se preselecciona: la lista es lo primero
+          // que el usuario tiene que ver.
+          if (!cabenLosDosRef.current) return null;
           return lista.length > 0 ? lista[0].caseId : null;
         });
       })
