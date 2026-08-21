@@ -286,6 +286,7 @@ export function NotificationBell() {
                       <button
                         onClick={(e) => void dismiss(alert.id, e)}
                         disabled={descartando.has(alert.id)}
+                        data-testid={`descartar-${alert.id}`}
                         aria-label={`Descartar: ${cfg.label}${alert.case ? ` (${alert.case.ref})` : ""}`}
                         className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-0.5 rounded text-gray-300 hover:text-gray-500 hover:bg-gray-200 shrink-0 mt-0.5 disabled:opacity-50"
                       >

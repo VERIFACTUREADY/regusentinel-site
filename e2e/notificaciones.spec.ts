@@ -19,7 +19,14 @@
  */
 import { type Page } from "@playwright/test";
 import { test, expect, pantallaUtil, permitirFalloEn } from "./vigilancia";
+import { PrismaClient } from "@prisma/client";
 import { E2E, CIFRAS_AVISOS } from "./seed-e2e";
+
+const prisma = new PrismaClient();
+
+test.afterAll(async () => {
+  await prisma.$disconnect();
+});
 
 async function login(page: Page, email: string, password = E2E.password) {
   await page.goto("/login");
@@ -91,7 +98,11 @@ test.describe("Campana: contador y desplegable", () => {
     await expect(campana(page)).toHaveAttribute("aria-expanded", "true");
 
     // Un clic fuera lo cierra.
-    await page.getByRole("heading", { name: "Dashboard" }).click();
+    //
+    // Con coordenadas, no sobre el encabezado: el desplegable se despliega
+    // justo encima y interceptaba el clic, asi que la prueba se colgaba
+    // esperando a poder pulsar algo que estaba tapado.
+    await page.mouse.click(30, 500);
     await expect(page.getByRole("heading", { name: "Notificaciones" })).toHaveCount(0);
     await page.unroute("**/api/notifications/unread");
   });
@@ -394,29 +405,53 @@ test.describe("Campana: descartar", () => {
     await page.unroute("**/api/notifications/dismiss");
   });
 
-  test("un descarte REAL persiste tras recargar", async ({ page }) => {
+  test("descartar un aviso ALMACENADO persiste tras recargar", async ({ page }) => {
     /*
-     * Sin sustituir la respuesta: se descarta una alerta almacenada de verdad
-     * —las del historial de notificaciones— y se comprueba que el servidor la
-     * ha guardado como leida y ya no vuelve.
+     * Sin sustituir la respuesta: se descarta un aviso guardado de verdad y se
+     * comprueba que el servidor lo ha marcado como leido y ya no vuelve.
+     *
+     * SE ELIGE POR ID, NO EL PRIMERO DE LA LISTA
+     * ------------------------------------------
+     * La campana mezcla dos clases de aviso: los ALMACENADOS —filas de
+     * `NotificationLog`, con un cuid normal— y los SINTETICOS, que se calculan
+     * en cada peticion a partir de tareas vencidas, plazos ISD y mensajes sin
+     * leer, y llevan un id con prefijo (`portal:`, `overdue:`, `isd:`…).
+     * Descartar uno sintetico no puede persistir: no hay fila que marcar, y en
+     * la siguiente carga se vuelve a calcular. Es el comportamiento previsto
+     * —el propio API responde `{ ok: true, synthetic: true }`—, pero significa
+     * que esta prueba solo tiene sentido sobre un aviso almacenado. Cogiendo
+     * «el primero» pillaba uno sintetico y afirmaba algo que el producto no
+     * promete.
      */
+    const almacenado = await prisma.notificationLog.findFirstOrThrow({
+      where: { org: { slug: E2E.avisos.slug }, status: "sent" },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+
     await login(page, E2E.avisos.owner);
     await pantallaUtil(page);
     await campana(page).click();
 
-    const botones = page.getByRole("button", { name: /^Descartar: / });
-    const cuantas = await botones.count();
-    test.skip(cuantas === 0, "El sembrado no ha dejado ninguna alerta que descartar.");
-
-    const nombre = await botones.first().getAttribute("aria-label");
-    await botones.first().click();
+    const boton = page.getByTestId(`descartar-${almacenado.id}`);
+    await expect(boton).toBeVisible();
+    await boton.click();
     await expect(page.getByTestId("error-descartar-aviso")).toHaveCount(0);
 
+    // El servidor lo ha guardado como leido.
+    await expect(async () => {
+      const fila = await prisma.notificationLog.findUniqueOrThrow({
+        where: { id: almacenado.id },
+        select: { status: true },
+      });
+      expect(fila.status).toBe("read");
+    }).toPass({ timeout: 10_000 });
+
+    // Y al recargar no vuelve.
     await page.reload();
     await pantallaUtil(page);
     await campana(page).click();
-    // La alerta descartada no vuelve.
-    await expect(page.getByRole("button", { name: nombre! })).toHaveCount(0);
+    await expect(page.getByTestId(`descartar-${almacenado.id}`)).toHaveCount(0);
   });
 });
 
@@ -500,17 +535,28 @@ test.describe("Historial de notificaciones", () => {
     await page.goto("/notifications");
     await pantallaUtil(page);
 
+    /*
+     * Las cifras se afirman EXACTAS, no «menos que el total».
+     *
+     * La primera version leia el texto con `innerText()` —una sola foto, sin
+     * reintentos— y lo pillaba antes de que llegara la respuesta filtrada,
+     * asi que comparaba contra el recuento sin filtrar. Con `toContainText`
+     * la espera reintenta hasta que el numero es el que debe ser.
+     */
     await page.getByLabel("Tipo").selectOption("ISD_7D");
-    const soloTipo = await page.getByTestId("recuento-notificaciones").innerText();
-    const nTipo = Number(soloTipo.match(/(\d+)/)?.[1]);
-    expect(nTipo).toBeGreaterThan(0);
-    expect(nTipo).toBeLessThan(CIFRAS_AVISOS.notificaciones);
+    await expect(page.getByTestId("recuento-notificaciones")).toContainText(
+      `${CIFRAS_AVISOS.notificacionesIsd7d} notificaciones (filtrado)`,
+    );
+    expect(CIFRAS_AVISOS.notificacionesIsd7d).toBeLessThan(CIFRAS_AVISOS.notificaciones);
 
-    // Combinado con el estado, no puede dar mas que cada uno por separado.
+    // Combinado con el estado, se estrecha mas todavia.
     await page.getByLabel("Estado").selectOption("failed");
-    const combinado = await page.getByTestId("recuento-notificaciones").innerText();
-    const nCombinado = Number(combinado.match(/(\d+)/)?.[1]);
-    expect(nCombinado).toBeLessThanOrEqual(nTipo);
+    await expect(page.getByTestId("recuento-notificaciones")).toContainText(
+      `${CIFRAS_AVISOS.notificacionesIsd7dFallidas} notificacion`,
+    );
+    expect(CIFRAS_AVISOS.notificacionesIsd7dFallidas).toBeLessThanOrEqual(
+      CIFRAS_AVISOS.notificacionesIsd7d,
+    );
   });
 
   test("«Limpiar» quita los filtros y vuelve el total", async ({ page }) => {

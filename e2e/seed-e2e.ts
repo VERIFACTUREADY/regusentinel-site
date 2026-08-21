@@ -295,6 +295,10 @@ export const CIFRAS_AVISOS = {
    */
   notificacionesFallidas: contarNotificaciones((i) => i % 8 === 3),
   notificacionesFamilia: contarNotificaciones((i) => i % 4 === 1),
+  /** Cuantas son de tipo «ISD 7 dias» (indice 2 de la lista de TIPOS). */
+  notificacionesIsd7d: contarNotificaciones((i) => i % 5 === 2),
+  /** Y de esas, cuantas ademas fallaron. */
+  notificacionesIsd7dFallidas: contarNotificaciones((i) => i % 5 === 2 && i % 8 === 3),
 };
 
 /**
