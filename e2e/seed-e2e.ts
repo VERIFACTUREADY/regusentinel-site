@@ -6,6 +6,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { PORTAL_CONSENT_VERSION, PORTAL_CONSENT_HASH } from "../src/lib/portal-consent";
 
 const prisma = new PrismaClient();
 
@@ -1140,28 +1141,38 @@ async function main() {
         updatedAt: new Date(ahoraAvisos - antiguedadHoras * HORA),
       },
     });
-    let n = 0;
-    for (let i = 0; i < leidos; i++) {
+    /*
+     * Los LEIDOS van primero en el tiempo y los SIN LEER despues.
+     *
+     * La primera version numeraba al reves y el mensaje ya leido acababa
+     * siendo el mas reciente, asi que la vista previa de la conversacion
+     * mostraba texto leido teniendo dos sin leer debajo. Ademas de irreal
+     * —la familia escribe y ESO es lo ultimo—, hacia imposible comprobar la
+     * vista previa. El desfase solo se vio al ejecutar la prueba.
+     */
+    const guion = [
+      ...Array.from({ length: leidos }, (_, i) => ({
+        content: `${E2E.avisos.textoLeido} ${i + 1}`,
+        readAt: new Date(ahoraAvisos - 48 * HORA),
+      })),
+      ...Array.from({ length: sinLeer }, (_, i) => ({
+        content: `${E2E.avisos.textoSinLeer} ${i + 1}`,
+        readAt: null,
+      })),
+    ];
+    for (let i = 0; i < guion.length; i++) {
+      const msg = guion[i];
       await prisma.portalMessage.create({
         data: {
           caseId: caso.id,
           fromFamily: true,
           authorName: E2E.avisos.autorFamilia,
-          content: `${E2E.avisos.textoLeido} ${i + 1}`,
-          readAt: new Date(ahoraAvisos - 48 * HORA),
-          createdAt: new Date(ahoraAvisos - (antiguedadHoras + ++n) * HORA),
-        },
-      });
-    }
-    for (let i = 0; i < sinLeer; i++) {
-      await prisma.portalMessage.create({
-        data: {
-          caseId: caso.id,
-          fromFamily: true,
-          authorName: E2E.avisos.autorFamilia,
-          content: `${E2E.avisos.textoSinLeer} ${i + 1}`,
-          readAt: null,
-          createdAt: new Date(ahoraAvisos - (antiguedadHoras + ++n) * HORA),
+          content: msg.content,
+          readAt: msg.readAt,
+          // Cuanto mas al final del guion, mas reciente.
+          createdAt: new Date(
+            ahoraAvisos - (antiguedadHoras + guion.length - i) * HORA,
+          ),
         },
       });
     }
@@ -1171,6 +1182,23 @@ async function main() {
   const casoDos = await expedienteConMensajes(
     E2E.avisos.caseConDos, "Causante Dos Sin Leer", 2, 1, 1,
   );
+  /*
+   * Consentimiento ya aceptado en ESTE expediente.
+   *
+   * El portal familiar tiene una barrera de consentimiento delante: sin ella
+   * la familia ve el aviso de RGPD y no el hilo. La barrera ya se prueba
+   * entera —desde el navegador— en `smoke` y en `documentos`; lo que aqui hace
+   * falta comprobar es otra cosa: que la respuesta del gestor LLEGA a la
+   * familia. Se deja aceptado para no volver a probar lo mismo dos veces.
+   */
+  await prisma.portalConsent.create({
+    data: {
+      caseId: casoDos.id,
+      version: PORTAL_CONSENT_VERSION,
+      textHash: PORTAL_CONSENT_HASH,
+      declaredName: E2E.avisos.autorFamilia,
+    },
+  });
   await expedienteConMensajes(E2E.avisos.caseConUno, "Causante Uno Sin Leer", 1, 0, 3);
   await expedienteConMensajes(E2E.avisos.caseLeido, "Causante Todo Leido", 0, 2, 5);
   // Sin ningun mensaje: no debe aparecer en la lista de conversaciones, ni
