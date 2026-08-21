@@ -12,7 +12,12 @@ export async function GET(req: NextRequest) {
   const page = parseInt(url.searchParams.get("page") || "1");
   const limit = Math.min(parseInt(url.searchParams.get("limit") || "30"), 100);
 
-  const where: Record<string, unknown> = { case: { orgId: session.user.orgId } };
+  // `deletedAt: null`: una aprobacion de un expediente borrado no es trabajo
+  // pendiente. Es el mismo criterio que /dashboard, /today y el contador del
+  // encabezado de esta pantalla.
+  const where: Record<string, unknown> = {
+    case: { orgId: session.user.orgId, deletedAt: null },
+  };
   if (status) where.status = status;
 
   const [approvals, total] = await Promise.all([

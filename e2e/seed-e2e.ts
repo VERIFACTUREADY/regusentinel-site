@@ -197,6 +197,103 @@ export const E2E = {
     slug: "org-e2e-panel-nueva",
     owner: "owner.nueva.e2e@ejemplo.test",
   },
+  /**
+   * Organizacion propia de /messages, /notifications, la campana y /approvals.
+   *
+   * POR QUE APARTE
+   * --------------
+   * Igual que el panel: estas cuatro pantallas cuentan y filtran sobre TODA la
+   * organizacion. Sobre `org-e2e` cualquier prueba de expedientes o del portal
+   * que escriba un mensaje movería los contadores. Y aqui ademas hay que
+   * marcar mensajes como leidos y aprobar cosas, que son escrituras que dejan
+   * huella: mezclarlas con `org-e2e-panel` romperia las cifras que las pruebas
+   * del panel afirman.
+   */
+  avisos: {
+    slug: "org-e2e-avisos",
+    owner: "owner.avisos.e2e@ejemplo.test",
+    manager: "manager.avisos.e2e@ejemplo.test",
+    operador: "operador.avisos.e2e@ejemplo.test",
+    /** VIEWER: tiene `cases.read` pero NO `cases.update` ni `autopilot.approve`. */
+    viewer: "viewer.avisos.e2e@ejemplo.test",
+
+    /** Conversacion con 2 mensajes de familia SIN leer. */
+    caseConDos: "EXP-2026-7100",
+    /** Conversacion con 1 mensaje de familia SIN leer. */
+    caseConUno: "EXP-2026-7101",
+    /** Conversacion con todo leido: sale en «Todos», no en «Sin leer». */
+    caseLeido: "EXP-2026-7102",
+    /** Expediente SIN ningun mensaje: no debe salir en ninguna de las dos. */
+    caseSinMensajes: "EXP-2026-7103",
+
+    autorFamilia: "Familiar Avisos E2E",
+    /** Texto reconocible del primer mensaje sin leer. */
+    textoSinLeer: "Mensaje sin leer de la familia",
+    textoLeido: "Mensaje ya leido de la familia",
+
+    /** Aprobaciones pendientes que se pueden aprobar/rechazar sin miedo. */
+    accionAprobar: "send_draft",
+    accionRechazar: "send_email",
+    /** Detalle largo, para la prueba de «Ver detalle». */
+    detalleAprobacion: "Borrador para la familia:\nEstimada familia, adjuntamos el certificado.",
+    /** Detalle con marcado HTML: debe verse COMO TEXTO, no interpretarse. */
+    detalleConHtml: "<img src=x onerror=alert(1)> <b>negrita</b> & <script>alert(2)</script>",
+  },
+  /** Organizacion vecina de la anterior: nada suyo puede filtrarse. */
+  avisosVecina: {
+    slug: "org-e2e-avisos-vecina",
+    owner: "owner.avisosvecina.e2e@ejemplo.test",
+    caseRef: "EXP-2026-7900",
+    mensaje: "NO-DEBE-VERSE-mensaje-de-la-vecina",
+    autor: "NO-DEBE-VERSE-familiar-vecino",
+  },
+};
+
+/** Cuantos registros de notificacion se siembran. */
+const TOTAL_NOTIFICACIONES = 34;
+
+/** Cuantos de ellos cumplen la condicion, con la misma regla del sembrado. */
+function contarNotificaciones(cumple: (i: number) => boolean): number {
+  let n = 0;
+  for (let i = 0; i < TOTAL_NOTIFICACIONES; i++) if (cumple(i)) n++;
+  return n;
+}
+
+/**
+ * Cifras de los avisos, derivadas del sembrado de mas abajo.
+ *
+ * Se calculan aqui para que las pruebas no repitan numeros magicos: si alguien
+ * cambia el reparto, las afirmaciones le siguen solas.
+ */
+export const CIFRAS_AVISOS = {
+  /** Mensajes de familia sin leer en toda la organizacion (2 + 1). */
+  totalSinLeer: 3,
+  /** Conversaciones con al menos un mensaje sin leer. */
+  conversacionesSinLeer: 2,
+  /** Conversaciones con algun mensaje, leido o no. */
+  conversacionesTotales: 3,
+  /** Aprobaciones PENDIENTES. */
+  aprobacionesPendientes: 3,
+  /** Aprobaciones ya aprobadas. */
+  aprobacionesAprobadas: 1,
+  /** Aprobaciones ya rechazadas. */
+  aprobacionesRechazadas: 1,
+  /**
+   * Registros de notificacion sembrados.
+   *
+   * Mas de 30 a proposito: `/notifications` pagina de 30 en 30 y sin pasar de
+   * esa cifra el bloque de paginacion no se pinta siquiera.
+   */
+  notificaciones: TOTAL_NOTIFICACIONES,
+  /**
+   * Cuantas fallaron y cuantas van a la familia.
+   *
+   * Se CALCULAN con la misma regla que las siembra, no se cuentan a mano: la
+   * primera version decia 8 donde habia 9 y el descuadre solo aparecio al
+   * comprobarlo contra la base. Asi no puede volver a pasar.
+   */
+  notificacionesFallidas: contarNotificaciones((i) => i % 8 === 3),
+  notificacionesFamilia: contarNotificaciones((i) => i % 4 === 1),
 };
 
 /**
@@ -988,6 +1085,234 @@ async function main() {
    * usuario sembrado solo servia la primera vez y fallaba en el reintento de
    * CI y en cualquier reejecucion local. Cada prueba se crea el suyo.
    */
+
+  // ── Organizacion de mensajes, notificaciones y aprobaciones ──────────────
+  const orgAvisos = await prisma.organization.create({
+    data: {
+      name: "Gestoria Avisos E2E",
+      slug: E2E.avisos.slug,
+      subscription: { create: { plan: "FIRMA", status: "active" } },
+      onboardingDismissedAt: new Date(),
+    },
+  });
+
+  const usuariosAvisos: Record<string, string> = {};
+  for (const [clave, email, nombre, rol] of [
+    ["owner", E2E.avisos.owner, "Owner Avisos E2E", "OWNER"],
+    ["manager", E2E.avisos.manager, "Manager Avisos E2E", "MANAGER"],
+    ["operador", E2E.avisos.operador, "Operador Avisos E2E", "OPERATOR"],
+    ["viewer", E2E.avisos.viewer, "Viewer Avisos E2E", "VIEWER"],
+  ] as const) {
+    const u = await prisma.user.create({
+      data: { email, name: nombre, passwordHash: hash },
+    });
+    await prisma.membership.create({
+      data: { userId: u.id, orgId: orgAvisos.id, role: rol },
+    });
+    usuariosAvisos[clave] = u.id;
+  }
+
+  const ahoraAvisos = Date.now();
+  const HORA = 60 * 60 * 1000;
+
+  /**
+   * Crea un expediente de la organizacion de avisos con sus mensajes.
+   *
+   * `sinLeer` y `leidos` son cuantos mensajes DE LA FAMILIA hay de cada clase.
+   * `createdAt` va hacia atras y separado para que el orden sea estable entre
+   * ejecuciones y la conversacion mas reciente sea siempre la misma.
+   */
+  async function expedienteConMensajes(
+    ref: string,
+    causante: string,
+    sinLeer: number,
+    leidos: number,
+    antiguedadHoras: number,
+  ) {
+    const caso = await prisma.case.create({
+      data: {
+        orgId: orgAvisos.id,
+        ref,
+        status: "IN_PROGRESS",
+        portalEnabled: true,
+        deceased: { create: { fullName: causante } },
+        contact: { create: { fullName: `Contacto de ${causante}` } },
+        updatedAt: new Date(ahoraAvisos - antiguedadHoras * HORA),
+      },
+    });
+    let n = 0;
+    for (let i = 0; i < leidos; i++) {
+      await prisma.portalMessage.create({
+        data: {
+          caseId: caso.id,
+          fromFamily: true,
+          authorName: E2E.avisos.autorFamilia,
+          content: `${E2E.avisos.textoLeido} ${i + 1}`,
+          readAt: new Date(ahoraAvisos - 48 * HORA),
+          createdAt: new Date(ahoraAvisos - (antiguedadHoras + ++n) * HORA),
+        },
+      });
+    }
+    for (let i = 0; i < sinLeer; i++) {
+      await prisma.portalMessage.create({
+        data: {
+          caseId: caso.id,
+          fromFamily: true,
+          authorName: E2E.avisos.autorFamilia,
+          content: `${E2E.avisos.textoSinLeer} ${i + 1}`,
+          readAt: null,
+          createdAt: new Date(ahoraAvisos - (antiguedadHoras + ++n) * HORA),
+        },
+      });
+    }
+    return caso;
+  }
+
+  const casoDos = await expedienteConMensajes(
+    E2E.avisos.caseConDos, "Causante Dos Sin Leer", 2, 1, 1,
+  );
+  await expedienteConMensajes(E2E.avisos.caseConUno, "Causante Uno Sin Leer", 1, 0, 3);
+  await expedienteConMensajes(E2E.avisos.caseLeido, "Causante Todo Leido", 0, 2, 5);
+  // Sin ningun mensaje: no debe aparecer en la lista de conversaciones, ni
+  // siquiera con el filtro «Todos», porque el API exige `portalMessages.some`.
+  const casoSinMensajes = await prisma.case.create({
+    data: {
+      orgId: orgAvisos.id,
+      ref: E2E.avisos.caseSinMensajes,
+      status: "INTAKE",
+      deceased: { create: { fullName: "Causante Sin Mensajes" } },
+    },
+  });
+
+  // ── Aprobaciones ──
+  //
+  // Tres pendientes: una para aprobar, otra para rechazar y una tercera que se
+  // queda intacta, para que el contador nunca llegue a cero por accidente y
+  // las pruebas de plural tengan con que trabajar.
+  await prisma.approval.create({
+    data: {
+      caseId: casoDos.id,
+      action: E2E.avisos.accionAprobar,
+      status: "PENDING",
+      details: E2E.avisos.detalleAprobacion,
+      createdAt: new Date(ahoraAvisos - 3 * HORA),
+    },
+  });
+  await prisma.approval.create({
+    data: {
+      caseId: casoDos.id,
+      action: E2E.avisos.accionRechazar,
+      status: "PENDING",
+      details: E2E.avisos.detalleConHtml,
+      createdAt: new Date(ahoraAvisos - 2 * HORA),
+    },
+  });
+  await prisma.approval.create({
+    data: {
+      caseId: casoSinMensajes.id,
+      action: "generate_checklist",
+      status: "PENDING",
+      // Sin `details`: el boton «Ver detalle» NO debe aparecer en esta fila.
+      details: null,
+      createdAt: new Date(ahoraAvisos - HORA),
+    },
+  });
+  await prisma.approval.create({
+    data: {
+      caseId: casoDos.id,
+      action: "mark_sent",
+      status: "APPROVED",
+      reviewerId: usuariosAvisos.owner,
+      reviewedAt: new Date(ahoraAvisos - 24 * HORA),
+      createdAt: new Date(ahoraAvisos - 25 * HORA),
+    },
+  });
+  await prisma.approval.create({
+    data: {
+      caseId: casoDos.id,
+      action: "send_email",
+      status: "REJECTED",
+      reviewerId: usuariosAvisos.manager,
+      reviewedAt: new Date(ahoraAvisos - 20 * HORA),
+      createdAt: new Date(ahoraAvisos - 21 * HORA),
+    },
+  });
+
+  // ── Historial de notificaciones ──
+  //
+  // Mas de 30 para que la paginacion exista de verdad. El reparto de tipo,
+  // canal y estado es fijo, no aleatorio: las pruebas afirman cuantas quedan
+  // con cada filtro y un `Math.random()` las haria fallar un dia de cada
+  // tantos sin que nadie supiera por que.
+  const TIPOS = ["ISD_60D", "ISD_30D", "ISD_7D", "ISD_1D", "ISD_PASSED"] as const;
+  for (let i = 0; i < TOTAL_NOTIFICACIONES; i++) {
+    const fallida = i % 8 === 3;
+    const deFamilia = i % 4 === 1;
+    await prisma.notificationLog.create({
+      data: {
+        orgId: orgAvisos.id,
+        caseId: casoDos.id,
+        kind: TIPOS[i % TIPOS.length],
+        channel: deFamilia ? "EMAIL_FAMILY" : "EMAIL_INTERNAL",
+        recipient: `avisos-${String(i + 1).padStart(2, "0")}@ejemplo.test`,
+        status: fallida ? "failed" : "sent",
+        error: fallida ? "SMTP 550: buzon no encontrado" : null,
+        // Separados y hacia atras: orden estable entre paginas.
+        createdAt: new Date(ahoraAvisos - (i + 1) * HORA),
+      },
+    });
+  }
+
+  // ── Organizacion vecina: nada suyo puede filtrarse ──
+  const orgAvisosVecina = await prisma.organization.create({
+    data: {
+      name: "Gestoria Avisos Vecina E2E",
+      slug: E2E.avisosVecina.slug,
+      subscription: { create: { plan: "FIRMA", status: "active" } },
+      onboardingDismissedAt: new Date(),
+    },
+  });
+  const ownerAvisosVecina = await prisma.user.create({
+    data: { email: E2E.avisosVecina.owner, name: "Owner Avisos Vecina E2E", passwordHash: hash },
+  });
+  await prisma.membership.create({
+    data: { userId: ownerAvisosVecina.id, orgId: orgAvisosVecina.id, role: "OWNER" },
+  });
+  const casoAvisosVecino = await prisma.case.create({
+    data: {
+      orgId: orgAvisosVecina.id,
+      ref: E2E.avisosVecina.caseRef,
+      status: "IN_PROGRESS",
+      portalEnabled: true,
+      deceased: { create: { fullName: "NO-DEBE-VERSE-Causante-Avisos" } },
+    },
+  });
+  await prisma.portalMessage.create({
+    data: {
+      caseId: casoAvisosVecino.id,
+      fromFamily: true,
+      authorName: E2E.avisosVecina.autor,
+      content: E2E.avisosVecina.mensaje,
+      readAt: null,
+    },
+  });
+  await prisma.approval.create({
+    data: {
+      caseId: casoAvisosVecino.id,
+      action: "NO_DEBE_VERSE_aprobacion_vecina",
+      status: "PENDING",
+    },
+  });
+  await prisma.notificationLog.create({
+    data: {
+      orgId: orgAvisosVecina.id,
+      caseId: casoAvisosVecino.id,
+      kind: "ISD_7D",
+      channel: "EMAIL_INTERNAL",
+      recipient: "NO-DEBE-VERSE-destinatario@ejemplo.test",
+      status: "sent",
+    },
+  });
 
   console.log("[seed-e2e] Datos de prueba creados.");
 }

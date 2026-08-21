@@ -3,7 +3,6 @@
 import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import type { Metadata } from "next";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,8 +60,52 @@ function ThreadPanel({
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [errorMarcado, setErrorMarcado] = useState<string | null>(null);
   const [reintento, setReintento] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Marca el hilo como leído y SÓLO entonces baja el contador.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Antes era:
+   *
+   *     fetch(url, { method: "PUT" }).catch(() => {});
+   *     onMarkRead(conv.caseId);
+   *
+   * Un disparo al aire y una bajada inmediata del contador, pasara lo que
+   * pasara en el servidor. El caso no es hipotético: `PUT` exige
+   * `cases.update`, que un VIEWER **no tiene**. Un VIEWER abría la
+   * conversación, veía desaparecer el «3 sin leer»… y al recargar volvía,
+   * porque el servidor había respondido 403 y nadie se enteró. Lo mismo con un
+   * 500 o con la red caída.
+   *
+   * Ahora el contador se mueve cuando el servidor lo confirma, y si no puede
+   * se dice con un aviso que ofrece reintentar.
+   */
+  const marcarLeido = useCallback(async () => {
+    setErrorMarcado(null);
+    try {
+      const res = await fetch(`/api/cases/${conv.caseId}/portal-messages`, { method: "PUT" });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => null);
+        setErrorMarcado(
+          cuerpo?.error ??
+            (res.status === 403
+              ? "No tienes permiso para marcar los mensajes como leidos."
+              : res.status === 404
+                ? "El expediente ya no existe."
+                : `No se ha podido marcar como leido (${res.status}).`),
+        );
+        return;
+      }
+      // Confirmado por el servidor: ahora sí baja el contador.
+      onMarkRead(conv.caseId);
+    } catch {
+      setErrorMarcado("No se ha podido marcar como leido: error de red.");
+    }
+  }, [conv.caseId, onMarkRead]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -73,7 +116,11 @@ function ThreadPanel({
           throw new Error(
             r.status === 401
               ? "Tu sesion ha caducado. Vuelve a entrar."
-              : `El servidor ha respondido ${r.status}.`,
+              : r.status === 403
+                ? "No tienes permiso para ver estos mensajes."
+                : r.status === 404
+                  ? "El expediente ya no existe."
+                  : `El servidor ha respondido ${r.status}.`,
           );
         }
         return r.json();
@@ -83,10 +130,10 @@ function ThreadPanel({
           throw new Error("La respuesta del servidor no tiene el formato esperado.");
         }
         setMessages(data);
-        // El marcado como leido es ahora una escritura explicita: el GET del
-        // hilo ya no muta la base de datos.
-        fetch(`/api/cases/${conv.caseId}/portal-messages`, { method: "PUT" }).catch(() => {});
-        onMarkRead(conv.caseId);
+        // El marcado como leido es una escritura explicita y CONFIRMADA: el
+        // GET del hilo ya no muta la base de datos, y el contador no se toca
+        // hasta que el servidor responde que sí.
+        void marcarLeido();
       })
       .catch((e: unknown) => {
         // Un hilo vacio por un fallo de carga aparenta que el familiar no ha
@@ -95,7 +142,7 @@ function ThreadPanel({
         setErrorCarga(e instanceof Error ? e.message : "Error de red. Comprueba tu conexion.");
       })
       .finally(() => setLoading(false));
-  }, [conv.caseId, onMarkRead, reintento]);
+  }, [conv.caseId, marcarLeido, reintento]);
 
   useEffect(() => {
     load();
@@ -106,7 +153,10 @@ function ThreadPanel({
   }, [messages]);
 
   async function handleSend() {
-    if (!reply.trim()) return;
+    // La guardia `sending` no sobra: el boton se inhabilita, pero ⌘Enter
+    // dispara igual mientras la primera peticion esta en vuelo y el mensaje se
+    // enviaba dos veces.
+    if (sending || !reply.trim()) return;
     setSending(true);
     setSendError(null);
     try {
@@ -115,15 +165,26 @@ function ThreadPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: reply.trim() }),
       });
+      // El cuerpo se lee con red de seguridad: un 502 del proxy devuelve HTML y
+      // `res.json()` a secas soltaba «Unexpected token '<'» como aviso.
+      const cuerpo = await res.json().catch(() => null);
       if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.error || "Error al enviar");
+        throw new Error(
+          cuerpo?.error ??
+            (res.status === 403
+              ? "No tienes permiso para responder en este expediente."
+              : `El servidor ha respondido ${res.status}.`),
+        );
       }
-      const msg = await res.json();
-      setMessages((prev) => [...prev, msg]);
+      if (!cuerpo || typeof cuerpo.id !== "string") {
+        // Sin confirmacion del servidor NO se pinta el mensaje: verlo en
+        // pantalla es, para el usuario, la prueba de que se ha enviado.
+        throw new Error("El servidor no ha confirmado el envio del mensaje.");
+      }
+      setMessages((prev) => [...prev, cuerpo as PortalMessage]);
       setReply("");
-    } catch (e: any) {
-      setSendError(e.message);
+    } catch (e: unknown) {
+      setSendError(e instanceof Error ? e.message : "Error de red. El mensaje no se ha enviado.");
     } finally {
       setSending(false);
     }
@@ -157,8 +218,25 @@ function ThreadPanel({
         </div>
       </div>
 
+      {/* El contador no ha bajado: hay que decirlo */}
+      {errorMarcado && (
+        <div
+          role="alert"
+          data-testid="error-marcar-leido"
+          className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 flex items-center justify-between gap-3"
+        >
+          <span>{errorMarcado} Siguen contando como sin leer.</span>
+          <button
+            onClick={() => void marcarLeido()}
+            className="shrink-0 underline font-medium hover:text-amber-700"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+      <div data-testid="hilo-mensajes" className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
         {errorCarga ? (
           <AvisoError mensaje={errorCarga} que="los mensajes" onReintentar={() => setReintento((n) => n + 1)} />
         ) : loading ? (
@@ -196,7 +274,9 @@ function ThreadPanel({
       {/* Reply box */}
       <div className="px-4 py-3 border-t bg-white">
         {sendError && (
-          <p className="text-xs text-red-600 mb-2">{sendError}</p>
+          <p role="alert" data-testid="error-enviar-mensaje" className="text-xs text-red-600 mb-2">
+            {sendError}
+          </p>
         )}
         <div className="flex gap-2">
           <textarea
@@ -206,12 +286,16 @@ function ThreadPanel({
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSend();
             }}
             placeholder="Escribe una respuesta a la familia… (⌘Enter para enviar)"
+            aria-label="Respuesta a la familia"
+            data-testid="campo-respuesta"
             rows={2}
             className="flex-1 px-3 py-2 border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/40"
           />
           <button
             onClick={handleSend}
             disabled={sending || !reply.trim()}
+            aria-label="Enviar respuesta"
+            data-testid="boton-enviar-mensaje"
             className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 shrink-0"
           >
             {sending ? (
@@ -238,42 +322,93 @@ export default function MessagesPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [totalUnread, setTotalUnread] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
   const [filter, setFilter] = useState<"all" | "unread">("unread");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  /**
+   * Carga la lista de conversaciones distinguiendo los cuatro estados.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Antes era, literalmente:
+   *
+   *     .then((r) => (r.ok ? r.json() : null))
+   *     .then((data) => { if (data) { ... } })
+   *     .catch(() => {})
+   *
+   * Con un 401, un 403, un 500 o la red caída, `data` era `null`, el `if` no
+   * entraba, `conversations` se quedaba en `[]` y la pantalla mostraba su
+   * estado vacío: **«No hay mensajes sin leer»**. Indistinguible de que de
+   * verdad no hubiera ninguno, y significando lo contrario: el gestor cerraba
+   * tranquilo una pantalla que le estaba escondiendo a las familias esperando
+   * respuesta. El `.catch(() => {})` remataba tragándose el fallo de red.
+   */
   const loadConversations = useCallback(() => {
     setLoading(true);
+    setErrorCarga(null);
     const params = filter === "unread" ? "?filter=unread" : "";
     fetch(`/api/messages${params}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          setConversations(data.conversations);
-          setTotalUnread(data.totalUnread);
-          if (!selectedId && data.conversations.length > 0) {
-            setSelectedId(data.conversations[0].caseId);
-          }
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : r.status === 403
+                ? "No tienes permiso para ver los mensajes."
+                : `El servidor ha respondido ${r.status}.`,
+          );
         }
+        return r.json();
       })
-      .catch(() => {})
+      .then((data: unknown) => {
+        // Una respuesta 200 con otra forma —un proxy, una version antigua del
+        // API— dejaba `conversations` en `undefined` y la pantalla reventaba
+        // al recorrerla. Se valida antes de usarla.
+        const cuerpo = data as { conversations?: unknown; totalUnread?: unknown };
+        if (!cuerpo || !Array.isArray(cuerpo.conversations) || typeof cuerpo.totalUnread !== "number") {
+          throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        }
+        const lista = cuerpo.conversations as Conversation[];
+        setConversations(lista);
+        setTotalUnread(cuerpo.totalUnread);
+        setSelectedId((actual) => {
+          // Se conserva la seleccion si sigue en la lista; si no, la primera.
+          if (actual && lista.some((c) => c.caseId === actual)) return actual;
+          return lista.length > 0 ? lista[0].caseId : null;
+        });
+      })
+      .catch((e: unknown) => {
+        // Sin datos NO se pinta el estado vacio: se pinta el fallo.
+        setConversations([]);
+        setTotalUnread(0);
+        setSelectedId(null);
+        setErrorCarga(e instanceof Error ? e.message : "Error de red. Comprueba tu conexion.");
+      })
       .finally(() => setLoading(false));
-  }, [filter, selectedId]);
+  }, [filter]);
 
   useEffect(() => {
     loadConversations();
-  }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loadConversations, reintento]);
 
-  function handleMarkRead(caseId: string) {
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.caseId === caseId ? { ...c, unreadCount: 0 } : c
-      )
-    );
-    setTotalUnread((prev) => {
-      const conv = conversations.find((c) => c.caseId === caseId);
-      return Math.max(0, prev - (conv?.unreadCount ?? 0));
+  /**
+   * Baja el contador de una conversacion ya confirmada como leida.
+   *
+   * `setTotalUnread` leia `conversations` del CIERRE, no del estado vigente:
+   * con dos marcados seguidos el segundo restaba la cifra que ya no era, y el
+   * total quedaba descuadrado hasta recargar. Se resuelve todo dentro del
+   * actualizador de `conversations`, que sí ve el estado real.
+   */
+  const handleMarkRead = useCallback((caseId: string) => {
+    setConversations((prev) => {
+      const conv = prev.find((c) => c.caseId === caseId);
+      const restaba = conv?.unreadCount ?? 0;
+      if (restaba > 0) setTotalUnread((t) => Math.max(0, t - restaba));
+      return prev.map((c) => (c.caseId === caseId ? { ...c, unreadCount: 0 } : c));
     });
-  }
+  }, []);
 
   const selectedConv = conversations.find((c) => c.caseId === selectedId) ?? null;
 
@@ -285,7 +420,10 @@ export default function MessagesPage() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             Mensajes del portal
             {totalUnread > 0 && (
-              <span className="text-sm font-normal bg-primary text-white px-2 py-0.5 rounded-full">
+              <span
+                data-testid="total-sin-leer"
+                className="text-sm font-normal bg-primary text-white px-2 py-0.5 rounded-full"
+              >
                 {totalUnread} sin leer
               </span>
             )}
@@ -299,6 +437,8 @@ export default function MessagesPage() {
             <button
               key={val}
               onClick={() => { setFilter(val); setSelectedId(null); }}
+              data-testid={`filtro-${val}`}
+              aria-pressed={filter === val}
               className={`px-3 py-1.5 text-sm rounded-md transition ${
                 filter === val ? "bg-white shadow font-medium" : "text-gray-600 hover:text-gray-900"
               }`}
@@ -314,21 +454,38 @@ export default function MessagesPage() {
         {/* Conversation list */}
         <div className={`w-full sm:w-72 lg:w-80 border-r flex flex-col shrink-0 ${selectedId ? "hidden sm:flex" : "flex"}`}>
           <div className="px-4 py-3 border-b bg-gray-50">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              {loading ? "Cargando…" : `${conversations.length} conversacion${conversations.length !== 1 ? "es" : ""}`}
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider" data-testid="recuento-conversaciones">
+              {loading
+                ? "Cargando…"
+                : errorCarga
+                  ? "No disponible"
+                  : `${conversations.length} conversacion${conversations.length !== 1 ? "es" : ""}`}
             </p>
           </div>
 
           {loading ? (
-            <div className="flex-1 p-3 space-y-2">
+            <div className="flex-1 p-3 space-y-2" data-testid="cargando-conversaciones">
               {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />
               ))}
             </div>
+          ) : errorCarga ? (
+            /*
+              El fallo NUNCA se pinta como estado vacio: «No hay mensajes sin
+              leer» con la peticion caida es exactamente al reves de lo que
+              esta pasando.
+            */
+            <div className="flex-1 p-4 overflow-y-auto">
+              <AvisoError
+                mensaje={errorCarga}
+                que="las conversaciones"
+                onReintentar={() => setReintento((n) => n + 1)}
+              />
+            </div>
           ) : conversations.length === 0 ? (
             <div className="flex-1 flex items-center justify-center p-6">
-              <div className="text-center">
-                <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="text-center" data-testid="vacio-conversaciones">
+                <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
                 <p className="text-sm text-gray-400">
@@ -352,6 +509,8 @@ export default function MessagesPage() {
                   <button
                     key={conv.caseId}
                     onClick={() => setSelectedId(conv.caseId)}
+                    data-testid={`conversacion-${conv.caseRef}`}
+                    aria-current={isSelected ? "true" : undefined}
                     className={`w-full px-4 py-3 text-left border-b hover:bg-gray-50 transition ${
                       isSelected ? "bg-primary/5 border-l-2 border-l-primary" : ""
                     }`}
@@ -426,7 +585,11 @@ export default function MessagesPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
                 <p className="text-gray-400 text-sm font-medium">
-                  {conversations.length > 0 ? "Selecciona una conversación" : "No hay mensajes"}
+                  {errorCarga
+                    ? "No se han podido cargar las conversaciones"
+                    : conversations.length > 0
+                      ? "Selecciona una conversación"
+                      : "No hay mensajes"}
                 </p>
               </div>
             </div>

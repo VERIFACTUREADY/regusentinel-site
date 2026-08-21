@@ -563,10 +563,14 @@ No se prueban ni se inventan; quedan declaradas:
 **Con estados de carga probados** (carga, vacío, error y «Reintentar», vía
 `estados-carga.spec.ts`), pero **sin sus interacciones propias probadas**:
 
-`/notifications`, `/approvals`, `/audit`, `/workflow-logs`.
+`/audit`, `/workflow-logs`.
 
 Que la pantalla resista un fallo de carga no significa que sus botones estén
-probados. Aprobar sigue sin cobertura.
+probados.
+
+`/notifications` y `/approvals` ya no están en esta lista: tienen sección propia
+arriba. Aprobar y rechazar se conducen desde el navegador, con sus caminos de
+error, en `aprobaciones.spec.ts`.
 
 `/cases/kanban` ya no está en esta lista: mover tarjetas se prueba entero
 —arrastre, petición real, persistencia y los dos caminos de fallo— en
@@ -577,10 +581,17 @@ navegador contra MinIO real en `documentos.spec.ts`.
 
 **Sin ninguna cobertura de interfaz:**
 
-`/dashboard`, `/today`, `/messages`, `/reports` (+ `isd`, `pipeline`, `portal`,
-`team`), `/templates`, `/templates/[id]`, `/case-templates`, `/workflow-rules`,
-`/settings` (+ `general`, `branding`, `integrations`, `notifications`,
-`users`), `/profile`, `/cases/[id]/isd`, `/admin/*`.
+`/reports` (+ `isd`, `pipeline`, `portal`, `team`), `/templates`,
+`/templates/[id]`, `/case-templates`, `/workflow-rules`, `/settings`
+(+ `general`, `branding`, `integrations`, `notifications`, `users`),
+`/profile`, `/cases/[id]/isd`, `/admin/*`.
+
+`/dashboard` y `/today` ya no están en esta lista: tienen sección propia arriba,
+con sus indicadores, widgets, fechas españolas, roles y aislamiento conducidos
+desde el navegador. `/messages`, `/notifications` y `/approvals` tampoco: se
+prueban enteros —conversaciones, hilo, marcar leído, envío, filtros,
+paginación, aprobar/rechazar, roles y aislamiento— en `mensajes.spec.ts`,
+`notificaciones.spec.ts` y `aprobaciones.spec.ts`.
 
 `/cases/import` y `/cases/[id]` salen de esta lista: la importación se prueba
 entera —fichero válido, cabeceras malas, datos inválidos, fichero vacío,

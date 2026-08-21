@@ -43,6 +43,8 @@ export function ApprovalsQueue() {
   const [refresco, setRefresco] = useState(0);
   const [statusFilter, setStatusFilter] = useState("PENDING");
   const [acting, setActing] = useState<string | null>(null);
+  const [errorAccion, setErrorAccion] = useState<string | null>(null);
+  const [exito, setExito] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -84,22 +86,67 @@ export function ApprovalsQueue() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
+  /**
+   * Aprueba o rechaza, y sólo lo da por hecho si el servidor lo confirma.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Antes era un `fetch` a pelo, sin `try`, sin mensaje de error y sin
+   * `finally`:
+   *
+   *   - con un 403, un 404 o un 500, el `if (res.ok)` no entraba y **no
+   *     pasaba absolutamente nada**: el usuario pulsaba «Aprobar», el botón
+   *     volvía a su sitio y la aprobación seguía pendiente, sin una palabra;
+   *   - con la red caída, `fetch` rechazaba, la línea `setActing(null)` no
+   *     llegaba a ejecutarse y el botón se quedaba **bloqueado en «...»** para
+   *     siempre, con una promesa sin capturar en la consola.
+   *
+   * Aprobar o rechazar es una decisión con consecuencias —se envían correos a
+   * las familias—, así que no puede fallar en silencio ni aparentar éxito.
+   */
   async function handleAction(id: string, status: "APPROVED" | "REJECTED") {
+    // Doble clic: la segunda pulsación no entra mientras la primera vuela.
+    if (acting) return;
     setActing(id);
-    const res = await fetch(`/api/approvals/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    if (res.ok) {
+    setErrorAccion(null);
+    setExito(null);
+    try {
+      const res = await fetch(`/api/approvals/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      // Con red de seguridad: un 502 del proxy devuelve HTML y `res.json()` a
+      // secas soltaria «Unexpected token '<'» como mensaje al usuario.
+      const cuerpo = await res.json().catch(() => null);
+      if (!res.ok) {
+        setErrorAccion(
+          cuerpo?.error ??
+            (res.status === 403
+              ? "No tienes permiso para revisar aprobaciones."
+              : res.status === 404
+                ? "La aprobacion ya no existe. Actualiza la lista."
+                : res.status === 409
+                  ? "Esta aprobacion ya ha sido revisada por otra persona."
+                  : `El servidor ha respondido ${res.status}.`),
+        );
+        return;
+      }
+      // Sólo aquí cambia el estado en pantalla.
       setApprovals((prev) =>
         prev.map((a) =>
           a.id === id ? { ...a, status, reviewedAt: new Date().toISOString() } : a
         )
       );
+      setExito(status === "APPROVED" ? "Aprobacion registrada." : "Rechazo registrado.");
+      // Refresca el contador del encabezado, que lo pinta el servidor.
       router.refresh();
+    } catch {
+      setErrorAccion("No se ha podido completar: error de red. Nada ha cambiado.");
+    } finally {
+      // En `finally`: si no, un rechazo de `fetch` dejaba el boton inutilizable.
+      setActing(null);
     }
-    setActing(null);
   }
 
   return (
@@ -115,6 +162,8 @@ export function ApprovalsQueue() {
           <button
             key={tab.value}
             onClick={() => { setStatusFilter(tab.value); setPage(1); }}
+            data-testid={`pestana-${tab.value || "todas"}`}
+            aria-pressed={statusFilter === tab.value}
             className={`px-4 py-1.5 text-sm rounded-md transition ${
               statusFilter === tab.value
                 ? "bg-white shadow font-medium"
@@ -127,9 +176,29 @@ export function ApprovalsQueue() {
       </div>
 
       {/* Count */}
-      <div className="text-sm text-gray-500">
+      <div className="text-sm text-gray-500" data-testid="recuento-aprobaciones">
         {total} aprobacion{total !== 1 ? "es" : ""}
       </div>
+
+      {/* Resultado de la ultima accion */}
+      {errorAccion && (
+        <p
+          role="alert"
+          data-testid="error-accion-aprobacion"
+          className="text-sm rounded-md px-3 py-2 bg-red-50 text-red-700 border border-red-200"
+        >
+          {errorAccion}
+        </p>
+      )}
+      {exito && (
+        <p
+          role="status"
+          data-testid="exito-accion-aprobacion"
+          className="text-sm rounded-md px-3 py-2 bg-green-50 text-green-700 border border-green-200"
+        >
+          {exito}
+        </p>
+      )}
 
       {/* Queue */}
       <div className="space-y-3">
@@ -197,6 +266,8 @@ export function ApprovalsQueue() {
                       {a.details && (
                         <button
                           onClick={() => setExpandedId(isExpanded ? null : a.id)}
+                          aria-expanded={isExpanded}
+                          aria-label={`${isExpanded ? "Ocultar" : "Ver"} detalle de ${ACTION_LABELS[a.action] ?? a.action}${a.case ? ` (${a.case.ref})` : ""}`}
                           className="px-3 py-1.5 text-xs border rounded-md hover:bg-gray-50"
                         >
                           {isExpanded ? "Ocultar" : "Ver detalle"}
@@ -204,16 +275,23 @@ export function ApprovalsQueue() {
                       )}
                       {a.status === "PENDING" && (
                         <>
+                          {/*
+                            Con «Aprobar» a secas los botones de todas las
+                            filas tenian el mismo nombre accesible y no habia
+                            forma de saber sobre cual se estaba actuando.
+                          */}
                           <button
                             onClick={() => handleAction(a.id, "APPROVED")}
-                            disabled={acting === a.id}
+                            disabled={acting !== null}
+                            aria-label={`Aprobar: ${ACTION_LABELS[a.action] ?? a.action}${a.case ? ` (${a.case.ref})` : ""}`}
                             className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
                           >
                             {acting === a.id ? "..." : "Aprobar"}
                           </button>
                           <button
                             onClick={() => handleAction(a.id, "REJECTED")}
-                            disabled={acting === a.id}
+                            disabled={acting !== null}
+                            aria-label={`Rechazar: ${ACTION_LABELS[a.action] ?? a.action}${a.case ? ` (${a.case.ref})` : ""}`}
                             className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
                           >
                             Rechazar
@@ -227,7 +305,12 @@ export function ApprovalsQueue() {
                 {/* Expanded details */}
                 {isExpanded && a.details && (
                   <div className="px-4 sm:px-6 py-4 bg-gray-50 border-t">
-                    <pre className="whitespace-pre-wrap text-sm font-mono text-gray-700 leading-relaxed max-h-96 overflow-y-auto">
+                    {/*
+                      `<pre>` con el texto como hijo de React: el contenido se
+                      escapa siempre. Nada de `dangerouslySetInnerHTML`, que es
+                      lo unico que podria ejecutar lo que venga en `details`.
+                    */}
+                    <pre data-testid={`detalle-${a.id}`} className="whitespace-pre-wrap text-sm font-mono text-gray-700 leading-relaxed max-h-96 overflow-y-auto">
                       {a.details}
                     </pre>
                   </div>
