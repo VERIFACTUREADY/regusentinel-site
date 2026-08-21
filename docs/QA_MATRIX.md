@@ -72,7 +72,9 @@ componentes hijos (`onboarding-panel`, `demo-highlights`, `my-tasks-widget`,
 | Enlaces «Ampliar plan» y «Gestionar suscripcion» | ✅ | `dashboard.spec.ts` — se pulsan y llegan a `/billing` |
 | Uso del plan: HTTP 401, 403, 500 y fallo de red | ✅ | `dashboard.spec.ts` — mensaje propio de cada caso |
 | Uso del plan: «Reintentar» | ✅ | `dashboard.spec.ts` — vuelve a pedirlo y el widget aparece |
-| «Plazos proximos (30 días)»: borde del rango | ✅ | `dashboard.spec.ts` — entra el de 30 días, no entra el de 31 |
+| «Plazos proximos (30 días)»: la ventana y el corte | ✅ | `dashboard.spec.ts` — el de 31 días no aparece nunca; el bloque corta en 8 y va en orden ascendente. **La versión anterior de esta prueba pasaba por accidente**: el sembrado anclaba los plazos al día civil UTC, «vence hoy» caía en el pasado y liberaba el octavo hueco |
+| **Una tarea que vence HOY no se etiqueta «VENCIDO»** | ✅ | `dashboard.spec.ts` — **defecto corregido**: la etiqueta era `days <= 0 ? "VENCIDO"`, y `days` cuenta días civiles, así que una tarea que vence hoy a mediodía se anunciaba como vencida a las nueve de la mañana — en un bloque cuya consulta es `deadline >= now`, donde nada puede estar vencido |
+| **Los plazos del sembrado se anclan al día civil ESPAÑOL** | ✅ | `seed-e2e.ts` — **defecto corregido**: se anclaban a las 12:00 UTC, y entre las 00:00 y las 02:00 de Madrid el día UTC va uno por detrás, así que todos los plazos se sembraban un día antes y tres pruebas de `/today` fallaban. Una ventana de dos horas al día en la que la suite se caía sola |
 | «Tareas bloqueadas +7 días»: borde del corte | ✅ | `dashboard.spec.ts` — entran la de 8 y la de 20, no la de 6; se ve el motivo del bloqueo |
 | Los dos bloques anteriores con su consulta caída | ✅ | `dashboard.spec.ts` — cada uno lo dice por separado |
 | Carga de trabajo del equipo | ✅ | `dashboard.spec.ts` — miembros con tareas, activas/bloqueadas; quien no tiene tareas no aparece |
