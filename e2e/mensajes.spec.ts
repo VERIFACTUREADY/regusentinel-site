@@ -151,6 +151,9 @@ test.describe("Mensajes: listado de conversaciones", () => {
      * pero sí hace que afirmar la cifra sobre el DOM nada mas entrar sea una
      * carrera contra ese marcado. Queda anotado en QA_MATRIX.
      */
+    // El punto de partida se establece aqui, no se hereda: cualquier prueba
+    // anterior que abriera una conversacion pudo dejar algo marcado.
+    await restaurarBase();
     await login(page, E2E.avisos.owner);
 
     const res = await page.request.get("/api/messages?filter=unread");
@@ -759,6 +762,8 @@ test.describe("Mensajes: roles y aislamiento", () => {
   });
 
   test("el contador tampoco suma los mensajes de la vecina", async ({ page }) => {
+    // Igual que arriba: la cifra exacta exige un punto de partida propio.
+    await restaurarBase();
     await login(page, E2E.avisos.owner);
 
     /*
