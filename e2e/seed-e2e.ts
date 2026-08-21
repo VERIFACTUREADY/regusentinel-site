@@ -7,6 +7,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { PORTAL_CONSENT_VERSION, PORTAL_CONSENT_HASH } from "../src/lib/portal-consent";
+import { sumarDiasES } from "../src/lib/fecha-es";
 
 const prisma = new PrismaClient();
 
@@ -240,6 +241,23 @@ export const E2E = {
     /** Detalle con marcado HTML: debe verse COMO TEXTO, no interpretarse. */
     detalleConHtml: "<img src=x onerror=alert(1)> <b>negrita</b> & <script>alert(2)</script>",
   },
+  /**
+   * Organizacion dedicada a la PAGINACION de /approvals.
+   *
+   * POR QUE OTRA MAS
+   * ----------------
+   * La cola pagina de 30 en 30, asi que para probarla de verdad hacen falta
+   * mas de 30 aprobaciones. Metiendolas en `org-e2e-avisos` reventaria todas
+   * las cifras que las demas pruebas afirman alli —tres pendientes, una
+   * aprobada, una rechazada—. Con organizacion propia, cada suite afirma
+   * numeros exactos sin estorbarse.
+   */
+  aprobacionesPag: {
+    slug: "org-e2e-aprobaciones-pag",
+    owner: "owner.aprobpag.e2e@ejemplo.test",
+    /** Prefijo de las referencias: cada aprobacion cuelga de su expediente. */
+    prefijoRef: "EXP-2026-72",
+  },
   /** Organizacion vecina de la anterior: nada suyo puede filtrarse. */
   avisosVecina: {
     slug: "org-e2e-avisos-vecina",
@@ -301,6 +319,26 @@ export const CIFRAS_AVISOS = {
   notificacionesIsd7dFallidas: contarNotificaciones((i) => i % 5 === 2 && i % 8 === 3),
 };
 
+/** Tamano de pagina de /approvals (`PAGE_SIZE` en `approvals-queue.tsx`). */
+export const APROBACIONES_POR_PAGINA = 30;
+
+/**
+ * Reparto de la organizacion de paginacion.
+ *
+ * 35 pendientes: dos paginas (30 + 5), que es lo que se necesita para pulsar
+ * «Siguiente» y «Anterior» de verdad. Las aprobadas y rechazadas sirven para
+ * comprobar que cambiar de pestaña vuelve a la pagina 1 y que cada filtro
+ * cuenta lo suyo.
+ */
+export const CIFRAS_APROBACIONES_PAG = {
+  pendientes: 35,
+  aprobadas: 3,
+  rechazadas: 2,
+  get total() {
+    return this.pendientes + this.aprobadas + this.rechazadas;
+  },
+};
+
 /**
  * Tareas del expediente principal del panel.
  *
@@ -316,6 +354,11 @@ export const TAREAS_PANEL: {
   dias: number | null;
   /** Dias que lleva bloqueada (solo para las BLOCKED). */
   bloqueadaDesdeHace?: number;
+  /**
+   * Ancla el plazo a `ahora + dias` con un margen, en vez de al mediodia del
+   * dia civil. Para los bordes de ventanas rodantes.
+   */
+  rodante?: boolean;
 }[] = [
   // ── Vencidas del owner (alimentan «Requiere accion inmediata» y /today) ──
   { titulo: "vencida hace 3 dias", estado: "PENDING", responsable: "owner", dias: -3 },
@@ -323,9 +366,20 @@ export const TAREAS_PANEL: {
   // ── Bordes exactos que pide la auditoria ──
   { titulo: "vence hoy", estado: "PENDING", responsable: "owner", dias: 0 },
   { titulo: "vence en 7 dias", estado: "PENDING", responsable: "owner", dias: 7 },
-  { titulo: "vence en 30 dias", estado: "PENDING", responsable: "owner", dias: 30 },
+  /*
+   * Los dos bordes del rango de 30 dias van RODANTES, no al mediodia civil.
+   *
+   * «Plazos proximos (30 dias)» consulta `deadline` entre `now` y
+   * `now + 30x24h`: una ventana rodante, no un rango de dias de calendario.
+   * Anclando estos dos al mediodia del dia civil, el de 30 dias caia dentro o
+   * fuera segun la hora a la que se ejecutara la suite —fuera si era de
+   * madrugada, dentro si era de tarde—. Se siembran en los mismos terminos que
+   * la regla que prueban, con un margen que los deja a un lado y al otro sin
+   * depender del reloj.
+   */
+  { titulo: "vence en 30 dias", estado: "PENDING", responsable: "owner", dias: 30, rodante: true },
   // 31 dias: queda JUSTO fuera de «Plazos proximos (30 dias)».
-  { titulo: "vence en 31 dias fuera de rango", estado: "PENDING", responsable: "owner", dias: 31 },
+  { titulo: "vence en 31 dias fuera de rango", estado: "PENDING", responsable: "owner", dias: 31, rodante: true },
   { titulo: "vence en 3 dias", estado: "PENDING", responsable: "owner", dias: 3 },
   // ── Del equipo, vencida: /today la lista aparte de las mias ──
   { titulo: "vencida del manager", estado: "PENDING", responsable: "manager", dias: -6 },
@@ -892,7 +946,41 @@ async function main() {
 
   // Tareas del expediente principal.
   //
-  // El plazo se ancla a las 12:00 UTC a proposito: asi el dia civil espanol
+  /**
+ * Mediodia del dia civil ESPANOL que cae `dias` despues de `base`.
+ *
+ * EL DEFECTO QUE CORRIGE
+ * ----------------------
+ * Antes era `new Date(base + dias * DIA).setUTCHours(12, 0, 0, 0)`, que ancla
+ * al dia civil **UTC**. Entre las 22:00 y las 24:00 UTC —es decir, entre
+ * medianoche y las dos de la madrugada en Madrid— el dia UTC va uno por detras
+ * del espanol, asi que todos los plazos se sembraban un dia antes de lo
+ * previsto: la tarea «vence hoy» aparecia como vencida ayer y las tres pruebas
+ * de /today que miran fechas fallaban. Una ventana de dos horas al dia en la
+ * que la suite entera se caia, y solo se veia si tocaba ejecutarla entonces.
+ *
+ * `sumarDiasES` es el mismo ayudante que usa la aplicacion para agrupar por
+ * dia, asi que el sembrado y la pantalla cuentan los dias igual. El mediodia
+ * evita ademas los bordes de la medianoche en los dos sentidos.
+ */
+/**
+ * Plazo para probar el borde de una ventana RODANTE de `dias` dias.
+ *
+ * Una hora antes del corte para los que deben entrar, y justo en el corte del
+ * dia siguiente para los que deben quedarse fuera. Asi el resultado no depende
+ * de la hora a la que se ejecute la suite.
+ */
+function plazoRodante(base: number, dias: number): Date {
+  const HORA_MS = 60 * 60 * 1000;
+  return new Date(base + dias * 86_400_000 - HORA_MS);
+}
+
+function mediodiaCivilES(base: number, dias: number): Date {
+  const inicio = sumarDiasES(new Date(base), dias);
+  return new Date(inicio.getTime() + 12 * 60 * 60 * 1000);
+}
+
+// El plazo se ancla al mediodia del dia civil espanol: asi el dia civil espanol
   // coincide con el dia UTC y estas tareas no dependen de a que hora corra la
   // suite. Las pruebas de zona horaria usan tareas propias, con hora extrema.
   const tareasCreadas: Record<string, string> = {};
@@ -900,7 +988,9 @@ async function main() {
     const plazo =
       t.dias === null
         ? null
-        : new Date(new Date(ahoraPanel + t.dias * DIA).setUTCHours(12, 0, 0, 0));
+        : t.rodante
+          ? plazoRodante(ahoraPanel, t.dias)
+          : mediodiaCivilES(ahoraPanel, t.dias);
     const creada = await prisma.task.create({
       data: {
         caseId: casoPanel.id,
@@ -1035,7 +1125,7 @@ async function main() {
         title: titulo,
         status: estado,
         category: "OTROS",
-        deadline: new Date(new Date(ahoraPanel + dias * DIA).setUTCHours(12, 0, 0, 0)),
+        deadline: mediodiaCivilES(ahoraPanel, dias),
         assigneeId: ownerVecino.id,
         updatedAt: new Date(ahoraPanel - 30 * DIA),
       },
@@ -1291,6 +1381,66 @@ async function main() {
         error: fallida ? "SMTP 550: buzon no encontrado" : null,
         // Separados y hacia atras: orden estable entre paginas.
         createdAt: new Date(ahoraAvisos - (i + 1) * HORA),
+      },
+    });
+  }
+
+  // ── Organizacion con aprobaciones suficientes para paginar ───────────────
+  const orgAprobPag = await prisma.organization.create({
+    data: {
+      name: "Gestoria Aprobaciones Paginadas E2E",
+      slug: E2E.aprobacionesPag.slug,
+      subscription: { create: { plan: "FIRMA", status: "active" } },
+      onboardingDismissedAt: new Date(),
+    },
+  });
+  const ownerAprobPag = await prisma.user.create({
+    data: {
+      email: E2E.aprobacionesPag.owner,
+      name: "Owner Aprobaciones Pag E2E",
+      passwordHash: hash,
+    },
+  });
+  await prisma.membership.create({
+    data: { userId: ownerAprobPag.id, orgId: orgAprobPag.id, role: "OWNER" },
+  });
+
+  /*
+   * Cada aprobacion cuelga de SU PROPIO expediente, con referencia unica.
+   *
+   * La referencia se pinta en la fila, asi que sirve de marca para comprobar
+   * que la pagina 2 no repite lo de la pagina 1 y que entre las dos no falta
+   * ninguna. Con todas colgando del mismo expediente, las filas serian
+   * indistinguibles y «no hay duplicados» no se podria afirmar.
+   *
+   * El orden es por `createdAt` descendente: se reparten hacia atras y
+   * separadas, para que la paginacion sea estable entre ejecuciones.
+   */
+  const repartoAprobPag = [
+    ...Array.from({ length: CIFRAS_APROBACIONES_PAG.pendientes }, () => "PENDING" as const),
+    ...Array.from({ length: CIFRAS_APROBACIONES_PAG.aprobadas }, () => "APPROVED" as const),
+    ...Array.from({ length: CIFRAS_APROBACIONES_PAG.rechazadas }, () => "REJECTED" as const),
+  ];
+  for (let i = 0; i < repartoAprobPag.length; i++) {
+    const estado = repartoAprobPag[i];
+    const ref = `${E2E.aprobacionesPag.prefijoRef}${String(i + 1).padStart(2, "0")}`;
+    const caso = await prisma.case.create({
+      data: {
+        orgId: orgAprobPag.id,
+        ref,
+        status: "IN_PROGRESS",
+        deceased: { create: { fullName: `Causante Paginado ${i + 1}` } },
+      },
+    });
+    await prisma.approval.create({
+      data: {
+        caseId: caso.id,
+        action: "send_draft",
+        status: estado,
+        details: `Detalle de la aprobacion ${ref}`,
+        reviewerId: estado === "PENDING" ? null : ownerAprobPag.id,
+        reviewedAt: estado === "PENDING" ? null : new Date(ahoraAvisos - 30 * HORA),
+        createdAt: new Date(ahoraAvisos - (i + 1) * 60_000),
       },
     });
   }

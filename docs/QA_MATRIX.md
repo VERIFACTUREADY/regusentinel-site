@@ -170,7 +170,8 @@ Inventario completo de la pantalla y de su panel de hilo. Pruebas en
 | Autorización de servidor en expediente ajeno | ✅ | `mensajes.spec.ts` — leer, marcar y escribir devuelven 404 y no crean nada |
 | Escritorio, tablet y móvil | ✅ | `avisos.responsive.spec.ts` — incluido el «Volver» del panel partido, que sólo existe en estrecho |
 | **En móvil se entra viendo la LISTA, no dentro de un hilo** | ✅ | `avisos.responsive.spec.ts` — **defecto corregido**: la pantalla preseleccionaba la primera conversación también en estrecho, donde el hilo tapa la lista (`hidden sm:flex`). El usuario entraba en Mensajes y aparecía dentro de una conversación que no había elegido, y que además quedaba marcada como leída. La preselección sólo ocurre ahora cuando los dos paneles caben a la vez |
-| Contador del encabezado justo al entrar | 🟡 | **Comportamiento anotado**: abrir `/messages` selecciona sola la primera conversación y eso la marca leída sin que el usuario pulse nada, así que la cifra baja a los milisegundos. El marcado ya es honesto (confirmado por el servidor); la cifra se verifica contra el API y con una respuesta fija, no sobre esa carrera |
+| **Contador del encabezado al entrar: la secuencia completa** | ✅ | `mensajes.spec.ts` — **política real, probada de punta a punta y sin carreras**: en escritorio se preselecciona la primera conversación, su hilo se muestra, el servidor confirma el marcado (`{ ok, marked: X }`) y el contador pasa de N a N−X exacto. Se espera a la respuesta real del PUT con `waitForResponse`, no a un tiempo fijo; se comprueba la base y la persistencia tras recargar |
+| La preselección sólo ocurre si el hilo se ve | ✅ | `mensajes.spec.ts` — en móvil no hay conversación preseleccionada, el contador queda intacto y en la base no se marca nada: es lo que hace coherente al marcado automático de escritorio |
 
 ### `/notifications` y campana del encabezado
 
@@ -238,7 +239,11 @@ Pruebas en `aprobaciones.spec.ts` (29) y `avisos.responsive.spec.ts`.
 | Un VIEWER no entra ni por URL directa | ✅ | `aprobaciones.spec.ts` — sin enlace en el menú, y `/approvals` redirige al panel |
 | El servidor rechaza a un VIEWER | ✅ | `aprobaciones.spec.ts` — listar y aprobar devuelven 403; nada cambia |
 | Aislamiento entre organizaciones | ✅ | `aprobaciones.spec.ts` — la cola no la muestra, y aprobar la ajena devuelve 404 |
-| Paginación | — | La cola de la organización de pruebas no llega a 30; el bloque no se pinta. La paginación de esta misma pareja de controles sí se conduce en `/notifications` |
+| Paginación: página 1, «Siguiente», «Anterior» | ✅ | `aprobaciones.spec.ts` — prueba **propia**, sobre una organización dedicada con 40 aprobaciones (35 pendientes → 30 + 5) |
+| Paginación: sin duplicados ni ausencias | ✅ | `aprobaciones.spec.ts` — cada aprobación cuelga de su expediente con referencia única; se comprueba que ninguna sale en las dos páginas y que entre ambas están las 35 |
+| Paginación: cambiar de pestaña vuelve a la página 1 | ✅ | `aprobaciones.spec.ts` — desde la página 2, «Aprobadas» (3 filas) no deja al usuario en una página que ya no existe |
+| Paginación: cifras exactas por pestaña | ✅ | `aprobaciones.spec.ts` — 35 / 3 / 2 / 40, y «Todas» también pagina |
+| Paginación: aislamiento entre organizaciones | ✅ | `aprobaciones.spec.ts` — las de otra organización no aparecen en ninguna página ni alteran el total; se comprueba en la interfaz y en el API, con y sin filtro de estado |
 | Escritorio, tablet y móvil | ✅ | `avisos.responsive.spec.ts` |
 
 ### `/calendar` — Calendario de plazos
@@ -669,6 +674,10 @@ No se prueban ni se inventan; quedan declaradas:
 
 ### Sin cobertura de interfaz
 
+Esta sección enumera lo que **no** está cubierto. Una pantalla con sección
+propia arriba no aparece aquí: si figura en los dos sitios, la matriz se está
+contradiciendo y hay que corregirla.
+
 **Con estados de carga probados** (carga, vacío, error y «Reintentar», vía
 `estados-carga.spec.ts`), pero **sin sus interacciones propias probadas**:
 
@@ -677,17 +686,6 @@ No se prueban ni se inventan; quedan declaradas:
 Que la pantalla resista un fallo de carga no significa que sus botones estén
 probados.
 
-`/notifications` y `/approvals` ya no están en esta lista: tienen sección propia
-arriba. Aprobar y rechazar se conducen desde el navegador, con sus caminos de
-error, en `aprobaciones.spec.ts`.
-
-`/cases/kanban` ya no está en esta lista: mover tarjetas se prueba entero
-—arrastre, petición real, persistencia y los dos caminos de fallo— en
-`expedientes.spec.ts`. `/tasks` y `/tasks/timeline` tampoco: tienen sección
-propia arriba. `/documents` tampoco: subida, descarga byte a byte, borrado,
-búsqueda, filtros, paginación, portal, aislamiento y roles se conducen desde el
-navegador contra MinIO real en `documentos.spec.ts`.
-
 **Sin ninguna cobertura de interfaz:**
 
 `/reports` (+ `isd`, `pipeline`, `portal`, `team`), `/templates`,
@@ -695,12 +693,11 @@ navegador contra MinIO real en `documentos.spec.ts`.
 (+ `general`, `branding`, `integrations`, `notifications`, `users`),
 `/profile`, `/cases/[id]/isd`, `/admin/*`.
 
-`/dashboard` y `/today` ya no están en esta lista: tienen sección propia arriba,
-con sus indicadores, widgets, fechas españolas, roles y aislamiento conducidos
-desde el navegador. `/messages`, `/notifications` y `/approvals` tampoco: se
-prueban enteros —conversaciones, hilo, marcar leído, envío, filtros,
-paginación, aprobar/rechazar, roles y aislamiento— en `mensajes.spec.ts`,
-`notificaciones.spec.ts` y `aprobaciones.spec.ts`.
+**Con sección propia arriba** —y por tanto fuera de las dos listas
+anteriores—: `/dashboard`, `/today`, `/messages`, `/notifications` (más la
+campana del encabezado), `/approvals`, `/cases`, `/cases/kanban`, `/tasks`,
+`/tasks/timeline`, `/documents`, `/users`, `/calendar`, el portal familiar y
+las pantallas de autenticación.
 
 `/cases/import` y `/cases/[id]` salen de esta lista: la importación se prueba
 entera —fichero válido, cabeceras malas, datos inválidos, fichero vacío,
@@ -771,16 +768,16 @@ pantallas y repetir la corrección a mano garantiza que la próxima nazca rota.
 | `calendar` | ✅ | ✅ | ✅ | `calendar.spec.ts` |
 | `cases` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `tasks` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
-| `approvals` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
-| `notifications` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
+| `approvals` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` y `aprobaciones.spec.ts` — además de la carga, los cinco códigos de error al aprobar y rechazar |
+| `notifications` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` y `notificaciones.spec.ts` — filtros, paginación y resultado vacío distinguido del vacío absoluto |
 | `search-modal` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `users` (panel de invitaciones) | ✅ | ✅ | ✅ | `usuarios.spec.ts` — vacío real, 500, fallo de red, 401 y «Reintentar» |
 | `documents` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `cases/kanban` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `tasks/timeline` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
-| `messages` | ✅ | ✅ | ✅ | ❌ sin prueba de navegador |
+| `messages` | ✅ | ✅ | ✅ | `mensajes.spec.ts` — HTTP 401, 403, 500, fallo de red y forma inesperada; se exige además que el estado vacío **no** aparezca, y «Reintentar» recupera la lista |
 | `usage-widget` | ✅ | ✅ | ✅ | `dashboard.spec.ts` — HTTP 401, 403, 500, fallo de red y «Reintentar», desde el panel real |
-| `notification-bell` | ✅ | ✅ | — | ❌ sin prueba de navegador |
+| `notification-bell` | ✅ | ✅ | ✅ | `notificaciones.spec.ts` — **defecto corregido**: el fallo se guardaba y no se pintaba, así que la campana decía «Sin notificaciones pendientes» con la petición caída. HTTP 401, 500, fallo de red y «Reintentar» |
 | `cases/[id]` (análisis) | ✅ | ✅ | — | ❌ sin prueba de navegador |
 | `audit` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
 | `workflow-logs` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` (vía filtro) |

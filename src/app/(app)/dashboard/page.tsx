@@ -612,7 +612,15 @@ export default async function DashboardPage() {
                           {task.title}
                         </Link>
                         <span className={`px-2 py-0.5 rounded text-xs shrink-0 ml-2 ${urgent ? "bg-red-200 text-red-800 font-medium" : "bg-red-100 text-red-700"}`}>
-                          {days <= 0 ? "VENCIDO" : `${days}d`}
+                          {/*
+                            Este bloque consulta `deadline >= now`, asi que
+                            todo lo que llega aqui vence en el futuro. Con
+                            `days <= 0` se etiquetaba «VENCIDO» una tarea que
+                            vence HOY mas tarde —`diasCivilesEntreES` devuelve
+                            0 el mismo dia—, que es justo lo contrario de lo
+                            que pasa. Cero dias civiles es «hoy».
+                          */}
+                          {days <= 0 ? "HOY" : `${days}d`}
                         </span>
                       </div>
                     );

@@ -18,7 +18,12 @@
 import { type Page } from "@playwright/test";
 import { test, expect, pantallaUtil, permitirFalloEn } from "./vigilancia";
 import { PrismaClient } from "@prisma/client";
-import { E2E, CIFRAS_AVISOS } from "./seed-e2e";
+import {
+  E2E,
+  CIFRAS_AVISOS,
+  CIFRAS_APROBACIONES_PAG,
+  APROBACIONES_POR_PAGINA,
+} from "./seed-e2e";
 
 const prisma = new PrismaClient();
 
@@ -535,5 +540,169 @@ test.describe("Aprobaciones: roles y aislamiento", () => {
       select: { status: true },
     });
     expect(despues.status).toBe(ajena.status);
+  });
+});
+
+
+test.describe("Aprobaciones: paginacion", () => {
+  /*
+   * Paginacion PROPIA de /approvals, no prestada de otra pantalla.
+   *
+   * Se conduce sobre una organizacion dedicada con 40 aprobaciones: 35
+   * pendientes (dos paginas de 30 + 5), 3 aprobadas y 2 rechazadas. Cada una
+   * cuelga de su propio expediente, asi que la referencia de la fila sirve de
+   * marca para demostrar que la pagina 2 no repite lo de la pagina 1 y que
+   * entre las dos no falta ninguna.
+   */
+
+  const filasDeLaPagina = (page: Page) =>
+    page
+      .locator(`a[href^="/cases/"]`)
+      .filter({ hasText: new RegExp(`^${E2E.aprobacionesPag.prefijoRef}`) });
+
+  /**
+   * Referencias de la pagina actual, leidas SOLO cuando ya estan las `cuantas`
+   * filas esperadas.
+   *
+   * Leerlas a pelo justo despues de navegar devolvia `[]` —la tabla todavia no
+   * habia pintado— y la comparacion se hacia contra una lista vacia. Fijar
+   * primero el numero de filas y leer despues quita la carrera sin meter una
+   * espera a ciegas.
+   */
+  async function refsDeLaPagina(page: Page, cuantas: number): Promise<string[]> {
+    await expect(filasDeLaPagina(page)).toHaveCount(cuantas, { timeout: 15_000 });
+    return filasDeLaPagina(page).allInnerTexts();
+  }
+
+  test("pagina 1 y pagina 2: sin duplicados y sin ausencias", async ({ page }) => {
+    await login(page, E2E.aprobacionesPag.owner);
+    await irAAprobaciones(page);
+
+    // Pestaña de partida: Pendientes, con las 35.
+    await expect(page.getByTestId("recuento-aprobaciones")).toHaveText(
+      `${CIFRAS_APROBACIONES_PAG.pendientes} aprobaciones`,
+    );
+    await expect(page.getByTestId("pendientes-de-revision")).toHaveText(
+      `${CIFRAS_APROBACIONES_PAG.pendientes} acciones pendientes de revision`,
+    );
+
+    // Pagina 1: exactamente el tamaño de pagina.
+    await expect(page.getByText("1 / 2")).toBeVisible();
+    const pagina1 = await refsDeLaPagina(page, APROBACIONES_POR_PAGINA);
+    await expect(page.getByRole("button", { name: "Anterior" })).toBeDisabled();
+
+    // Pagina 2: el resto.
+    await page.getByRole("button", { name: "Siguiente" }).click();
+    await expect(page.getByText("2 / 2")).toBeVisible();
+    const restantes = CIFRAS_APROBACIONES_PAG.pendientes - APROBACIONES_POR_PAGINA;
+    const pagina2 = await refsDeLaPagina(page, restantes);
+    await expect(page.getByRole("button", { name: "Siguiente" })).toBeDisabled();
+
+    // Ni una referencia repetida entre las dos paginas…
+    const repetidas = pagina1.filter((r) => pagina2.includes(r));
+    expect(repetidas, "ninguna aprobacion puede salir en las dos paginas").toEqual([]);
+
+    // …y entre las dos estan TODAS, sin huecos.
+    const vistas = new Set([...pagina1, ...pagina2]);
+    expect(vistas.size).toBe(CIFRAS_APROBACIONES_PAG.pendientes);
+    const esperadas = Array.from(
+      { length: CIFRAS_APROBACIONES_PAG.pendientes },
+      (_, i) => `${E2E.aprobacionesPag.prefijoRef}${String(i + 1).padStart(2, "0")}`,
+    );
+    for (const ref of esperadas) {
+      expect(vistas.has(ref), `falta ${ref} en las dos paginas`).toBe(true);
+    }
+  });
+
+  test("«Anterior» vuelve a la pagina 1 con su contenido", async ({ page }) => {
+    await login(page, E2E.aprobacionesPag.owner);
+    await irAAprobaciones(page);
+
+    const pagina1 = await refsDeLaPagina(page, APROBACIONES_POR_PAGINA);
+    await page.getByRole("button", { name: "Siguiente" }).click();
+    await expect(page.getByText("2 / 2")).toBeVisible();
+
+    await page.getByRole("button", { name: "Anterior" }).click();
+    await expect(page.getByText("1 / 2")).toBeVisible();
+    expect(await refsDeLaPagina(page, APROBACIONES_POR_PAGINA)).toEqual(pagina1);
+    await expect(page.getByRole("button", { name: "Anterior" })).toBeDisabled();
+  });
+
+  test("cambiar de pestaña vuelve a la pagina 1", async ({ page }) => {
+    /*
+     * Estando en la pagina 2, cambiar de filtro no puede dejar al usuario en
+     * una pagina 2 que ya no existe: «Aprobadas» solo tiene 3.
+     */
+    await login(page, E2E.aprobacionesPag.owner);
+    await irAAprobaciones(page);
+
+    await page.getByRole("button", { name: "Siguiente" }).click();
+    await expect(page.getByText("2 / 2")).toBeVisible();
+
+    await page.getByTestId("pestana-APPROVED").click();
+    await expect(page.getByTestId("recuento-aprobaciones")).toHaveText(
+      `${CIFRAS_APROBACIONES_PAG.aprobadas} aprobaciones`,
+    );
+    // Con 3 filas no hay bloque de paginacion en absoluto.
+    await expect(page.getByRole("button", { name: "Siguiente" })).toHaveCount(0);
+    await refsDeLaPagina(page, CIFRAS_APROBACIONES_PAG.aprobadas);
+  });
+
+  test("cada pestaña cuenta lo suyo, y «Todas» suma", async ({ page }) => {
+    await login(page, E2E.aprobacionesPag.owner);
+    await irAAprobaciones(page);
+
+    for (const [pestana, esperado] of [
+      ["pestana-PENDING", CIFRAS_APROBACIONES_PAG.pendientes],
+      ["pestana-APPROVED", CIFRAS_APROBACIONES_PAG.aprobadas],
+      ["pestana-REJECTED", CIFRAS_APROBACIONES_PAG.rechazadas],
+      ["pestana-todas", CIFRAS_APROBACIONES_PAG.total],
+    ] as const) {
+      await page.getByTestId(pestana).click();
+      await expect(page.getByTestId("recuento-aprobaciones")).toHaveText(
+        `${esperado} aprobacion${esperado !== 1 ? "es" : ""}`,
+      );
+    }
+
+    // «Todas» son 40: tambien dos paginas.
+    await expect(page.getByText("1 / 2")).toBeVisible();
+  });
+
+  test("las aprobaciones de otra organizacion no alteran paginas ni total", async ({
+    page,
+  }) => {
+    /*
+     * La organizacion de avisos tiene sus propias aprobaciones. Si se colaran,
+     * el total subiria y el reparto de paginas cambiaria.
+     */
+    await login(page, E2E.aprobacionesPag.owner);
+    await irAAprobaciones(page);
+    await page.getByTestId("pestana-todas").click();
+
+    await expect(page.getByTestId("recuento-aprobaciones")).toHaveText(
+      `${CIFRAS_APROBACIONES_PAG.total} aprobaciones`,
+    );
+
+    // Ni rastro de las referencias de la otra organizacion, en ninguna pagina.
+    const cuerpo = page.locator("body");
+    await expect(cuerpo).not.toContainText(E2E.avisos.caseConDos);
+    await page.getByRole("button", { name: "Siguiente" }).click();
+    await expect(page.getByText("2 / 2")).toBeVisible();
+    await expect(cuerpo).not.toContainText(E2E.avisos.caseConDos);
+    await expect(cuerpo).not.toContainText(E2E.avisosVecina.caseRef);
+
+    /*
+     * Y el servidor tampoco las incluye en el recuento que alimenta las
+     * paginas. Sin `status` el API devuelve TODAS las de la organizacion —40—,
+     * no solo las pendientes; con `status` devuelve las de ese estado. Se
+     * comprueban las dos formas, porque son las dos que usa la pantalla.
+     */
+    const todas = await page.request.get("/api/approvals?page=1&limit=30");
+    expect(todas.status()).toBe(200);
+    expect((await todas.json()).total).toBe(CIFRAS_APROBACIONES_PAG.total);
+
+    const pendientes = await page.request.get("/api/approvals?page=1&limit=30&status=PENDING");
+    expect(pendientes.status()).toBe(200);
+    expect((await pendientes.json()).total).toBe(CIFRAS_APROBACIONES_PAG.pendientes);
   });
 });

@@ -520,14 +520,72 @@ test.describe("Panel: expedientes recientes", () => {
 });
 
 test.describe("Panel: proximos plazos y bloqueadas", () => {
-  test("el borde de los 30 dias: entra el de 30 y no el de 31", async ({ page }) => {
+  test("el borde de los 30 dias: el de 31 nunca entra, y el bloque corta en 8", async ({
+    page,
+  }) => {
+    /*
+     * QUE COMPRUEBA ESTA PRUEBA, Y POR QUE ASI
+     * ----------------------------------------
+     * «Plazos proximos (30 dias)» consulta `deadline` entre `now` y
+     * `now + 30x24h`, ordena por plazo ascendente y se queda con los OCHO
+     * primeros. Son dos reglas, no una, y hay que separarlas:
+     *
+     *   - la VENTANA: lo que vence a mas de 30 dias no entra nunca. Eso se
+     *     afirma aqui sobre la pantalla, y es robusto.
+     *   - el CORTE: aunque algo este dentro de la ventana, no se ve si tiene
+     *     ocho plazos mas cercanos por delante.
+     *
+     * La version anterior afirmaba que la tarea de 30 dias SE VEIA. Pasaba por
+     * accidente: el sembrado anclaba los plazos al dia civil UTC y la tarea
+     * «vence hoy» caia en el pasado, quedaba fuera de la consulta y liberaba
+     * el octavo hueco. Corregido el sembrado —ahora «vence hoy» vence de
+     * verdad hoy—, ese hueco lo ocupa ella y la de 30 dias queda novena. La
+     * prueba no descubria el borde del rango: descubria un fallo de fechas del
+     * propio sembrado.
+     *
+     * Asi que la ventana se comprueba por el lado que SI es observable —el de
+     * 31 dias no aparece jamas— y ademas se comprueba el corte y el orden, que
+     * es lo que el usuario ve de verdad.
+     */
     await login(page, E2E.panel.owner);
     await pantallaUtil(page);
 
     const bloque = page.getByTestId("bloque-proximos-plazos");
     await expect(bloque).toBeVisible();
-    await expect(bloque).toContainText("vence en 30 dias");
+
+    // Fuera de la ventana: no aparece, esten los huecos que esten.
     await expect(bloque).not.toContainText("vence en 31 dias fuera de rango");
+
+    // Dentro de la ventana y ademas entre los mas cercanos: si aparece.
+    await expect(bloque).toContainText("vence hoy");
+    await expect(bloque).toContainText("vence en 3 dias");
+    await expect(bloque).toContainText("vence en 7 dias");
+
+    // El corte: como mucho ocho plazos, y en orden ascendente.
+    const marcas = await bloque.locator("span.shrink-0").allInnerTexts();
+    expect(marcas.length).toBeLessThanOrEqual(8);
+    const dias = marcas.map((m) => (m === "HOY" ? 0 : Number(m.replace("d", ""))));
+    expect(
+      dias.every((d, i) => i === 0 || d >= dias[i - 1]),
+      `los plazos deben ir de menor a mayor: ${marcas.join(", ")}`,
+    ).toBe(true);
+  });
+
+  test("una tarea que vence HOY no se etiqueta como vencida", async ({ page }) => {
+    /*
+     * **Defecto corregido.** La etiqueta era `days <= 0 ? "VENCIDO" : ...`, y
+     * `days` cuenta dias CIVILES: una tarea que vence hoy a mediodia da 0 y se
+     * anunciaba «VENCIDO» a las nueve de la manana, con el plazo aun por
+     * delante. Y en un bloque cuya consulta es `deadline >= now`, donde por
+     * construccion nada esta vencido.
+     */
+    await login(page, E2E.panel.owner);
+    await pantallaUtil(page);
+
+    const bloque = page.getByTestId("bloque-proximos-plazos");
+    const fila = bloque.locator("div").filter({ hasText: /P-E2E vence hoy/ }).last();
+    await expect(fila).toContainText("HOY");
+    await expect(fila).not.toContainText("VENCIDO");
   });
 
   test("bloqueadas +7 dias: entra la de 8 y la de 20, no la de 6", async ({ page }) => {

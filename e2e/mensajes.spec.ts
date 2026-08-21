@@ -169,6 +169,133 @@ test.describe("Mensajes: listado de conversaciones", () => {
     expect(cuerpo.totalUnread).toBe(enBase);
   });
 
+  test("al entrar: se preselecciona la primera, se marca leida y el contador cuadra", async ({
+    page,
+  }) => {
+    /*
+     * LA POLITICA REAL DE ESTA PANTALLA, probada de punta a punta.
+     *
+     * En escritorio los dos paneles caben a la vez, asi que al abrir
+     * /messages la pantalla preselecciona la primera conversacion y muestra su
+     * hilo. Con el hilo DELANTE del usuario, marcarlo como leido es
+     * deliberado y coherente —es lo que hace un cliente de correo con panel de
+     * lectura—, y por eso no se cambia. En movil no ocurre: alli el hilo
+     * taparia la lista, y la preseleccion esta desactivada.
+     *
+     * Lo que se exige es que la secuencia sea exacta y honesta:
+     *
+     *     contador inicial N
+     *     -> se muestra sola una conversacion con X sin leer
+     *     -> el SERVIDOR confirma el marcado
+     *     -> contador final N - X, y asi queda al recargar
+     *
+     * SIN CARRERAS: no hay ni una espera a ciegas. Se aguarda a la respuesta
+     * real del PUT con `waitForResponse`, que es el hecho que dispara la
+     * bajada del contador. Antes esta fila estaba en 🟡 justamente por no
+     * saber esperar a eso.
+     */
+    await restaurarBase();
+
+    // N: el contador inicial exacto, tomado de la base.
+    const inicialConDos = await sinLeerEnBase(E2E.avisos.caseConDos);
+    const inicialConUno = await sinLeerEnBase(E2E.avisos.caseConUno);
+    const N = inicialConDos + inicialConUno;
+    expect(N, "punto de partida").toBe(CIFRAS_AVISOS.totalSinLeer);
+
+    await login(page, E2E.avisos.owner);
+
+    // Se arma la espera ANTES de navegar: si se armara despues, la respuesta
+    // podria haber llegado ya y la prueba se quedaria colgada.
+    const marcadoConfirmado = page.waitForResponse(
+      (r) =>
+        r.url().includes("/portal-messages") &&
+        r.request().method() === "PUT" &&
+        r.status() === 200,
+      { timeout: 30_000 },
+    );
+
+    await irAMensajes(page);
+
+    // Que conversacion ha quedado preseleccionada, preguntandoselo a la
+    // pantalla en vez de darlo por supuesto.
+    const preseleccionada = page.locator('[data-testid^="conversacion-"][aria-current="true"]');
+    await expect(preseleccionada).toHaveCount(1);
+    const testid = await preseleccionada.getAttribute("data-testid");
+    const refPreseleccionada = testid!.replace("conversacion-", "");
+    // Es la primera de la lista: la de actividad mas reciente.
+    expect(refPreseleccionada).toBe(E2E.avisos.caseConDos);
+
+    // X: cuantos sin leer tenia la que se ha abierto sola.
+    const X = inicialConDos;
+    expect(X).toBeGreaterThan(0);
+
+    // Su hilo esta DELANTE del usuario: es lo que justifica el marcado.
+    await expect(page.getByTestId("hilo-mensajes")).toContainText(E2E.avisos.textoSinLeer);
+
+    // El servidor confirma.
+    const respuesta = await marcadoConfirmado;
+    expect(await respuesta.json()).toMatchObject({ ok: true, marked: X });
+
+    // Contador final EXACTO: N - X, no «menos que N».
+    await expect(page.getByTestId("total-sin-leer")).toHaveText(`${N - X} sin leer`);
+
+    // Y la base dice lo mismo que la pantalla.
+    expect(await sinLeerEnBase(E2E.avisos.caseConDos)).toBe(0);
+    expect(await sinLeerEnBase(E2E.avisos.caseConUno)).toBe(inicialConUno);
+
+    /*
+     * Al recargar, la cuenta persiste.
+     *
+     * Ojo: al recargar vuelve a preseleccionarse la primera de la lista, que
+     * ahora es la OTRA conversacion, y esa tambien se marca. Por eso lo que se
+     * afirma aqui es la unica cifra estable: la que queda cuando la segunda
+     * ronda de marcado ha terminado, es decir cero. Lo que importa es que
+     * ninguna de las dos vuelve a contarse como sin leer.
+     */
+    const segundoMarcado = page.waitForResponse(
+      (r) =>
+        r.url().includes("/portal-messages") &&
+        r.request().method() === "PUT" &&
+        r.status() === 200,
+      { timeout: 30_000 },
+    );
+    await page.reload();
+    await pantallaUtil(page);
+    await segundoMarcado;
+
+    await expect(page.getByTestId("total-sin-leer")).toHaveCount(0);
+    expect(await sinLeerEnBase(E2E.avisos.caseConUno)).toBe(0);
+  });
+
+  test("en movil NO se preselecciona, y por tanto no se marca nada solo", async ({
+    page,
+  }) => {
+    /*
+     * La otra mitad de la politica, que es la que hace coherente a la primera:
+     * si el hilo no se ve, no se marca. En estrecho la lista ocupa la
+     * pantalla entera y no hay conversacion abierta, asi que el contador se
+     * queda intacto hasta que el usuario elige una.
+     */
+    await restaurarBase();
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    await login(page, E2E.avisos.owner);
+    await page.goto("/messages");
+    await pantallaUtil(page);
+
+    // Ninguna preseleccionada.
+    await expect(
+      page.locator('[data-testid^="conversacion-"][aria-current="true"]'),
+    ).toHaveCount(0);
+    // El contador sigue entero.
+    await expect(page.getByTestId("total-sin-leer")).toHaveText(
+      `${CIFRAS_AVISOS.totalSinLeer} sin leer`,
+    );
+    // Y en la base no se ha tocado nada.
+    expect(await sinLeerEnBase(E2E.avisos.caseConDos)).toBe(2);
+    expect(await sinLeerEnBase(E2E.avisos.caseConUno)).toBe(1);
+  });
+
   test("la marca «N sin leer» pinta la cifra que da el servidor", async ({ page }) => {
     /*
      * Cobertura de interfaz del contador, sin la carrera de arriba: se sirve
