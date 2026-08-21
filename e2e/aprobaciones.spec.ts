@@ -50,12 +50,27 @@ async function pendientesEnBase(): Promise<number> {
   });
 }
 
-/** Deja la cola como la dejo el sembrado. */
+/**
+ * Deja la cola como la dejo el sembrado.
+ *
+ * SE FILTRA TAMBIEN POR `details`, NO SOLO POR LA ACCION
+ * ------------------------------------------------------
+ * El sembrado tiene DOS aprobaciones con la accion `send_email`: la pendiente
+ * que las pruebas rechazan, y otra ya rechazada de hace veinte horas que sirve
+ * para la pestaña «Rechazadas». Restaurando por accion a secas, la segunda
+ * volvia a PENDING: quedaban cuatro pendientes en vez de tres y cero
+ * rechazadas, y fallaban once pruebas por un motivo que no tenia nada que ver
+ * con lo que comprobaban. Las tres pendientes se distinguen por su `details`.
+ */
 async function restaurarAprobaciones() {
   await prisma.approval.updateMany({
     where: {
       case: { org: { slug: E2E.avisos.slug } },
-      action: { in: [E2E.avisos.accionAprobar, E2E.avisos.accionRechazar, "generate_checklist"] },
+      OR: [
+        { action: E2E.avisos.accionAprobar, details: E2E.avisos.detalleAprobacion },
+        { action: E2E.avisos.accionRechazar, details: E2E.avisos.detalleConHtml },
+        { action: "generate_checklist" },
+      ],
     },
     data: { status: "PENDING", reviewerId: null, reviewedAt: null },
   });
