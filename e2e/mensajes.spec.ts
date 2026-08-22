@@ -128,6 +128,17 @@ test.describe("Mensajes: listado de conversaciones", () => {
         : route.continue(),
     );
 
+    /*
+     * El punto de partida se establece AQUI, no se hereda.
+     *
+     * La restauracion de la prueba anterior corre en su `afterEach`, y su PUT
+     * de marcado automatico puede aterrizar despues. Cuando eso pasaba, esta
+     * prueba arrancaba con una conversacion ya leida que por tanto no cumplia
+     * el filtro «Sin leer», y fallaba por algo que no tenia nada que ver con
+     * lo que comprueba. Es el mismo remedio que ya usa la prueba del contador.
+     */
+    await restaurarBase();
+
     await login(page, E2E.avisos.owner);
     await irAMensajes(page);
 
