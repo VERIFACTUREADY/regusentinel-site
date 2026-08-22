@@ -7,7 +7,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { PORTAL_CONSENT_VERSION, PORTAL_CONSENT_HASH } from "../src/lib/portal-consent";
-import { sumarDiasES } from "../src/lib/fecha-es";
+import { sumarDiasES, inicioDelDiaDeES } from "../src/lib/fecha-es";
 
 const prisma = new PrismaClient();
 
@@ -289,6 +289,51 @@ export const E2E = {
     reglaBorrable: "Regla que se puede borrar",
     /** Comentario que deja la regla activa al ejecutarse. */
     textoComentario: "Comentario puesto por la automatizacion E2E",
+
+    /*
+     * Regla de CORREO, para poder probar «Reintentar fallidas» de verdad.
+     *
+     * La regla de comentario no sirve: un comentario no tiene destinatarios,
+     * asi que no genera entregas y no hay nada que reintentar. El reintento
+     * solo tiene sentido sobre un envio, y solo se puede comprobar mirando el
+     * buzon de pruebas.
+     */
+    reglaCorreo: "Avisar al equipo por correo",
+    asuntoCorreo: "Aviso de automatizacion E2E",
+    /*
+     * Los destinatarios de SEND_EMAIL_TEAM no se guardan en la regla: el motor
+     * los saca de las membresias OWNER y MANAGER de la organizacion. Por eso
+     * las entregas sembradas llevan esas dos direcciones y no unas inventadas:
+     * son las que el reintento va a reconstruir.
+     */
+    /** Su entrega quedo en FAILED: el reintento debe alcanzarle. */
+    destinatarioFallido: "manager.auto.e2e@ejemplo.test",
+    /**
+     * Su entrega ya esta en SENT. El reintento NO debe volver a escribirle:
+     * quien ya recibio el aviso no lo recibe otra vez porque alguien pulse el
+     * boton.
+     */
+    destinatarioEntregado: "owner.auto.e2e@ejemplo.test",
+
+    /*
+     * Registros de auditoria con fecha puesta a proposito en los bordes del
+     * dia civil espanol, para comprobar el filtro «Desde»/«Hasta».
+     *
+     * Con el filtro anterior (dias UTC) el de las 00:30 de hoy caia en el dia
+     * de AYER —porque en Madrid, en horario de verano, la medianoche UTC son
+     * las 02:00— y el de las 23:30 de ayer se colaba en HOY. Las dos mitades
+     * del rango estaban desplazadas y en sentidos contrarios.
+     */
+    accionBorde: "portal.borde_de_dia_e2e",
+    detalleHoyTemprano: "Auditoria de HOY a las 00:30 de Madrid",
+    detalleAyerTarde: "Auditoria de AYER a las 23:30 de Madrid",
+
+    /**
+     * Detalle con comillas, comas y acentos: el CSV tiene que sobrevivir a los
+     * tres. Sin comillas escapadas el fichero se parte en columnas de mas.
+     */
+    accionCsv: "portal.exportacion_csv_e2e",
+    detalleCsv: 'Detalle con "comillas", coma y acentuacion: ñáéíóú',
   },
   /** Organizacion vecina de las automatizaciones: nada suyo puede filtrarse. */
   automatizacionesVecina: {
@@ -387,8 +432,22 @@ export const CIFRAS_AUTOMATIZACIONES = {
   parciales: contarEjecuciones((i) => i % 5 === 2),
   fallidas: contarEjecuciones((i) => i % 5 === 3),
   omitidas: contarEjecuciones((i) => i % 5 === 4),
-  /** Registros de auditoria sembrados: mas de 30 para que la paginacion exista. */
+  /**
+   * Ejecucion extra de la regla de correo, con entregas reales: es la unica
+   * que ofrece «Reintentar fallidas», porque es la unica que tiene entregas
+   * pendientes de verdad.
+   */
+  conEntregas: 1,
+  /**
+   * Registros de auditoria de relleno: mas de 30 para que la paginacion
+   * exista. Aparte van los dos con fecha de borde y el del CSV.
+   */
   auditoria: 34,
+  /** Los de borde de dia (2) mas el de comillas y acentos (1). */
+  auditoriaExtra: 3,
+  get auditoriaTotal() {
+    return this.auditoria + this.auditoriaExtra;
+  },
 };
 
 /**
@@ -1543,6 +1602,63 @@ function mediodiaCivilES(base: number, dias: number): Date {
     });
   }
 
+  /*
+   * Regla de correo + una ejecucion FALLIDA con entregas REALES.
+   *
+   * POR QUE HACEN FALTA ENTREGAS DE VERDAD
+   * --------------------------------------
+   * El boton «Reintentar fallidas» solo aparece cuando quedan entregas
+   * pendientes, y el reintento reconstruye el envio desde la regla. Con logs
+   * sin filas en `WorkflowDelivery` no habria nada que reintentar y la prueba
+   * comprobaria unicamente que un boton se pinta.
+   *
+   * Un destinatario en FAILED (debe recibirlo al reintentar) y otro en SENT
+   * (NO debe recibir nada: ya lo tenia).
+   */
+  const reglaCorreo = await prisma.workflowRule.create({
+    data: {
+      orgId: orgAuto.id,
+      name: E2E.automatizaciones.reglaCorreo,
+      trigger: "CASE_STATUS_CHANGED",
+      conditions: {},
+      action: "SEND_EMAIL_TEAM",
+      actionConfig: {
+        subject: E2E.automatizaciones.asuntoCorreo,
+        body: "El expediente {{caseRef}} ha cambiado de estado.",
+      },
+      isActive: true,
+    },
+  });
+  const ejecucionConEntregas = await prisma.workflowLog.create({
+    data: {
+      ruleId: reglaCorreo.id,
+      caseId: casoAuto.id,
+      status: "FAILED",
+      error: "SMTP 421: servicio no disponible",
+      createdAt: new Date(ahoraAvisos - 30_000),
+    },
+  });
+  await prisma.workflowDelivery.createMany({
+    data: [
+      {
+        workflowLogId: ejecucionConEntregas.id,
+        recipient: E2E.automatizaciones.destinatarioFallido,
+        status: "FAILED",
+        error: "SMTP 421: servicio no disponible",
+        attempts: 1,
+        lastTriedAt: new Date(ahoraAvisos - 30_000),
+      },
+      {
+        workflowLogId: ejecucionConEntregas.id,
+        recipient: E2E.automatizaciones.destinatarioEntregado,
+        status: "SENT",
+        attempts: 1,
+        lastTriedAt: new Date(ahoraAvisos - 30_000),
+        sentAt: new Date(ahoraAvisos - 30_000),
+      },
+    ],
+  });
+
   // ── Auditoria: mas de 30 para que la paginacion exista de verdad ──
   const ACCIONES_AUD = ["case.created", "task.completed", "document.uploaded", "user.role_changed"];
   for (let i = 0; i < CIFRAS_AUTOMATIZACIONES.auditoria; i++) {
@@ -1558,6 +1674,46 @@ function mediodiaCivilES(base: number, dias: number): Date {
       },
     });
   }
+
+  /*
+   * Dos registros justo a los lados de la medianoche de Madrid, y uno con
+   * caracteres que rompen un CSV mal escapado.
+   *
+   * `inicioDelDiaDeES` da la medianoche CIVIL espanola, que es la misma con la
+   * que la aplicacion agrupa por dia. Sumar y restar media hora deja un
+   * registro dentro de hoy y otro dentro de ayer, con menos de una hora entre
+   * ambos: si el filtro se apoya en dias UTC, los coloca al reves.
+   */
+  const medianocheHoy = inicioDelDiaDeES(new Date(ahoraAvisos));
+  await prisma.auditLog.createMany({
+    data: [
+      {
+        orgId: orgAuto.id,
+        userId: usuariosAuto.owner,
+        caseId: casoAuto.id,
+        action: E2E.automatizaciones.accionBorde,
+        details: E2E.automatizaciones.detalleHoyTemprano,
+        createdAt: new Date(medianocheHoy.getTime() + 30 * 60_000),
+      },
+      {
+        orgId: orgAuto.id,
+        userId: usuariosAuto.owner,
+        caseId: casoAuto.id,
+        action: E2E.automatizaciones.accionBorde,
+        details: E2E.automatizaciones.detalleAyerTarde,
+        createdAt: new Date(medianocheHoy.getTime() - 30 * 60_000),
+      },
+      {
+        orgId: orgAuto.id,
+        // Sin usuario: en el CSV tiene que salir «Sistema», no una celda vacia.
+        userId: null,
+        caseId: casoAuto.id,
+        action: E2E.automatizaciones.accionCsv,
+        details: E2E.automatizaciones.detalleCsv,
+        createdAt: new Date(medianocheHoy.getTime() + 31 * 60_000),
+      },
+    ],
+  });
 
   // ── Organizacion vecina: nada suyo puede filtrarse ──
   const orgAutoVecina = await prisma.organization.create({

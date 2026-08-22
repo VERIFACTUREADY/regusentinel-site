@@ -1,8 +1,9 @@
 "use client";
 
-import { AvisoError } from "@/components/ui/carga-remota";
+import { AvisoError, mensajeDeError } from "@/components/ui/carga-remota";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { fechaHoraCortaES, fechaHoraLargaES } from "@/lib/fecha-es";
 
 interface AuditLog {
   id: string;
@@ -65,6 +66,10 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
     const controller = new AbortController();
     setLoading(true);
     setErrorCarga(null);
+    // El aviso «Exportados N registros» se refiere al alcance que habia al
+    // exportar. Al cambiar un filtro ese alcance ya no es el de la pantalla,
+    // asi que el aviso deja de ser cierto y se retira.
+    setExportadas(null);
     const params = new URLSearchParams();
     params.set("page", String(page));
     params.set("limit", String(PAGE_SIZE));
@@ -80,7 +85,9 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
           throw new Error(
             res.status === 401
               ? "Tu sesion ha caducado. Vuelve a entrar."
-              : `El servidor ha respondido ${res.status}.`,
+              : res.status === 403
+                ? "No tienes permiso para consultar la auditoria."
+                : `El servidor ha respondido ${res.status}.`,
           );
         }
         return res.json();
@@ -100,7 +107,7 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
         // especialmente enganoso: aparenta que no ha pasado nada.
         setLogs([]);
         setTotal(0);
-        setErrorCarga(e instanceof Error ? e.message : "No se ha podido cargar la auditoria.");
+        setErrorCarga(mensajeDeError(e, "No se ha podido cargar la auditoria."));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -167,7 +174,9 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
           throw new Error(
             res.status === 401
               ? "Tu sesion ha caducado. Vuelve a entrar."
-              : `El servidor ha respondido ${res.status}.`,
+              : res.status === 403
+                ? "No tienes permiso para consultar la auditoria."
+                : `El servidor ha respondido ${res.status}.`,
           );
         }
         const data: unknown = await res.json();
@@ -183,7 +192,9 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
       const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
       const header = "Fecha,Usuario,Accion,Detalles,Expediente,IP";
       const rows = todos.map((l) => {
-        const date = new Date(l.createdAt).toLocaleString("es-ES");
+        // Con la zona fijada: el CSV de una auditoria no puede llevar las
+        // horas de la zona del servidor en vez de las de Madrid.
+        const date = fechaHoraLargaES(l.createdAt);
         const user = l.user?.name || l.user?.email || "Sistema";
         return [date, user, l.action, l.details || "", l.case?.ref || "", l.ip || ""]
           .map(esc)
@@ -201,7 +212,7 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
       setTimeout(() => URL.revokeObjectURL(url), 500);
       setExportadas(todos.length);
     } catch (e: unknown) {
-      setErrorExport(e instanceof Error ? e.message : "No se ha podido exportar la auditoria.");
+      setErrorExport(mensajeDeError(e, "No se ha podido exportar la auditoria."));
     } finally {
       setExportando(false);
     }
@@ -347,7 +358,11 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
 
       {/* Results count */}
       <div className="flex items-center justify-between text-sm text-gray-500">
-        <span>
+        {/*
+          `role="status"`: al cambiar un filtro la unica senal de que la lista
+          se ha reducido era el numero, y no se anunciaba.
+        */}
+        <span role="status" data-testid="contador-auditoria">
           {total} registro{total !== 1 ? "s" : ""}
           {hasFilters ? " (filtrado)" : ""}
         </span>
@@ -356,7 +371,25 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
         )}
       </div>
 
-      {/* Table */}
+      {/*
+        EL AVISO DE ERROR SE DIBUJA UNA SOLA VEZ, fuera de las dos ramas.
+
+        Estaba dentro de la tabla de escritorio, y la rama `md:hidden` de
+        tarjetas se quedo sin el: un fallo de carga en un telefono caia en
+        `logs.length === 0` y pintaba «No hay registros», que en una auditoria
+        significa que no ha pasado nada en la organizacion. Es la conclusion
+        contraria a la verdadera, y ademas no ofrecia forma de reintentar.
+        Fuera de las ramas no se puede volver a olvidar en una de ellas.
+      */}
+      {errorCarga ? (
+        <div className="bg-white rounded-lg border p-6">
+          <AvisoError
+            mensaje={errorCarga}
+            que="la auditoria"
+            onReintentar={() => setReintento((n) => n + 1)}
+          />
+        </div>
+      ) : (
       <div className="bg-white rounded-lg border overflow-hidden">
         {/* Desktop */}
         <div className="hidden md:block overflow-x-auto">
@@ -371,17 +404,7 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {errorCarga ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8">
-                    <AvisoError
-                      mensaje={errorCarga}
-                      que="la auditoria"
-                      onReintentar={() => setReintento((n) => n + 1)}
-                    />
-                  </td>
-                </tr>
-              ) : loading ? (
+              {loading ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-12 text-center text-gray-400">
                     Cargando...
@@ -389,7 +412,11 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-gray-400">
+                  <td
+                    colSpan={5}
+                    className="px-4 py-12 text-center text-gray-400"
+                    data-testid="vacio-auditoria"
+                  >
                     No hay registros{hasFilters ? " con los filtros seleccionados" : ""}
                   </td>
                 </tr>
@@ -397,15 +424,9 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
                 logs.map((log) => {
                   const badge = getActionBadge(log.action);
                   return (
-                    <tr key={log.id} className="hover:bg-gray-50">
+                    <tr key={log.id} className="hover:bg-gray-50" data-testid="fila-auditoria">
                       <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
-                        {new Date(log.createdAt).toLocaleString("es-ES", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          year: "2-digit",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                        {fechaHoraCortaES(log.createdAt)}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         {log.user ? (
@@ -421,8 +442,19 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
                           {log.action}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
-                        {log.details || "—"}
+                      {/*
+                        Los detalles se leen enteros. Estaban en una celda con
+                        `truncate` y sin `title` siquiera: el texto se cortaba
+                        con puntos suspensivos y no habia ninguna manera de ver
+                        el resto —ni pasando el raton, ni con teclado, ni en el
+                        movil—. En una traza de auditoria el detalle ES el
+                        registro; recortarlo sin recurso deja la pantalla
+                        contando la mitad de lo que paso.
+                      */}
+                      <td className="px-4 py-3 text-sm text-gray-600 max-w-md">
+                        <span className="block break-words whitespace-pre-wrap">
+                          {log.details || "—"}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-sm">
                         {log.case ? (
@@ -462,12 +494,7 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
                       {log.action}
                     </span>
                     <span className="text-xs text-gray-400">
-                      {new Date(log.createdAt).toLocaleString("es-ES", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {fechaHoraCortaES(log.createdAt)}
                     </span>
                   </div>
                   <p className="text-sm">
@@ -492,6 +519,7 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
           )}
         </div>
       </div>
+      )}
 
       {/* Pagination */}
       {totalPages > 1 && (

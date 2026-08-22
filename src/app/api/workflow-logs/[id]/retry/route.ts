@@ -75,14 +75,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     details:
       `Reintento de la regla "${log.rule.name}"` +
       `${log.case ? ` sobre ${log.case.ref}` : ""}: ` +
-      `${resultado.recuperadas} de ${resultado.reintentadas} entrega(s) recuperada(s); ` +
-      `estado ${resultado.estado}`,
+      (resultado.irrecuperable > 0
+        ? `${resultado.irrecuperable} entrega(s) pendiente(s) que ya no se pueden reenviar; ` +
+          `estado ${resultado.estado}`
+        : `${resultado.recuperadas} de ${resultado.reintentadas} entrega(s) recuperada(s); ` +
+          `estado ${resultado.estado}`),
   }).catch(console.error);
 
   return NextResponse.json({
     retried: resultado.reintentadas,
     recovered: resultado.recuperadas,
     status: resultado.estado,
+    // Entregas que siguen sin llegar y ya no se pueden reenviar porque la
+    // regla dejó de ser de correo o el expediente ya no está. Decirlo es la
+    // diferencia entre «resuelto» y «no se puede resolver».
+    unrecoverable: resultado.irrecuperable,
     // Resultado por destinatario, que es lo que necesita quien mira el
     // registro para saber a quién sigue sin llegarle.
     deliveries: resultado.entregas.map((e) => ({

@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { inicioDelDiaDeES, sumarDiasES } from "@/lib/fecha-es";
+import { leerPaginacion } from "@/lib/paginacion";
+
+/** `2026-08-22`. Cualquier otra cosa no es una fecha que podamos filtrar. */
+const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(req: NextRequest) {
   const auth = await requireOrgPermission("audit.read");
@@ -9,8 +14,10 @@ export async function GET(req: NextRequest) {
   const session = auth.session;
 
   const url = new URL(req.url);
-  const page = parseInt(url.searchParams.get("page") || "1");
-  const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 100);
+  const { pagina: page, limite: limit } = leerPaginacion(url.searchParams, {
+    limitePorDefecto: 50,
+    limiteMaximo: 100,
+  });
   const caseId = url.searchParams.get("caseId");
   const action = url.searchParams.get("action");
   const userId = url.searchParams.get("userId");
@@ -18,7 +25,23 @@ export async function GET(req: NextRequest) {
   const to = url.searchParams.get("to");
   const search = url.searchParams.get("search");
 
-  const conditions: Record<string, unknown>[] = [{ orgId: session.user.orgId }];
+  /*
+   * `new Date("no-soy-una-fecha")` es `Invalid Date`, y pasárselo a Prisma
+   * lanza. Un `?from=ayer` escrito a mano devolvía un 500 en la auditoría.
+   */
+  for (const [nombre, valor] of [
+    ["from", from],
+    ["to", to],
+  ] as const) {
+    if (valor && !FECHA_ISO.test(valor)) {
+      return NextResponse.json(
+        { error: `El parámetro ${nombre} debe tener el formato AAAA-MM-DD.` },
+        { status: 400 },
+      );
+    }
+  }
+
+  const conditions: Prisma.AuditLogWhereInput[] = [{ orgId: session.user.orgId }];
   if (caseId) conditions.push({ caseId });
   if (userId) conditions.push({ userId: userId === "system" ? null : userId });
   if (action) conditions.push({ action: { startsWith: action } });
@@ -56,11 +79,11 @@ export async function GET(req: NextRequest) {
       ],
     });
   }
-  const where = { AND: conditions };
+  const where: Prisma.AuditLogWhereInput = { AND: conditions };
 
   const [logs, total] = await Promise.all([
     prisma.auditLog.findMany({
-      where: where as any,
+      where,
       include: {
         user: { select: { name: true, email: true } },
         case: { select: { ref: true } },
@@ -69,7 +92,7 @@ export async function GET(req: NextRequest) {
       skip: (page - 1) * limit,
       take: limit,
     }),
-    prisma.auditLog.count({ where: where as any }),
+    prisma.auditLog.count({ where }),
   ]);
 
   return NextResponse.json({ logs, total, page, limit });

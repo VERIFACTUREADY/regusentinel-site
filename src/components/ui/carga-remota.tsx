@@ -180,3 +180,24 @@ export function EstadoVacio({
     </div>
   );
 }
+
+/**
+ * Convierte un error capturado en un mensaje que se le puede enseñar a una
+ * persona.
+ *
+ * EL DEFECTO QUE CORRIGE
+ * ----------------------
+ * `e instanceof Error ? e.message : porDefecto` parece razonable hasta que el
+ * error es de red: `fetch` rechaza entonces con un `TypeError` cuyo mensaje es
+ * **«Failed to fetch»**. Eso acababa impreso en pantalla, en inglés y hablando
+ * de una interioridad del navegador, dentro de una aplicación en español. Y no
+ * en un sitio cualquiera: en la auditoría, donde quien lo lee necesita saber
+ * si le falta información o si de verdad no hay nada.
+ *
+ * Cualquier otro `Error` sí trae un mensaje que hemos escrito nosotros —el del
+ * código HTTP, el del formato inesperado—, y ése sí se muestra.
+ */
+export function mensajeDeError(e: unknown, porDefecto: string): string {
+  if (e instanceof TypeError) return porDefecto;
+  return e instanceof Error && e.message ? e.message : porDefecto;
+}

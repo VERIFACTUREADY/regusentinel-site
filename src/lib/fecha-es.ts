@@ -160,3 +160,48 @@ export function diaSemanaES(instante: Date): number {
   }).format(instante);
   return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(nombre);
 }
+
+/**
+ * Fecha y hora cortas, SIEMPRE en la zona española: `22/08/26 14:35`.
+ *
+ * EL DEFECTO QUE CORRIGE
+ * ----------------------
+ * Las tablas escribían `new Date(x).toLocaleString("es-ES", {...})` sin
+ * `timeZone`. `Intl` toma entonces la zona de quien ejecuta, y eso son DOS
+ * zonas distintas para el mismo texto:
+ *
+ *   - en el render del servidor, la del proceso de Node (UTC en producción);
+ *   - al hidratar, la del navegador de quien mira (Madrid).
+ *
+ * Las consecuencias eran dos, y ninguna cosmética. La primera es que en
+ * horario de verano el servidor pintaba las horas dos menos de las reales, y
+ * durante un instante se veían así. La segunda es peor: el texto del servidor
+ * y el del cliente no coincidían, React abortaba la hidratación de la pantalla
+ * entera (errores #425 y #422) y volvía a dibujarla desde cero en el cliente.
+ *
+ * Fijando la zona, servidor y cliente escriben lo mismo, y lo que escriben es
+ * la hora de Madrid, que es la que le sirve a quien lo lee.
+ */
+export function fechaHoraCortaES(instante: Date | string): string {
+  return new Intl.DateTimeFormat("es-ES", {
+    timeZone: ZONA_ES,
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(typeof instante === "string" ? new Date(instante) : instante);
+}
+
+/** Fecha y hora completas en la zona española: `22/08/2026, 14:35:07`. */
+export function fechaHoraLargaES(instante: Date | string): string {
+  return new Intl.DateTimeFormat("es-ES", {
+    timeZone: ZONA_ES,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(typeof instante === "string" ? new Date(instante) : instante);
+}

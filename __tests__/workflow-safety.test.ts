@@ -12,7 +12,12 @@ vi.mock("../src/lib/prisma", () => ({
   prisma: {
     workflowRule: { findMany: vi.fn(), update: vi.fn() },
     workflowLog: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
-    workflowDelivery: { create: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
+    workflowDelivery: {
+      createMany: vi.fn(),
+      findUnique: vi.fn(),
+      updateMany: vi.fn(),
+      findMany: vi.fn(),
+    },
     case: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     membership: { findMany: vi.fn() },
   },
@@ -34,7 +39,14 @@ const caseFindUnique = prisma.case.findUnique as unknown as ReturnType<typeof vi
 const caseUpdateMany = prisma.case.updateMany as unknown as ReturnType<typeof vi.fn>;
 const logCreate = prisma.workflowLog.create as unknown as ReturnType<typeof vi.fn>;
 const logUpdate = prisma.workflowLog.update as unknown as ReturnType<typeof vi.fn>;
-const deliveryCreate = prisma.workflowDelivery.create as unknown as ReturnType<typeof vi.fn>;
+/*
+ * La reclamacion por destinatario usa `createMany` con `skipDuplicates`, no
+ * `create` dentro de un try/catch: es igual de atomica y no deja un
+ * `prisma:error` en el log cada vez que la fila ya existia —que es el caso
+ * normal al reintentar—.
+ */
+const deliveryCreate =
+  prisma.workflowDelivery.createMany as unknown as ReturnType<typeof vi.fn>;
 const deliveryFindMany = prisma.workflowDelivery.findMany as unknown as ReturnType<typeof vi.fn>;
 const memberFindMany = prisma.membership.findMany as unknown as ReturnType<typeof vi.fn>;
 const emailMock = sendEmail as unknown as ReturnType<typeof vi.fn>;
@@ -74,7 +86,7 @@ beforeEach(() => {
   // motor necesita para reclamar cada entrega ANTES de enviar.
   logCreate.mockResolvedValue({ id: "log-1" });
   logUpdate.mockResolvedValue({});
-  deliveryCreate.mockResolvedValue({});
+  deliveryCreate.mockResolvedValue({ count: 1 });
   deliveryFindMany.mockResolvedValue([]);
   (prisma.workflowDelivery.updateMany as any).mockResolvedValue({ count: 1 });
   (prisma.workflowRule.update as any).mockResolvedValue({});
@@ -213,7 +225,7 @@ describe("SEND_EMAIL_TEAM reserva ANTES de enviar", () => {
     });
     deliveryCreate.mockImplementation(async () => {
       orden.push("reservar-entrega");
-      return {};
+      return { count: 1 };
     });
     emailMock.mockImplementation(async () => {
       orden.push("enviar");
@@ -250,11 +262,12 @@ describe("SEND_EMAIL_TEAM reserva ANTES de enviar", () => {
 
     await triggerWorkflow(evento);
 
-    const reclamados = deliveryCreate.mock.calls.map((c: any) => c[0].data.recipient).sort();
-    expect(reclamados).toEqual(["a@x.es", "b@x.es"]);
-    expect(
-      deliveryCreate.mock.calls.every((c: any) => c[0].data.status === "PROCESSING"),
-    ).toBe(true);
+    type FilaEntrega = { recipient: string; status: string };
+    const filas: FilaEntrega[] = deliveryCreate.mock.calls.flatMap(
+      (c) => (c[0] as { data: FilaEntrega[] }).data,
+    );
+    expect(filas.map((f) => f.recipient).sort()).toEqual(["a@x.es", "b@x.es"]);
+    expect(filas.every((f) => f.status === "PROCESSING")).toBe(true);
   });
 
   it("un fallo de envio no impide reclamar ni enviar al resto", async () => {

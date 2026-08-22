@@ -58,6 +58,9 @@ async function restaurarReglas() {
           E2E.automatizaciones.reglaActiva,
           E2E.automatizaciones.reglaInactiva,
           E2E.automatizaciones.reglaBorrable,
+          // La regla de correo la usa la suite de /workflow-logs para
+          // reintentar entregas: borrarla aqui la dejaria sin fixture.
+          E2E.automatizaciones.reglaCorreo,
         ],
       },
     },

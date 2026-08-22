@@ -187,9 +187,17 @@ export type ReclamoEntrega = "reclamada" | "ya_enviada" | "en_curso";
  * llamar al proveedor externo.**
  *
  * Dos mecanismos atómicos:
- *   1. `create` sobre la restricción única `(workflowLogId, recipient)`.
- *   2. Si ya existe, `updateMany` condicionado al estado observado: sólo una
- *      transacción ve `count === 1`.
+ *   1. `createMany` con `skipDuplicates` sobre la restricción única
+ *      `(workflowLogId, recipient)`: sólo una transacción obtiene `count 1`.
+ *   2. Si la fila ya existía, `updateMany` condicionado al estado observado:
+ *      de nuevo, sólo una transacción ve `count === 1`.
+ *
+ * Antes el primer paso era un `create` dentro de un `try/catch` que esperaba
+ * el P2002. Funcionaba, pero Prisma registra la consulta fallida a nivel
+ * ERROR, así que cada reintento normal —el caso corriente, porque la fila ya
+ * existe— dejaba en el log del servidor un «Invalid invocation ... Unique
+ * constraint failed» que no correspondía a ningún fallo. Un log que grita en
+ * la operación normal enseña a no leer el log.
  *
  * Reclamable: PENDING, FAILED y PROCESSING abandonada. Nunca SENT — un
  * destinatario que ya recibió el aviso no vuelve a recibirlo.
@@ -199,20 +207,19 @@ export async function reclamarEntrega(
   recipient: string,
   ahora: Date = new Date(),
 ): Promise<ReclamoEntrega> {
-  try {
-    await prisma.workflowDelivery.create({
-      data: {
+  const creada = await prisma.workflowDelivery.createMany({
+    data: [
+      {
         workflowLogId,
         recipient,
         status: "PROCESSING",
         attempts: 1,
         lastTriedAt: ahora,
       },
-    });
-    return "reclamada";
-  } catch (err) {
-    if ((err as { code?: string })?.code !== "P2002") throw err;
-  }
+    ],
+    skipDuplicates: true,
+  });
+  if (creada.count === 1) return "reclamada";
 
   const existente = await prisma.workflowDelivery.findUnique({
     where: { workflowLogId_recipient: { workflowLogId, recipient } },
@@ -689,6 +696,19 @@ export async function reintentarEntregasFallidas(
   recuperadas: number;
   estado: WorkflowLogStatus;
   entregas: EntregaDestinatario[];
+  /**
+   * Hay entregas pendientes pero NO se pueden reintentar porque ya no es
+   * posible reconstruir el envío: la regla dejó de ser de correo, o el
+   * expediente se borró.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Antes este caso devolvía `reintentadas: 0` igual que el caso «ya no
+   * quedaba nada pendiente», y la pantalla decía «No quedaban entregas
+   * pendientes de reintentar». Era falso: seguían pendientes, y quien lo leía
+   * daba el aviso por resuelto.
+   */
+  irrecuperable: number;
 }> {
   const ahora = new Date();
 
@@ -708,7 +728,13 @@ export async function reintentarEntregasFallidas(
   });
 
   if (recuperables.length === 0) {
-    return { reintentadas: 0, recuperadas: 0, estado: await recalcularEstadoLog(workflowLogId), entregas: [] };
+    return {
+      reintentadas: 0,
+      recuperadas: 0,
+      estado: await recalcularEstadoLog(workflowLogId),
+      entregas: [],
+      irrecuperable: 0,
+    };
   }
 
   // El contenido se reconstruye desde la regla y el expediente.
@@ -719,6 +745,9 @@ export async function reintentarEntregasFallidas(
       recuperadas: 0,
       estado: await recalcularEstadoLog(workflowLogId),
       entregas: [],
+      // Se distingue de «no quedaba nada»: quedan `recuperables.length`
+      // entregas sin destinatario alcanzado y ya no hay forma de reenviarlas.
+      irrecuperable: recuperables.length,
     };
   }
 
@@ -734,6 +763,7 @@ export async function reintentarEntregasFallidas(
     recuperadas: entregas.filter((e) => e.ok && !e.omitida).length,
     estado,
     entregas,
+    irrecuperable: 0,
   };
 }
 

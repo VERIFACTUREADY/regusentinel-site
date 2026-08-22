@@ -1,6 +1,7 @@
 "use client";
 
-import { AvisoError } from "@/components/ui/carga-remota";
+import { AvisoError, mensajeDeError } from "@/components/ui/carga-remota";
+import { fechaHoraCortaES, fechaHoraLargaES } from "@/lib/fecha-es";
 import type { CaseStatus } from "@prisma/client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
@@ -29,11 +30,6 @@ async function leerCuerpo(res: Response): Promise<{ error?: string } | null> {
  * significan nada para quien usa la aplicacion. En ese caso se usa el texto
  * propio en vez de dejar que se cuele el del navegador.
  */
-function mensajeDeError(e: unknown, porDefecto: string): string {
-  if (e instanceof TypeError) return porDefecto;
-  return e instanceof Error && e.message ? e.message : porDefecto;
-}
-
 // ─── Types ────────────────────────────────────────────────
 
 interface WorkflowLog {
@@ -757,7 +753,7 @@ function RuleCard({
       <div className="flex items-center justify-between mt-3 pt-3 border-t text-xs text-gray-500">
         <span>{rule.execCount} ejecuciones</span>
         {rule.lastRunAt && (
-          <span>Última vez: {new Date(rule.lastRunAt).toLocaleDateString("es-ES")}</span>
+          <span>Última vez: {fechaHoraCortaES(rule.lastRunAt)}</span>
         )}
         {rule.logs.length > 0 && (
           <button onClick={() => setShowLogs((v) => !v)} className="text-indigo-600 hover:underline">
@@ -773,7 +769,7 @@ function RuleCard({
               <span className={`px-1.5 py-0.5 rounded font-medium ${LOG_STATUS_COLORS[log.status]}`}>
                 {log.status}
               </span>
-              <span className="text-gray-500">{new Date(log.createdAt).toLocaleString("es-ES")}</span>
+              <span className="text-gray-500">{fechaHoraLargaES(log.createdAt)}</span>
               {log.error && <span className="text-red-500 truncate max-w-xs">{log.error}</span>}
             </div>
           ))}
