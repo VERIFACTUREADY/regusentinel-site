@@ -292,6 +292,8 @@ Inventario real de la pantalla y de sus tres modales. Pruebas en
 | El servidor rechaza a OPERATOR y VIEWER | — | ✅ | crear, editar, borrar y probar → 403; nada cambia |
 | Aislamiento entre organizaciones | — | ✅ | la lista no la muestra; leer, editar, borrar y probar la ajena → 404 |
 | Idempotencia del motor | — | 🟡 | `idempotencyKey` existe en el esquema y **no se ha tocado**; su comportamiento bajo evento duplicado no se ha probado desde el navegador en esta fase |
+| «Probar regla» con una acción de CORREO | `workflow.manage` | ❌ | **hueco declarado**: el modal de prueba se conduce con la regla de comentario, cuyo efecto se comprueba en el expediente. Con `SEND_EMAIL_CONTACT` o `SEND_EMAIL_TEAM` no se ha comprobado contra el buzón de pruebas. (El envío por correo del motor **sí** está probado contra el buzón, pero por la vía del reintento de `/workflow-logs`, no por este modal) |
+| DISPARO AUTOMÁTICO de los otros tres disparadores | — | ❌ | **hueco declarado**: sólo `CASE_STATUS_CHANGED` se ha conducido de punta a punta desde la interfaz. `TASK_STATUS_CHANGED`, `CASE_CREATED` y `DOCUMENT_UPLOADED` se comprueban al crear y guardar la regla, pero no se ha provocado el evento real que los dispara |
 | Escritorio, tablet y móvil | — | ✅ | `automatizaciones.responsive.spec.ts` — la lista, y el formulario de nueva regla se abre y se rellena con la pantalla estrecha |
 
 ### `/workflow-logs` — Registro de ejecuciones
