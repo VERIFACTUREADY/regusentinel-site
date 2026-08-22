@@ -15,7 +15,7 @@ Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 `documentos`, `documentos.responsive`, `usuarios`, `usuarios.responsive`,
 `autenticacion`, `sesion-y-roles`, `navegacion.responsive`, `dashboard`, `today`,
 `panel.responsive`, `mensajes`, `notificaciones`, `aprobaciones` y
-`avisos.responsive`. Todas corren con el vigilante de
+`avisos.responsive` y `automatizaciones`. Todas corren con el vigilante de
 `e2e/vigilancia.ts` activo (ver «Detección global»).
 
 ## Leyenda
@@ -247,6 +247,73 @@ Pruebas en `aprobaciones.spec.ts` (29) y `avisos.responsive.spec.ts`.
 | Paginación: cifras exactas por pestaña | ✅ | `aprobaciones.spec.ts` — 35 / 3 / 2 / 40, y «Todas» también pagina |
 | Paginación: aislamiento entre organizaciones | ✅ | `aprobaciones.spec.ts` — las de otra organización no aparecen en ninguna página ni alteran el total; se comprueba en la interfaz y en el API, con y sin filtro de estado |
 | Escritorio, tablet y móvil | ✅ | `avisos.responsive.spec.ts` |
+
+### `/workflow-rules` — Automatizaciones
+
+Inventario real de la pantalla y de sus tres modales. Pruebas en
+`automatizaciones.spec.ts` (52).
+
+| Elemento | Rol / permiso | Estado | Prueba |
+|---|---|---|---|
+| Ver la lista de reglas | `workflow.read` (los 4 roles) | ✅ | `automatizaciones.spec.ts` — nombre, disparador y acción |
+| **La lista caída NO dice «Sin reglas de automatización»** | — | ✅ | **defecto corregido**: era `try { if (res.ok) … } catch {}`; con la petición caída el gestor concluía que no tenía ninguna automatización montada. HTTP 401/403/500, red y forma inesperada |
+| «Reintentar» de la lista | — | ✅ | `automatizaciones.spec.ts` |
+| Estado vacío REAL | — | ✅ | organización sin reglas |
+| Crear regla (comentario) | `workflow.manage` | ✅ | flujo completo desde el navegador; persiste con su configuración |
+| Crear regla (email) con asunto y cuerpo | `workflow.manage` | ✅ | `automatizaciones.spec.ts` |
+| Los 4 disparadores despliegan sus condiciones | `workflow.manage` | ✅ | `CASE_STATUS_CHANGED`, `TASK_STATUS_CHANGED`, `CASE_CREATED`, `DOCUMENT_UPLOADED` |
+| Las 4 acciones despliegan su configuración | `workflow.manage` | ✅ | `SEND_EMAIL_CONTACT`, `SEND_EMAIL_TEAM`, `ADD_CASE_COMMENT`, `CHANGE_CASE_STATUS` |
+| Casilla «Regla activa» | `workflow.manage` | ✅ | se guarda como se deja |
+| Nombre vacío o sólo espacios | — | ✅ | el botón queda inhabilitado, y el servidor lo rechaza con 400 |
+| **Los estados de expediente que ofrece el formulario existen** | — | ✅ | **defecto corregido**: ofrecía `OPEN`, `PENDING_SIGNATURE` y `FILED`, que **no existen** en `CaseStatus`, y omitía `INTAKE`, `VALIDATION`, `READY_TO_SEND`, `SENT` y `FOLLOW_UP`. Elegir «Presentado» daba un 400; poner «Abierto» como condición creaba una regla que **no se disparaba jamás**, sin un solo error. Ahora la lista sale del enum |
+| Disparador y acción inválidos | — | ✅ | el servidor los rechaza con 400 |
+| Estado de destino inválido | — | ✅ | rechazado; no se crea la regla |
+| **Guardar no finge éxito** | — | ✅ | **defecto corregido**: HTTP 400/403/500, respuesta que no es JSON —ya no sale «Unexpected token '<'»— y fallo de red. El modal queda abierto y con lo escrito |
+| Editar una regla | `workflow.manage` | ✅ | nombre, descripción, disparador, condiciones, acción y configuración; persiste |
+| Una edición rechazada NO aparece guardada | — | ✅ | `automatizaciones.spec.ts` |
+| **Activar / desactivar comprueba el resultado** | `workflow.manage` | ✅ | **defecto corregido**: disparaba el PATCH y recargaba sin mirar; con un 403 el usuario se iba creyendo que la había desactivado. Los dos sentidos persisten |
+| Activar: HTTP 403, 500 y fallo de red | — | ✅ | avisa y el estado real **no** cambia |
+| **Borrar comprueba el resultado** | `workflow.manage` | ✅ | **defecto corregido**: cerraba la confirmación pasara lo que pasara. Cancelar deja la regla; confirmar la borra y persiste |
+| Borrar: HTTP 403, 404 y 500 | — | ✅ | la confirmación sigue abierta y la regla sigue en la base |
+| Borrar: doble clic | — | ✅ | una sola llamada |
+| **El buscador del modal de prueba distingue vacío de fallo** | — | ✅ | **defecto corregido**: el `catch {}` convertía 401/403/500/red en «sin resultados» y el modal quedaba mudo |
+| Probar regla: ejecución real y efecto | `workflow.manage` | ✅ | se busca el expediente, se pulsa el resultado real, se ejecuta y el comentario aparece en el expediente; queda registrada la ejecución |
+| Probar regla: servidor caído | — | ✅ | avisa y no finge éxito |
+| **DISPARO AUTOMÁTICO de punta a punta** | — | ✅ | se cambia el estado desde la ficha del expediente y el motor arranca **solo**: comentario, registro de ejecución, `execCount` y `lastRunAt`. Prueba la cadena `interfaz → evento → motor → acción → registro`, sin pasar por el endpoint de prueba |
+| Etiquetas del formulario asociadas | — | ✅ | **defecto corregido**: **ninguna** lo estaba. 12 campos por `getByLabel`, con guardia que falla si alguna vuelve a quedar suelta |
+| «Condiciones» y «Configuración de acción» como grupo | — | ✅ | `fieldset`/`legend`: rotulan un conjunto, no un campo |
+| Botones de icono con nombre que identifica la regla | — | ✅ | **defecto corregido**: editar y eliminar no tenían nombre **ninguno**; los otros dos dependían de `title` |
+| Los tres modales se anuncian como diálogo | — | ✅ | `role="dialog"` + `aria-modal` + título |
+| Roles: los 4 leen | `workflow.read` | ✅ | política real |
+| OPERATOR y VIEWER no ven controles de gestión | `workflow.manage` | ✅ | `automatizaciones.spec.ts` |
+| El servidor rechaza a OPERATOR y VIEWER | — | ✅ | crear, editar, borrar y probar → 403; nada cambia |
+| Aislamiento entre organizaciones | — | ✅ | la lista no la muestra; leer, editar, borrar y probar la ajena → 404 |
+| Idempotencia del motor | — | 🟡 | `idempotencyKey` existe en el esquema y **no se ha tocado**; su comportamiento bajo evento duplicado no se ha probado desde el navegador en esta fase |
+| Responsive | — | ❌ | pendiente |
+
+### `/workflow-logs` — Registro de ejecuciones
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Estados de carga, vacío, error y «Reintentar» | ✅ | `estados-carga.spec.ts` (fase anterior) |
+| Totales, tasa de éxito, filtros, paginación, reintento de entregas | ❌ | pendiente |
+
+### `/audit` — Traza de auditoría
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Estados de carga, vacío, error y «Reintentar» | ✅ | `estados-carga.spec.ts` (fase anterior) |
+| **Los filtros de fecha usan el día civil ESPAÑOL** | ✅ | **defecto corregido**: `gte: new Date(from)` es medianoche UTC —las 02:00 en Madrid—, así que «desde el 22» **perdía** los registros de 00:00 a 02:00; y `to + "T23:59:59.999Z"` son las 01:59 del día siguiente, así que «hasta el 22» **colaba** registros del 23. Corregido en `src/app/api/audit-logs/route.ts` con `inicioDelDiaDeES`/`sumarDiasES`. **Sin prueba de navegador todavía** |
+| **El CSV exporta todo lo filtrado, no 30 filas** | ✅ | **defecto corregido**: se construía desde `logs`, la página actual. El botón decía «CSV» en una pantalla titulada «Audit Trail»: quien exportaba para una inspección se llevaba 30 registros de los que hubiera, sin aviso y con un fichero que parece completo. Ahora pagina el servidor y el botón dice cuántos van a salir. **Sin prueba de navegador todavía** |
+| Etiquetas de los cinco filtros asociadas | ✅ | **defecto corregido**: ninguna lo estaba. **Sin prueba de navegador todavía** |
+| Búsqueda, categoría, usuario, Sistema, fechas, combinados, «Limpiar» | ❌ | pendiente |
+| Paginación | ❌ | pendiente |
+| Bordes de fecha en Europe/Madrid | ❌ | pendiente |
+| Acción real → traza → interfaz | ❌ | pendiente |
+| Sólo lectura (no editable ni borrable) | ❌ | pendiente |
+| Aislamiento entre organizaciones | ❌ | pendiente |
+| Roles | ❌ | pendiente |
+| Responsive | ❌ | pendiente |
 
 ### `/calendar` — Calendario de plazos
 
