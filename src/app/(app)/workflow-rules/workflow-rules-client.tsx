@@ -1,6 +1,7 @@
 "use client";
 
 import { AvisoError } from "@/components/ui/carga-remota";
+import type { CaseStatus } from "@prisma/client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 
@@ -20,8 +21,16 @@ async function leerCuerpo(res: Response): Promise<{ error?: string } | null> {
   }
 }
 
-/** Mensaje legible a partir de un `unknown`, sin recurrir a `any`. */
+/**
+ * Mensaje legible a partir de un `unknown`, sin recurrir a `any`.
+ *
+ * Un `fetch` que no llega a completarse lanza `TypeError: Failed to fetch` —o
+ * «NetworkError...» segun el navegador—: mensajes internos, en ingles, que no
+ * significan nada para quien usa la aplicacion. En ese caso se usa el texto
+ * propio en vez de dejar que se cuele el del navegador.
+ */
 function mensajeDeError(e: unknown, porDefecto: string): string {
+  if (e instanceof TypeError) return porDefecto;
   return e instanceof Error && e.message ? e.message : porDefecto;
 }
 
@@ -66,15 +75,44 @@ const ACTION_LABELS: Record<string, string> = {
   CHANGE_CASE_STATUS: "Cambiar estado del expediente",
 };
 
-const CASE_STATUS_OPTIONS = [
-  { value: "OPEN", label: "Abierto" },
-  { value: "PENDING_DOCS", label: "Pendiente documentación" },
-  { value: "IN_PROGRESS", label: "En tramitación" },
-  { value: "PENDING_SIGNATURE", label: "Pendiente firma" },
-  { value: "FILED", label: "Presentado" },
-  { value: "CLOSED", label: "Cerrado" },
-  { value: "ARCHIVED", label: "Archivado" },
-];
+/**
+ * Estados de expediente que ofrece el formulario.
+ *
+ * EL DEFECTO QUE CORRIGE
+ * ----------------------
+ * Esta lista estaba inventada. Ofrecia `OPEN`, `PENDING_SIGNATURE` y `FILED`,
+ * que NO existen en el enum `CaseStatus`, y se dejaba fuera cinco que si:
+ * `INTAKE`, `VALIDATION`, `READY_TO_SEND`, `SENT` y `FOLLOW_UP`.
+ *
+ * Las consecuencias eran de las que no se ven venir:
+ *
+ *   - elegir «Presentado» como nuevo estado hacia que el servidor rechazara la
+ *     regla con un 400 —`z.nativeEnum(CaseStatus)`—, es decir, el producto
+ *     ofrecia una opcion que el propio producto no acepta;
+ *   - y peor: poner «Abierto» como condicion creaba una regla que se guardaba
+ *     tan tranquila y **no se disparaba nunca**, porque ningun expediente
+ *     puede estar en un estado que no existe. Una automatizacion muda, sin un
+ *     solo error en ninguna parte.
+ *
+ * Ahora la lista sale del enum real, asi que no puede volver a separarse de
+ * el: si manana se anade un estado al esquema, aparece aqui solo.
+ */
+const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
+  INTAKE: "Alta",
+  VALIDATION: "Validación",
+  IN_PROGRESS: "En tramitación",
+  PENDING_DOCS: "Pendiente documentación",
+  READY_TO_SEND: "Listo para enviar",
+  SENT: "Enviado",
+  FOLLOW_UP: "Seguimiento",
+  CLOSED: "Cerrado",
+  ARCHIVED: "Archivado",
+};
+
+const CASE_STATUS_OPTIONS = (Object.keys(CASE_STATUS_LABELS) as CaseStatus[]).map((value) => ({
+  value,
+  label: CASE_STATUS_LABELS[value],
+}));
 
 const LOG_STATUS_COLORS: Record<string, string> = {
   SUCCESS: "bg-green-100 text-green-700",

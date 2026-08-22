@@ -258,6 +258,46 @@ export const E2E = {
     /** Prefijo de las referencias: cada aprobacion cuelga de su expediente. */
     prefijoRef: "EXP-2026-72",
   },
+  /**
+   * Organizacion propia de /workflow-rules, /workflow-logs y /audit.
+   *
+   * POR QUE APARTE
+   * --------------
+   * Las tres pantallas son AGREGADOS de toda la organizacion: cuentan
+   * ejecuciones, calculan una tasa de exito y paginan la traza de auditoria.
+   * Sobre cualquier organizacion compartida no se podria afirmar ni una cifra,
+   * porque cada prueba de expedientes, tareas o usuarios escribe en la
+   * auditoria y moveria los totales.
+   */
+  automatizaciones: {
+    slug: "org-e2e-automatizaciones",
+    owner: "owner.auto.e2e@ejemplo.test",
+    manager: "manager.auto.e2e@ejemplo.test",
+    /** OPERATOR: tiene `workflow.read` y `audit.read`, pero NO `workflow.manage`. */
+    operador: "operador.auto.e2e@ejemplo.test",
+    viewer: "viewer.auto.e2e@ejemplo.test",
+
+    /** Expediente sobre el que se prueban y disparan las reglas. */
+    caseRef: "EXP-2026-7300",
+    causante: "Causante Automatizaciones E2E",
+
+    /** Regla activa, con nombre reconocible para los nombres accesibles. */
+    reglaActiva: "Comentar al cambiar de estado",
+    /** Regla desactivada: sirve para probar la activacion. */
+    reglaInactiva: "Avisar al equipo (desactivada)",
+    /** Regla de usar y tirar: es la que se elimina. */
+    reglaBorrable: "Regla que se puede borrar",
+    /** Comentario que deja la regla activa al ejecutarse. */
+    textoComentario: "Comentario puesto por la automatizacion E2E",
+  },
+  /** Organizacion vecina de las automatizaciones: nada suyo puede filtrarse. */
+  automatizacionesVecina: {
+    slug: "org-e2e-automatizaciones-vecina",
+    owner: "owner.autovecina.e2e@ejemplo.test",
+    caseRef: "EXP-2026-7950",
+    regla: "NO-DEBE-VERSE-regla-vecina",
+    accionAuditoria: "NO_DEBE_VERSE.accion_vecina",
+  },
   /** Organizacion vecina de la anterior: nada suyo puede filtrarse. */
   avisosVecina: {
     slug: "org-e2e-avisos-vecina",
@@ -321,6 +361,35 @@ export const CIFRAS_AVISOS = {
 
 /** Tamano de pagina de /approvals (`PAGE_SIZE` en `approvals-queue.tsx`). */
 export const APROBACIONES_POR_PAGINA = 30;
+
+/** Tamano de pagina de /workflow-logs y /audit. */
+export const REGISTROS_POR_PAGINA = 30;
+
+/** Cuantas ejecuciones de flujo se siembran. */
+const TOTAL_EJECUCIONES = 34;
+
+function contarEjecuciones(cumple: (i: number) => boolean): number {
+  let n = 0;
+  for (let i = 0; i < TOTAL_EJECUCIONES; i++) if (cumple(i)) n++;
+  return n;
+}
+
+/**
+ * Reparto de las ejecuciones de flujo.
+ *
+ * Las cifras se CALCULAN con la misma regla que las siembra: contarlas a mano
+ * ya me salio mal una vez en esta auditoria y el descuadre solo aparecio al
+ * comprobarlo contra la base.
+ */
+export const CIFRAS_AUTOMATIZACIONES = {
+  ejecuciones: TOTAL_EJECUCIONES,
+  exitosas: contarEjecuciones((i) => i % 5 === 0 || i % 5 === 1),
+  parciales: contarEjecuciones((i) => i % 5 === 2),
+  fallidas: contarEjecuciones((i) => i % 5 === 3),
+  omitidas: contarEjecuciones((i) => i % 5 === 4),
+  /** Registros de auditoria sembrados: mas de 30 para que la paginacion exista. */
+  auditoria: 34,
+};
 
 /**
  * Reparto de la organizacion de paginacion.
@@ -1384,6 +1453,157 @@ function mediodiaCivilES(base: number, dias: number): Date {
       },
     });
   }
+
+  // ── Organizacion de automatizaciones y auditoria ─────────────────────────
+  const orgAuto = await prisma.organization.create({
+    data: {
+      name: "Gestoria Automatizaciones E2E",
+      slug: E2E.automatizaciones.slug,
+      subscription: { create: { plan: "FIRMA", status: "active" } },
+      onboardingDismissedAt: new Date(),
+    },
+  });
+  const usuariosAuto: Record<string, string> = {};
+  for (const [clave, email, nombre, rol] of [
+    ["owner", E2E.automatizaciones.owner, "Owner Auto E2E", "OWNER"],
+    ["manager", E2E.automatizaciones.manager, "Manager Auto E2E", "MANAGER"],
+    ["operador", E2E.automatizaciones.operador, "Operador Auto E2E", "OPERATOR"],
+    ["viewer", E2E.automatizaciones.viewer, "Viewer Auto E2E", "VIEWER"],
+  ] as const) {
+    const u = await prisma.user.create({ data: { email, name: nombre, passwordHash: hash } });
+    await prisma.membership.create({ data: { userId: u.id, orgId: orgAuto.id, role: rol } });
+    usuariosAuto[clave] = u.id;
+  }
+
+  const casoAuto = await prisma.case.create({
+    data: {
+      orgId: orgAuto.id,
+      ref: E2E.automatizaciones.caseRef,
+      status: "IN_PROGRESS",
+      deceased: { create: { fullName: E2E.automatizaciones.causante } },
+      contact: { create: { fullName: "Contacto Auto E2E", email: "contacto.auto@ejemplo.test" } },
+    },
+  });
+
+  /*
+   * Tres reglas con papeles distintos:
+   *   - activa y con accion inofensiva (comentario), para probar la ejecucion
+   *     de verdad sin mandar correo a nadie;
+   *   - desactivada, para probar la activacion;
+   *   - de usar y tirar, para probar el borrado sin dejar la lista vacia.
+   */
+  const reglaActiva = await prisma.workflowRule.create({
+    data: {
+      orgId: orgAuto.id,
+      name: E2E.automatizaciones.reglaActiva,
+      description: "Deja un comentario cuando el expediente cambia de estado",
+      trigger: "CASE_STATUS_CHANGED",
+      conditions: {},
+      action: "ADD_CASE_COMMENT",
+      actionConfig: { comment: E2E.automatizaciones.textoComentario },
+      isActive: true,
+    },
+  });
+  await prisma.workflowRule.create({
+    data: {
+      orgId: orgAuto.id,
+      name: E2E.automatizaciones.reglaInactiva,
+      trigger: "CASE_CREATED",
+      conditions: {},
+      action: "ADD_CASE_COMMENT",
+      actionConfig: { comment: "Expediente recien creado" },
+      isActive: false,
+    },
+  });
+  await prisma.workflowRule.create({
+    data: {
+      orgId: orgAuto.id,
+      name: E2E.automatizaciones.reglaBorrable,
+      trigger: "DOCUMENT_UPLOADED",
+      conditions: {},
+      action: "ADD_CASE_COMMENT",
+      actionConfig: { comment: "Documento recibido" },
+      isActive: true,
+    },
+  });
+
+  // ── Ejecuciones: reparto fijo, no aleatorio ──
+  const ESTADOS_EJEC = ["SUCCESS", "SUCCESS", "PARTIAL", "FAILED", "SKIPPED"] as const;
+  for (let i = 0; i < CIFRAS_AUTOMATIZACIONES.ejecuciones; i++) {
+    const estado = ESTADOS_EJEC[i % 5];
+    await prisma.workflowLog.create({
+      data: {
+        ruleId: reglaActiva.id,
+        caseId: casoAuto.id,
+        status: estado,
+        error: estado === "FAILED" ? "SMTP 550: buzon no encontrado" : null,
+        details: estado === "PARTIAL" ? { pendingDeliveries: 1 } : undefined,
+        createdAt: new Date(ahoraAvisos - (i + 1) * 60_000),
+      },
+    });
+  }
+
+  // ── Auditoria: mas de 30 para que la paginacion exista de verdad ──
+  const ACCIONES_AUD = ["case.created", "task.completed", "document.uploaded", "user.role_changed"];
+  for (let i = 0; i < CIFRAS_AUTOMATIZACIONES.auditoria; i++) {
+    await prisma.auditLog.create({
+      data: {
+        orgId: orgAuto.id,
+        // Una de cada cinco la deja el sistema (sin usuario).
+        userId: i % 5 === 0 ? null : usuariosAuto.owner,
+        caseId: casoAuto.id,
+        action: ACCIONES_AUD[i % ACCIONES_AUD.length],
+        details: `Registro de auditoria E2E numero ${i + 1}`,
+        createdAt: new Date(ahoraAvisos - (i + 1) * 60_000),
+      },
+    });
+  }
+
+  // ── Organizacion vecina: nada suyo puede filtrarse ──
+  const orgAutoVecina = await prisma.organization.create({
+    data: {
+      name: "Gestoria Automatizaciones Vecina E2E",
+      slug: E2E.automatizacionesVecina.slug,
+      subscription: { create: { plan: "FIRMA", status: "active" } },
+      onboardingDismissedAt: new Date(),
+    },
+  });
+  const ownerAutoVecina = await prisma.user.create({
+    data: { email: E2E.automatizacionesVecina.owner, name: "Owner Auto Vecina E2E", passwordHash: hash },
+  });
+  await prisma.membership.create({
+    data: { userId: ownerAutoVecina.id, orgId: orgAutoVecina.id, role: "OWNER" },
+  });
+  const casoAutoVecino = await prisma.case.create({
+    data: {
+      orgId: orgAutoVecina.id,
+      ref: E2E.automatizacionesVecina.caseRef,
+      status: "IN_PROGRESS",
+      deceased: { create: { fullName: "NO-DEBE-VERSE-Causante-Auto" } },
+    },
+  });
+  const reglaVecina = await prisma.workflowRule.create({
+    data: {
+      orgId: orgAutoVecina.id,
+      name: E2E.automatizacionesVecina.regla,
+      trigger: "CASE_CREATED",
+      conditions: {},
+      action: "ADD_CASE_COMMENT",
+      actionConfig: { comment: "vecina" },
+      isActive: true,
+    },
+  });
+  await prisma.workflowLog.create({
+    data: { ruleId: reglaVecina.id, caseId: casoAutoVecino.id, status: "SUCCESS" },
+  });
+  await prisma.auditLog.create({
+    data: {
+      orgId: orgAutoVecina.id,
+      userId: ownerAutoVecina.id,
+      action: E2E.automatizacionesVecina.accionAuditoria,
+      details: "NO-DEBE-VERSE-detalle-vecino",
+    },
+  });
 
   // ── Organizacion con aprobaciones suficientes para paginar ───────────────
   const orgAprobPag = await prisma.organization.create({

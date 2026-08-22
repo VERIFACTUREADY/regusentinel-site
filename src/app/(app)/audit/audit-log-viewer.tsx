@@ -50,6 +50,9 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
   const [loading, setLoading] = useState(true);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [reintento, setReintento] = useState(0);
+  const [exportando, setExportando] = useState(false);
+  const [errorExport, setErrorExport] = useState<string | null>(null);
+  const [exportadas, setExportadas] = useState<number | null>(null);
 
   const [action, setAction] = useState("");
   const [userId, setUserId] = useState("");
@@ -124,39 +127,106 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
     setPage(1);
   }
 
-  function exportCsv() {
-    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const header = "Fecha,Usuario,Accion,Detalles,Expediente,IP";
-    const rows = logs.map((l) => {
-      const date = new Date(l.createdAt).toLocaleString("es-ES");
-      const user = l.user?.name || l.user?.email || "Sistema";
-      return [date, user, l.action, l.details || "", l.case?.ref || "", l.ip || ""]
-        .map(esc)
-        .join(",");
-    });
-    const csv = [header, ...rows].join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 500);
+  /**
+   * Exporta TODO lo que cumple los filtros activos, no solo la pagina a la
+   * vista.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Se construia el CSV a partir de `logs`, que es unicamente la pagina
+   * actual: 30 filas. El boton dice «CSV» dentro de una pantalla titulada
+   * «Audit Trail», asi que un gestor que exporta para su asesoria, para una
+   * inspeccion o para conservar la traza se llevaba 30 registros de los
+   * ochocientos que habia —sin truncamiento visible, sin aviso, y con un
+   * fichero que parece completo—. En una traza de auditoria eso no es una
+   * comodidad que falta: es un fichero que induce a error.
+   *
+   * Ahora se piden al servidor todas las paginas que cumplen los filtros y se
+   * exportan enteras. El boton dice ademas cuantas van a salir, para que el
+   * alcance sea explicito y no haya que suponerlo.
+   */
+  async function exportCsv() {
+    setExportando(true);
+    setErrorExport(null);
+    try {
+      const TAMANO = 100; // tope que admite el API
+      const todos: AuditLog[] = [];
+      let pagina = 1;
+      // Se pagina hasta traerlo todo. El limite lo pone el propio `total` que
+      // devuelve el servidor, no una cifra inventada aqui.
+      for (;;) {
+        const params = new URLSearchParams({ page: String(pagina), limit: String(TAMANO) });
+        if (action) params.set("action", action);
+        if (userId) params.set("userId", userId);
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
+        if (search) params.set("search", search);
+
+        const res = await fetch(`/api/audit-logs?${params}`);
+        if (!res.ok) {
+          throw new Error(
+            res.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${res.status}.`,
+          );
+        }
+        const data: unknown = await res.json();
+        const cuerpo = data as { logs?: unknown; total?: unknown };
+        if (!cuerpo || !Array.isArray(cuerpo.logs) || typeof cuerpo.total !== "number") {
+          throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        }
+        todos.push(...(cuerpo.logs as AuditLog[]));
+        if (todos.length >= cuerpo.total || cuerpo.logs.length === 0) break;
+        pagina++;
+      }
+
+      const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+      const header = "Fecha,Usuario,Accion,Detalles,Expediente,IP";
+      const rows = todos.map((l) => {
+        const date = new Date(l.createdAt).toLocaleString("es-ES");
+        const user = l.user?.name || l.user?.email || "Sistema";
+        return [date, user, l.action, l.details || "", l.case?.ref || "", l.ip || ""]
+          .map(esc)
+          .join(",");
+      });
+      // `\uFEFF`: sin la marca de orden de bytes, Excel abre el fichero en
+      // Latin-1 y los acentos salen rotos.
+      const csv = [header, ...rows].join("\n");
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+      setExportadas(todos.length);
+    } catch (e: unknown) {
+      setErrorExport(e instanceof Error ? e.message : "No se ha podido exportar la auditoria.");
+    } finally {
+      setExportando(false);
+    }
   }
 
   const hasFilters = action || userId || from || to || search;
 
   return (
     <div className="space-y-4">
+      {/*
+        Los cinco filtros llevan `<label htmlFor>` con su `id`. Estaban
+        sueltos: se veian encima del control pero sin relacion con el, asi que
+        un lector de pantalla anunciaba «cuadro de texto» y «lista» sin decir
+        de que, y pulsar el rotulo no enfocaba nada.
+      */}
       {/* Filters */}
       <div className="bg-white rounded-lg border p-4">
         <div className="flex flex-wrap gap-3 items-end">
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Buscar</label>
+            <label htmlFor="auditBuscar" className="block text-xs font-medium text-gray-500 mb-1">Buscar</label>
             <form onSubmit={handleSearch} className="flex gap-2">
               <input
                 type="text"
-                value={searchInput}
+                id="auditBuscar"
+              value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Buscar en acciones y detalles..."
                 className="flex-1 border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -171,8 +241,9 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Categoria</label>
+            <label htmlFor="auditCategoria" className="block text-xs font-medium text-gray-500 mb-1">Categoria</label>
             <select
+              id="auditCategoria"
               value={action}
               onChange={(e) => { setAction(e.target.value); setPage(1); }}
               className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -185,8 +256,9 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Usuario</label>
+            <label htmlFor="auditUsuario" className="block text-xs font-medium text-gray-500 mb-1">Usuario</label>
             <select
+              id="auditUsuario"
               value={userId}
               onChange={(e) => { setUserId(e.target.value); setPage(1); }}
               className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -200,9 +272,10 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Desde</label>
+            <label htmlFor="auditDesde" className="block text-xs font-medium text-gray-500 mb-1">Desde</label>
             <input
               type="date"
+              id="auditDesde"
               value={from}
               onChange={(e) => { setFrom(e.target.value); setPage(1); }}
               className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -210,9 +283,10 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Hasta</label>
+            <label htmlFor="auditHasta" className="block text-xs font-medium text-gray-500 mb-1">Hasta</label>
             <input
               type="date"
+              id="auditHasta"
               value={to}
               onChange={(e) => { setTo(e.target.value); setPage(1); }}
               className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -228,19 +302,48 @@ export function AuditLogViewer({ users }: { users: UserOption[] }) {
                 Limpiar
               </button>
             )}
+            {/*
+              El rotulo dice el ALCANCE, no solo «CSV». Antes exportaba las 30
+              filas de la pagina y el boton no daba ninguna pista de ello.
+            */}
             <button
-              onClick={exportCsv}
-              disabled={logs.length === 0}
+              onClick={() => void exportCsv()}
+              disabled={total === 0 || exportando}
+              data-testid="exportar-csv"
+              aria-label={
+                hasFilters
+                  ? `Exportar a CSV los ${total} registros filtrados`
+                  : `Exportar a CSV los ${total} registros`
+              }
               className="px-3 py-1.5 text-sm border rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              CSV
+              {exportando ? "Exportando…" : `CSV (${total})`}
             </button>
           </div>
         </div>
       </div>
+
+      {errorExport && (
+        <p
+          role="alert"
+          data-testid="error-exportar-csv"
+          className="text-sm rounded-md px-3 py-2 bg-red-50 text-red-700 border border-red-200"
+        >
+          {errorExport}
+        </p>
+      )}
+      {exportadas !== null && !errorExport && (
+        <p
+          role="status"
+          data-testid="exito-exportar-csv"
+          className="text-sm rounded-md px-3 py-2 bg-green-50 text-green-700 border border-green-200"
+        >
+          Exportados {exportadas} registro{exportadas !== 1 ? "s" : ""} a CSV.
+        </p>
+      )}
 
       {/* Results count */}
       <div className="flex items-center justify-between text-sm text-gray-500">
