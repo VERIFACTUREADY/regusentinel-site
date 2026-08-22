@@ -7,7 +7,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { PORTAL_CONSENT_VERSION, PORTAL_CONSENT_HASH } from "../src/lib/portal-consent";
-import { sumarDiasES, inicioDelDiaDeES } from "../src/lib/fecha-es";
+import { sumarDiasES, inicioDelDiaDeES, finDelDiaDeES } from "../src/lib/fecha-es";
 
 const prisma = new PrismaClient();
 
@@ -561,12 +561,14 @@ export const CIFRAS_PANEL = {
   /*
    * NO hay cifra para «Plazos proximos (30 dias)» a proposito.
    *
-   * La consulta es `deadline >= ahora`, y la tarea «vence hoy» tiene el plazo
-   * anclado a las 12:00 UTC: entra en la lista si la suite corre por la manana
-   * y no entra si corre por la tarde. Una prueba que afirmara un total exacto
-   * pasaria o fallaria segun la hora, que es justo el tipo de prueba inestable
-   * que no aporta nada. El bloque se comprueba por TITULOS —que el de 30 dias
-   * esta y el de 31 no—, que es ademas lo que interesa: el borde del rango.
+   * El bloque se comprueba por TITULOS —que el de 30 dias esta y el de 31 no—,
+   * que es ademas lo que interesa: el borde del rango. Una cifra exacta
+   * obligaria a mantener a mano un total que cambia cada vez que se anade una
+   * tarea de apoyo a cualquier otra prueba.
+   *
+   * (La tarea «vence hoy» SI entra siempre desde que su plazo se ancla al
+   * final de su dia civil espanol; ver `plazoDelDia`. Antes iba al mediodia y
+   * desaparecia de la lista a partir de las 12:00 de Madrid.)
    */
   /** KPI «Expedientes activos»: los cuatro menos el cerrado. */
   expedientesActivos: 3,
@@ -1108,6 +1110,28 @@ function mediodiaCivilES(base: number, dias: number): Date {
   return new Date(inicio.getTime() + 12 * 60 * 60 * 1000);
 }
 
+/**
+ * Plazo dentro del dia civil espanol indicado.
+ *
+ * EL DEFECTO QUE CORRIGE
+ * ----------------------
+ * El de HOY se anclaba al mediodia, igual que todos los demas. Pero la
+ * consulta del panel es `deadline >= ahora`, asi que a partir de las 12:00 de
+ * Madrid la tarea «vence hoy» quedaba en el pasado y desaparecia del bloque
+ * «Plazos proximos». Es decir: `dashboard.spec.ts` fallaba TODAS LAS TARDES,
+ * y solo pasaba si la suite tocaba correr por la manana. En CI eso se traduce
+ * en un rojo que va y viene sin que nadie haya cambiado nada, que es la peor
+ * clase de prueba: la que ensena a no creerse el rojo.
+ *
+ * El de hoy se ancla al FINAL de su dia civil, asi que sigue siendo hoy y
+ * sigue estando en el futuro a cualquier hora de la jornada. Los de dias
+ * pasados o futuros se quedan al mediodia, que ya estaba bien: nunca cambian
+ * de lado respecto a `ahora`.
+ */
+function plazoDelDia(base: number, dias: number): Date {
+  return dias === 0 ? finDelDiaDeES(new Date(base)) : mediodiaCivilES(base, dias);
+}
+
 // El plazo se ancla al mediodia del dia civil espanol: asi el dia civil espanol
   // coincide con el dia UTC y estas tareas no dependen de a que hora corra la
   // suite. Las pruebas de zona horaria usan tareas propias, con hora extrema.
@@ -1118,7 +1142,7 @@ function mediodiaCivilES(base: number, dias: number): Date {
         ? null
         : t.rodante
           ? plazoRodante(ahoraPanel, t.dias)
-          : mediodiaCivilES(ahoraPanel, t.dias);
+          : plazoDelDia(ahoraPanel, t.dias);
     const creada = await prisma.task.create({
       data: {
         caseId: casoPanel.id,
