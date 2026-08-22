@@ -111,10 +111,22 @@ test.describe("Mensajes: listado de conversaciones", () => {
 
     // «Sin leer» es el filtro de partida.
     await expect(page.getByTestId("filtro-unread")).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("recuento-conversaciones")).toContainText(
-      `${CIFRAS_AVISOS.conversacionesSinLeer} conversaciones`,
-    );
 
+    /*
+     * AQUI NO SE AFIRMA EL RECUENTO, a proposito.
+     *
+     * Al abrir /messages la primera conversacion se selecciona SOLA y su hilo
+     * se marca leido, asi que el numero de «sin leer» baja de 2 a 1 a los
+     * pocos milisegundos de pintarse. Afirmarlo aqui era una carrera: pasaba
+     * casi siempre y fallaba de vez en cuando en CI —una prueba inestable, que
+     * es la que ensena a no creerse el rojo—. El recuento tiene su propia
+     * prueba, «el contador total de sin leer cuadra con la base», que lo
+     * comprueba contra el API con ese comportamiento ya tenido en cuenta.
+     *
+     * Lo que esta prueba promete es QUE conversaciones deja el filtro, y eso
+     * es justo lo que se comprueba debajo. La lista no se reordena por el
+     * marcado automatico.
+     */
     await expect(conversacion(page, E2E.avisos.caseConDos)).toBeVisible();
     await expect(conversacion(page, E2E.avisos.caseConUno)).toBeVisible();
     // La que tiene todo leido no entra…
