@@ -98,6 +98,73 @@ const VENTANA_EVENTO_MS = 5 * 60 * 1000;
 export const ENTREGA_WORKFLOW_COLGADA_MS = 10 * 60 * 1000;
 
 /**
+ * Identidad de un HECHO DE NEGOCIO, para `WorkflowEvent.eventKey`.
+ *
+ * EL DEFECTO QUE CORRIGE
+ * ----------------------
+ * `eventKey` existía en la interfaz del evento y **ningún emisor real lo
+ * pasaba**. Los cuatro —`CASE_CREATED`, `CASE_STATUS_CHANGED`,
+ * `TASK_STATUS_CHANGED` y `DOCUMENT_UPLOADED`— caían en la ventana temporal de
+ * cinco minutos, que como identidad es a la vez demasiado y demasiado poco:
+ *
+ *   - **DOCUMENT_UPLOADED no llevaba NINGÚN dato del documento.** Su clave era
+ *     `(org, regla, expediente, tipo, ventana)`. Subir tres documentos a un
+ *     expediente en cinco minutos —lo normal cuando una familia manda la
+ *     documentación de golpe— ejecutaba la automatización **una sola vez**. Los
+ *     otros dos no disparaban nada y no dejaban ni rastro de por qué.
+ *   - **TASK_STATUS_CHANGED no distinguía dos transiciones iguales.** Su clave
+ *     era `(…, taskId, taskStatus, ventana)`: pasar una tarea a EN CURSO,
+ *     devolverla a PENDIENTE y volver a ponerla EN CURSO dentro de la misma
+ *     ventana se tragaba la tercera. La segunda vez el aviso no salía.
+ *   - Lo mismo, con el mismo remedio, en `CASE_STATUS_CHANGED`.
+ *
+ * QUÉ SIRVE COMO IDENTIDAD Y QUÉ NO
+ * ---------------------------------
+ * La clave tiene que cumplir **las dos** condiciones a la vez:
+ *
+ *   1. **Estable** ante una reentrega del MISMO hecho. Un `randomUUID()` por
+ *      llamada no vale: dos entregas del mismo evento darían claves distintas
+ *      y el aviso saldría dos veces.
+ *   2. **Distinta** para dos hechos legítimos distintos, por juntos que
+ *      ocurran. La ventana de cinco minutos sola no vale: colapsa hechos que
+ *      de verdad son dos.
+ *
+ * Por eso todas salen de datos **ya persistidos**: el id de la fila creada, o
+ * su `updatedAt` después de la escritura. Se leen, no se generan.
+ *
+ * LÍMITE CONOCIDO
+ * ---------------
+ * Las claves de versión usan `updatedAt` con precisión de milisegundo. Dos
+ * transiciones distintas de la misma tarea en el mismo milisegundo tendrían la
+ * misma identidad. No es alcanzable desde la interfaz —hace falta una escritura
+ * y una respuesta HTTP entre ambas— y, de darse, el error cae del lado
+ * conservador: se ejecuta una vez, no dos.
+ */
+export const claveDeEvento = {
+  /** Un expediente se crea una vez: su id ES el hecho. */
+  expedienteCreado: (caseId: string) => `case-created:${caseId}`,
+
+  /** La versión del expediente tras el cambio distingue una transición de otra. */
+  estadoExpediente: (caseId: string, version: Date) =>
+    `case-status:${caseId}:${version.toISOString()}`,
+
+  /** Ídem para la tarea: `updatedAt` es el número de versión de esa fila. */
+  estadoTarea: (taskId: string, version: Date) =>
+    `task-status:${taskId}:${version.toISOString()}`,
+
+  /**
+   * Cambio en bloque: el hecho es «esta escritura sobre este expediente». La
+   * versión más alta de las tareas tocadas lo identifica, y cambia en el
+   * siguiente lote aunque sean las mismas tareas y el mismo estado.
+   */
+  estadoTareasEnLote: (caseId: string, version: Date) =>
+    `task-batch:${caseId}:${version.toISOString()}`,
+
+  /** Un documento se sube una vez: su id ES el hecho. */
+  documentoSubido: (documentId: string) => `document:${documentId}`,
+};
+
+/**
  * Clave idempotente de una ejecución.
  *
  * Distingue organización, regla, expediente, evento y ventana. Es un SHA-256

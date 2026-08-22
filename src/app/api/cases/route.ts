@@ -8,7 +8,7 @@ import { createCaseSchema } from "@/lib/validations";
 import { getChecklistForCategories } from "@/lib/checklist-rules";
 import { logAudit } from "@/lib/audit";
 import { calculateTaskDeadlines } from "@/lib/deadline-engine";
-import { triggerWorkflow } from "@/lib/workflow-engine";
+import { triggerWorkflow, claveDeEvento } from "@/lib/workflow-engine";
 
 /** Tope de plan alcanzado. Aborta la transaccion y se traduce a 403. */
 class PlanLimitError extends Error {
@@ -282,6 +282,9 @@ export async function POST(req: NextRequest) {
       orgId: session.user.orgId,
       caseId: newCase.id,
       userId: session.user.id,
+      // Un expediente se crea una vez: su id identifica el hecho de forma
+      // estable ante una reentrega, y es distinto para cada alta.
+      eventKey: claveDeEvento.expedienteCreado(newCase.id),
     }).catch(console.error);
 
     const full = await prisma.case.findUnique({

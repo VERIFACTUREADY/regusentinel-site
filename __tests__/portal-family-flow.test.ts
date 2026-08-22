@@ -27,6 +27,9 @@ vi.mock("../src/lib/doc-task-matching", () => ({
 
 vi.mock("../src/lib/workflow-engine", () => ({
   triggerWorkflow: vi.fn().mockResolvedValue(undefined),
+  // La ruta identifica el evento con el id del documento recien creado. Sin
+  // esto en el doble, la subida del portal reventaba con un 500.
+  claveDeEvento: { documentoSubido: (id: string) => `document:${id}` },
 }));
 
 vi.mock("../src/lib/deadline-engine", () => ({
@@ -420,6 +423,7 @@ describe("POST /api/portal/[token]/documents — subir documento", () => {
     expect(res.status).toBe(201);
     expect(body.id).toBe("doc_new");
 
+
     // S3 upload
     expect(uploadMock).toHaveBeenCalledOnce();
     const [fileKey, , mimeType] = uploadMock.mock.calls[0];
@@ -447,10 +451,17 @@ describe("POST /api/portal/[token]/documents — subir documento", () => {
 
     // Dos audits: uno por la tarea auto-actualizada, otro por el upload
     expect(auditMock).toHaveBeenCalledTimes(2);
+    /*
+     * El evento lleva la identidad DEL DOCUMENTO. Sin ella la clave del motor
+     * era `(org, regla, expediente, tipo, ventana de 5 min)`, asi que dos
+     * documentos seguidos del mismo expediente contaban como un solo hecho y
+     * la automatizacion solo se ejecutaba para el primero.
+     */
     expect(workflowMock).toHaveBeenCalledWith({
       type: "DOCUMENT_UPLOADED",
       orgId: "org1",
       caseId: "case_abc",
+      eventKey: "document:doc_new",
     });
   });
 

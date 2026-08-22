@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { validateCronSecret } from "@/lib/cron-auth";
-import { triggerWorkflow } from "@/lib/workflow-engine";
+import { triggerWorkflow, claveDeEvento } from "@/lib/workflow-engine";
 
 /**
  * Desbloqueo de tareas cuyo `blockedUntil` ya ha pasado.
@@ -53,6 +53,15 @@ export async function GET(req: NextRequest) {
     });
     if (result.count === 0) continue;
 
+    // La versión de la tarea tras desbloquearla identifica ESTE desbloqueo.
+    // El cron puede reejecutarse; sin una identidad estable, dos pasadas que
+    // vieran la misma tarea generarían dos avisos, y sin una identidad
+    // distinta un desbloqueo posterior de la misma tarea se perdería.
+    const desbloqueada = await prisma.task.findUnique({
+      where: { id: task.id },
+      select: { updatedAt: true },
+    });
+
     unblocked++;
 
     await logAudit({
@@ -69,6 +78,9 @@ export async function GET(req: NextRequest) {
       taskId: task.id,
       taskStatus: "PENDING",
       taskCategory: task.category,
+      ...(desbloqueada
+        ? { eventKey: claveDeEvento.estadoTarea(task.id, desbloqueada.updatedAt) }
+        : {}),
     }).catch(console.error);
   }
 

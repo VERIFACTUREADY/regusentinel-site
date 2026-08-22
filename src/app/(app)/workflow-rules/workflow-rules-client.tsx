@@ -518,7 +518,9 @@ function TestRuleModal({ rule, onClose }: { rule: WorkflowRule; onClose: () => v
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ caseId: selectedCase.id }),
       });
-      const data = await leerCuerpo(res) as { error?: string; message?: string } | null;
+      const data = (await leerCuerpo(res)) as
+        | { error?: string; message?: string; success?: boolean; status?: string }
+        | null;
       if (!res.ok) {
         throw new Error(
           data?.error ??
@@ -528,6 +530,19 @@ function TestRuleModal({ rule, onClose }: { rule: WorkflowRule; onClose: () => v
                 ? "La regla o el expediente ya no existen."
                 : `El servidor ha respondido ${res.status}.`),
         );
+      }
+      /*
+       * Un 200 NO significa que la regla se haya ejecutado bien.
+       *
+       * El servidor ahora dice lo que de verdad pasó: si las condiciones no
+       * encajaban con el expediente, si el envío falló o si la acción se
+       * omitió, `success` es `false` y viene el motivo. Antes esta pantalla
+       * pintaba «Ejecutado correctamente» en cuanto la petición no daba error
+       * de transporte, así que una prueba que no había hecho nada se
+       * anunciaba como una prueba superada.
+       */
+      if (data?.success === false) {
+        throw new Error(data.message ?? "La regla no se ha ejecutado.");
       }
       setResult({ success: true, message: data?.message || "Regla ejecutada correctamente." });
     } catch (err: unknown) {

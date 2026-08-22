@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { uploadFile, getPresignedUrl, deleteFile } from "@/lib/s3";
 import { logAudit } from "@/lib/audit";
 import { matchDocumentToTag } from "@/lib/doc-task-matching";
-import { triggerWorkflow } from "@/lib/workflow-engine";
+import { triggerWorkflow, claveDeEvento } from "@/lib/workflow-engine";
 import { rateLimit } from "@/lib/api-rate-limit";
 import { resolvePortalAccess } from "@/lib/portal-access";
 import { validateFile, sanitizeFileName, buildFileKey, MAX_FILE_BYTES, MAX_FILE_MB } from "@/lib/file-policy";
@@ -154,6 +154,9 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       type: "DOCUMENT_UPLOADED",
       orgId: c.orgId,
       caseId: c.id,
+      // Mismo motivo que en la subida interna: sin el id del documento, dos
+      // documentos seguidos del portal contaban como uno.
+      eventKey: claveDeEvento.documentoSubido(doc.id),
     }).catch(console.error);
 
     return NextResponse.json(doc, { status: 201 });

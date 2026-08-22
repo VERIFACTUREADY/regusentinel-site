@@ -6,7 +6,7 @@ import { logAudit } from "@/lib/audit";
 import { matchDocumentToTag, DOC_MATCH_RULES } from "@/lib/doc-task-matching";
 import { findTaskInCase } from "@/lib/tenancy";
 import { validateFile, sanitizeFileName, buildFileKey, MAX_FILE_BYTES, MAX_FILE_MB } from "@/lib/file-policy";
-import { triggerWorkflow } from "@/lib/workflow-engine";
+import { triggerWorkflow, claveDeEvento } from "@/lib/workflow-engine";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireOrgPermission("documents.read");
@@ -190,6 +190,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       orgId: session.user.orgId,
       caseId: params.id,
       userId: session.user.id,
+      /*
+       * EL ID DEL DOCUMENTO. El evento no llevaba NADA que lo identificara, así
+       * que la clave era `(org, regla, expediente, tipo, ventana)`: subir tres
+       * documentos al mismo expediente en cinco minutos —lo normal cuando la
+       * familia manda la documentación de golpe— ejecutaba la automatización
+       * UNA sola vez, y los otros dos no dejaban rastro de por qué.
+       */
+      eventKey: claveDeEvento.documentoSubido(doc.id),
     }).catch(console.error);
 
     return NextResponse.json({ ...doc, taskUpdated, suggestions }, { status: 201 });

@@ -5,7 +5,7 @@ import { createTaskSchema, updateTaskSchema } from "@/lib/validations";
 import { findCaseInOrg, findTaskInCase, findActiveMember, validateTaskDependency } from "@/lib/tenancy";
 import { logAudit } from "@/lib/audit";
 import { sendEmail } from "@/lib/email";
-import { triggerWorkflow } from "@/lib/workflow-engine";
+import { triggerWorkflow, claveDeEvento } from "@/lib/workflow-engine";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireOrgPermission("tasks.read");
@@ -154,6 +154,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       taskId,
       taskStatus: status,
       taskCategory: task.category,
+      /*
+       * La versión de la tarea tras la escritura. Sin ella la clave era
+       * `(tarea, estado, ventana)`: pasar a EN CURSO, volver a PENDIENTE y
+       * volver a EN CURSO dentro de cinco minutos se tragaba la tercera
+       * transición, y el aviso no salía la segunda vez.
+       */
+      eventKey: claveDeEvento.estadoTarea(taskId, updated.updatedAt),
     }).catch(console.error);
 
     // When a task is completed, notify assignees of tasks that were waiting on it

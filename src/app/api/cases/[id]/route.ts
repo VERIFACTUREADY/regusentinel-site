@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { getCaseDeadlines } from "@/lib/deadline-engine";
 import { getPresignedUrl } from "@/lib/s3";
-import { triggerWorkflow } from "@/lib/workflow-engine";
+import { triggerWorkflow, claveDeEvento } from "@/lib/workflow-engine";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireOrgPermission("cases.read");
@@ -222,6 +222,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       userId: session.user.id,
       fromStatus: c.status,
       toStatus: status,
+      /*
+       * La versión del expediente tras la escritura. Sin ella, volver a un
+       * estado anterior y repetir la misma transición dentro de cinco minutos
+       * daba la MISMA clave, y la segunda vez la automatización no se
+       * ejecutaba.
+       */
+      eventKey: claveDeEvento.estadoExpediente(params.id, updated.updatedAt),
     }).catch(console.error);
   }
 
