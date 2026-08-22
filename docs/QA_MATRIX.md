@@ -10,12 +10,14 @@ ejerce como la ejercería una persona. Las columnas que dicen «API» señalan
 justamente eso — hay red de seguridad en el servidor, pero nadie ha comprobado
 que el botón la llame.
 
-Suites: `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
+Suites (27 ficheros, **850** pruebas de navegador contando los tres tamaños de
+pantalla): `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 `expedientes`, `acciones-expedientes`, `tareas`, `tareas.responsive`,
 `documentos`, `documentos.responsive`, `usuarios`, `usuarios.responsive`,
 `autenticacion`, `sesion-y-roles`, `navegacion.responsive`, `dashboard`, `today`,
-`panel.responsive`, `mensajes`, `notificaciones`, `aprobaciones` y
-`avisos.responsive` y `automatizaciones`. Todas corren con el vigilante de
+`panel.responsive`, `mensajes`, `notificaciones`, `aprobaciones`,
+`avisos.responsive`, `automatizaciones`, `registro-automatizaciones`,
+`auditoria` y `automatizaciones.responsive`. Todas corren con el vigilante de
 `e2e/vigilancia.ts` activo (ver «Detección global»).
 
 ## Leyenda
@@ -289,31 +291,97 @@ Inventario real de la pantalla y de sus tres modales. Pruebas en
 | El servidor rechaza a OPERATOR y VIEWER | — | ✅ | crear, editar, borrar y probar → 403; nada cambia |
 | Aislamiento entre organizaciones | — | ✅ | la lista no la muestra; leer, editar, borrar y probar la ajena → 404 |
 | Idempotencia del motor | — | 🟡 | `idempotencyKey` existe en el esquema y **no se ha tocado**; su comportamiento bajo evento duplicado no se ha probado desde el navegador en esta fase |
-| Responsive | — | ❌ | pendiente |
+| Escritorio, tablet y móvil | — | ✅ | `automatizaciones.responsive.spec.ts` — la lista, y el formulario de nueva regla se abre y se rellena con la pantalla estrecha |
 
 ### `/workflow-logs` — Registro de ejecuciones
 
-| Elemento | Estado | Prueba |
-|---|---|---|
-| Estados de carga, vacío, error y «Reintentar» | ✅ | `estados-carga.spec.ts` (fase anterior) |
-| Totales, tasa de éxito, filtros, paginación, reintento de entregas | ❌ | pendiente |
+Pruebas en `registro-automatizaciones.spec.ts` (50 en escritorio) y
+`automatizaciones.responsive.spec.ts`.
+
+| Elemento | Rol / permiso | Estado | Prueba |
+|---|---|---|---|
+| Estados de carga, vacío, error y «Reintentar» | — | ✅ | `estados-carga.spec.ts` (fase anterior) |
+| Las tarjetas coinciden con la base | `workflow.read` | ✅ | contadas contra `groupBy` en PostgreSQL, no contra una cifra escrita a mano |
+| **«Total ejecuciones» incluye las que están en curso** | — | ✅ | **defecto corregido**: sumaba SUCCESS + PARTIAL + FAILED + SKIPPED y olvidaba PROCESSING, mientras el botón «En curso» de justo debajo sí las contaba. La suma de los botones podía superar al total que tenían encima |
+| **La tasa de éxito se mide sobre las terminadas** | — | ✅ | **defecto corregido**: una ejecución en curso hundía el porcentaje por el mero hecho de mirar la pantalla mientras corría |
+| Una PARCIAL no se pinta ni se cuenta como éxito | — | ✅ | `registro-automatizaciones.spec.ts` |
+| Filtro por cada estado (4 estados) | `workflow.read` | ✅ | toda fila de la tabla lleva la etiqueta del filtro puesto |
+| Filtro por regla, y combinado con el estado | `workflow.read` | ✅ | el número de filas se compara con `count` en la base |
+| **Un clic en un filtro lanza UNA sola petición** | — | ✅ | **defecto corregido**: `handleFilter` recargaba a mano *y* cambiaba el estado que disparaba el efecto que recargaba. Dos peticiones idénticas por clic, con la respuesta vieja pudiendo llegar después de la nueva |
+| Filtro sin resultados: lo dice como filtro | — | ✅ | y **no** con el texto de «tus reglas no se han disparado nunca» |
+| **Volver de la página 2 a la 1 recarga de verdad** | — | ✅ | **defecto corregido**: el efecto sólo recargaba con filtros o fuera de la página 1. Sin filtros, la tabla seguía mostrando la página 2 mientras el pie decía «1–30 de N» |
+| Última página: el resto de las filas, «Siguiente» inhabilitado | — | ✅ | `registro-automatizaciones.spec.ts` |
+| Fallo de carga: 401 / 403 / 500, red y forma inesperada | — | ✅ | sale el aviso y **no** «Sin ejecuciones»; sin «Failed to fetch» en pantalla |
+| «Reintentar» del aviso vuelve a cargar | — | ✅ | `registro-automatizaciones.spec.ts` |
+| **«Reintentar fallidas» sólo donde queda algo pendiente** | `workflow.manage` | ✅ | **defecto corregido**: salía en toda ejecución PARTIAL o FAILED, incluidas las que no tienen entregas —una regla de comentario no tiene destinatarios— y las ya recuperadas. `pendingDeliveries` lo decide |
+| **El reintento escribe al que falló y NO al que ya lo recibió** | `workflow.manage` | ✅ | contra el **buzón de pruebas real**: llega un correo al destinatario en FAILED y **ninguno** al que estaba en SENT. El estado de la ejecución pasa a SUCCESS en la base |
+| **El aviso dice a quién le llegó** | — | ✅ | **defecto corregido**: el detalle por destinatario que devuelve el servidor se tiraba a la basura, y era el motivo de entrar aquí |
+| **Los contadores se refrescan tras el reintento** | — | ✅ | **defecto corregido**: venían congelados del render inicial; la fila pasaba a «Exitoso» y la tarjeta «Con error» seguía marcando el número de antes |
+| **Un fallo del reintento se ve como fallo** | — | ✅ | **defecto corregido**: los tres desenlaces salían en la misma caja gris con `role="status"`. Ahora el error es `role="alert"` y rojo; 500, red y 404 comprobados, y la ejecución sigue fallida en la base |
+| **«No quedaban entregas» deja de ser mentira** | — | ✅ | **defecto corregido**: cuando la regla ya no podía reconstruirse el servidor devolvía `retried: 0` igual que si no quedara nada, y la pantalla daba por resuelto un aviso que seguía sin llegar. Ahora dice que **no se pueden** reintentar |
+| Doble clic en «Reintentar»: un solo correo | — | ✅ | comprobado contando los mensajes del buzón |
+| Enlace al expediente desde la fila | `cases.read` | ✅ | se pulsa y se llega a la ficha |
+| **El nombre de la regla filtra por esa regla** | — | ✅ | antes llevaba a `/workflow-rules` sin decir cuál |
+| Roles: los 4 leen el registro | `workflow.read` | ✅ | política real de `src/lib/rbac.ts` |
+| **OPERATOR y VIEWER no ven «Reintentar fallidas»** | `workflow.manage` | ✅ | **defecto corregido**: se les ofrecía un botón que el servidor iba a rechazar |
+| El servidor rechaza el reintento de OPERATOR y VIEWER | — | ✅ | 403, **ningún correo sale** y la ejecución no cambia. Esconder el botón no es el control |
+| Aislamiento entre organizaciones | — | ✅ | ni una ejecución ajena en pantalla; `?ruleId=` ajeno → 404; reintentar una ejecución ajena → 404 |
+| **El API no se cae con parámetros raros** | — | ✅ | **defecto corregido**: `?page=abc` daba 500 (`skip: NaN`) y `?limit=-5` devolvía **las últimas filas en orden inverso** sin avisar. Estado inventado → 400, no 500 |
+| Sin sesión no se lee nada | — | ✅ | 401/403 |
+| Grupo de filtros con nombre y `aria-pressed` | — | ✅ | **defecto corregido**: el color de fondo era la única señal de cuál estaba puesto |
+| El selector de regla tiene rótulo | — | ✅ | **defecto corregido**: no tenía ninguno |
+| Tabla con `caption` y `scope` en toda cabecera | — | ✅ | `registro-automatizaciones.spec.ts` |
+| El mensaje de error de una fila se lee entero | — | ✅ | **defecto corregido**: estaba en un `truncate` con el texto completo sólo en `title`: inalcanzable con teclado y en móvil |
+| Escritorio, tablet y móvil | — | ✅ | `automatizaciones.responsive.spec.ts` — se llega por el enlace (no `page.goto`), caben las cinco tarjetas, se filtra, se reintenta y el fallo de carga se explica |
+| Idempotencia del motor | — | 🟡 | `idempotencyKey` existe y **no se ha tocado**; su comportamiento bajo evento duplicado no se ha probado desde el navegador |
 
 ### `/audit` — Traza de auditoría
 
-| Elemento | Estado | Prueba |
-|---|---|---|
-| Estados de carga, vacío, error y «Reintentar» | ✅ | `estados-carga.spec.ts` (fase anterior) |
-| **Los filtros de fecha usan el día civil ESPAÑOL** | ✅ | **defecto corregido**: `gte: new Date(from)` es medianoche UTC —las 02:00 en Madrid—, así que «desde el 22» **perdía** los registros de 00:00 a 02:00; y `to + "T23:59:59.999Z"` son las 01:59 del día siguiente, así que «hasta el 22» **colaba** registros del 23. Corregido en `src/app/api/audit-logs/route.ts` con `inicioDelDiaDeES`/`sumarDiasES`. **Sin prueba de navegador todavía** |
-| **El CSV exporta todo lo filtrado, no 30 filas** | ✅ | **defecto corregido**: se construía desde `logs`, la página actual. El botón decía «CSV» en una pantalla titulada «Audit Trail»: quien exportaba para una inspección se llevaba 30 registros de los que hubiera, sin aviso y con un fichero que parece completo. Ahora pagina el servidor y el botón dice cuántos van a salir. **Sin prueba de navegador todavía** |
-| Etiquetas de los cinco filtros asociadas | ✅ | **defecto corregido**: ninguna lo estaba. **Sin prueba de navegador todavía** |
-| Búsqueda, categoría, usuario, Sistema, fechas, combinados, «Limpiar» | ❌ | pendiente |
-| Paginación | ❌ | pendiente |
-| Bordes de fecha en Europe/Madrid | ❌ | pendiente |
-| Acción real → traza → interfaz | ❌ | pendiente |
-| Sólo lectura (no editable ni borrable) | ❌ | pendiente |
-| Aislamiento entre organizaciones | ❌ | pendiente |
-| Roles | ❌ | pendiente |
-| Responsive | ❌ | pendiente |
+Pruebas en `auditoria.spec.ts` (43 en escritorio) y
+`automatizaciones.responsive.spec.ts`.
+
+| Elemento | Rol / permiso | Estado | Prueba |
+|---|---|---|---|
+| Estados de carga, vacío, error y «Reintentar» | — | ✅ | `auditoria.spec.ts` — 401, 403, 500 y fallo de red |
+| El contador coincide con la base | `audit.read` | ✅ | contado contra PostgreSQL |
+| Un registro sin usuario sale como «Sistema» | — | ✅ | `auditoria.spec.ts` |
+| **El detalle se lee entero** | — | ✅ | **defecto corregido**: la columna «Detalles» estaba en un `truncate` **sin `title` siquiera**: el texto se cortaba y no había forma de ver el resto ni con ratón, ni con teclado, ni en el móvil. En una traza de auditoría el detalle *es* el registro |
+| Filtro por categoría (prefijo de acción) | `audit.read` | ✅ | toda fila lleva el prefijo, y el contador cuadra con `count` |
+| Filtro por usuario, y «Sistema» aparte | `audit.read` | ✅ | `auditoria.spec.ts` |
+| Búsqueda en acción y en detalle | `audit.read` | ✅ | el contador se compara con la misma consulta en la base |
+| «Limpiar» devuelve la lista completa | — | ✅ | y deja los controles a cero |
+| Filtro sin resultados: lo dice como filtro | — | ✅ | `auditoria.spec.ts` |
+| **«Desde hoy» incluye las 00:30 y excluye ayer a las 23:30** | — | ✅ | **defecto corregido**: `gte: new Date(from)` es medianoche UTC —las 02:00 en Madrid—, así que «desde el 22» **perdía** los registros de 00:00 a 02:00. Dos registros sembrados a media hora de la medianoche **civil española**, uno a cada lado |
+| **«Hasta ayer» incluye ayer a las 23:30 y excluye hoy** | — | ✅ | **defecto corregido**: `to + "T23:59:59.999Z"` son las 01:59 del día siguiente en Madrid, así que «hasta el 22» **colaba** registros del 23 |
+| «Hasta hoy» incluye hoy: el límite es inclusivo | — | ✅ | `auditoria.spec.ts` |
+| **Una fecha imposible se rechaza con 400** | — | ✅ | **defecto corregido**: `?from=ayer` es `Invalid Date` y Prisma lanzaba: 500 en la auditoría |
+| Paginación: ida, vuelta y filas de la página 2 | — | ✅ | las filas cambian de verdad y vuelven; el número de la última página cuadra con la base |
+| Cambiar de filtro vuelve a la página 1 | — | ✅ | `auditoria.spec.ts` |
+| **El CSV exporta todo lo filtrado, no 30 filas** | `audit.read` | ✅ | **defecto corregido**: se construía desde `logs`, la página actual. Quien exportaba para una inspección se llevaba 30 registros de los que hubiera, sin aviso y con un fichero que parece completo. Se descarga el fichero y **se cuentan sus líneas** contra el total de la base |
+| Nombre del fichero, BOM y cabecera | — | ✅ | `audit-trail-AAAA-MM-DD.csv`; sin BOM, Excel abre en Latin-1 y rompe los acentos |
+| Comillas, comas y acentos sobreviven | — | ✅ | un registro sembrado con `"comillas"`, coma y `ñáéíóú`: las comillas van dobladas, la coma no parte la fila, salen los seis campos, «Sistema» y la referencia del expediente |
+| Con filtros, el CSV lleva lo filtrado y lo declara | — | ✅ | el `aria-label` del botón dice el alcance |
+| Una exportación fallida no descarga nada a medias | — | ✅ | avisa, no aparece el mensaje de éxito y **no** se dispara ninguna descarga |
+| El aviso de exportación no sobrevive a un cambio de filtro | — | ✅ | **defecto corregido**: decía «Exportados 37 registros» junto a una lista ya filtrada |
+| **Acción real → traza → interfaz** | — | ✅ | se desactiva una regla **desde `/workflow-rules`**, y el registro aparece en la base y en `/audit`, con el nombre de quien lo hizo |
+| Sólo lectura: POST, PUT, PATCH y DELETE | — | ✅ | los cuatro fallan y el número de registros no cambia |
+| Un GET no modifica la base | — | ✅ | filtrar y paginar deja el recuento intacto |
+| Roles: los 4 leen la traza | `audit.read` | ✅ | política real de `src/lib/rbac.ts` |
+| Aislamiento entre organizaciones | — | ✅ | ni en pantalla, ni buscándolo a propósito, ni pidiendo el `caseId` ajeno por el API |
+| Sin sesión no se lee nada | — | ✅ | 401/403 |
+| **El API no se cae con parámetros raros** | — | ✅ | **defecto corregido**: `?page=abc` → 500; `?limit=-5` devolvía las últimas filas en orden inverso |
+| Etiquetas de los cinco filtros asociadas | — | ✅ | **defecto corregido**: ninguna lo estaba. Con guardia que falla si alguna vuelve a quedar suelta |
+| El botón de CSV declara su alcance | — | ✅ | `auditoria.spec.ts` |
+| **En MÓVIL, un fallo de carga no dice «No hay registros»** | — | ✅ | **defecto corregido**: la rama `md:hidden` de tarjetas no miraba el error. En un teléfono, una auditoría que no había podido cargarse afirmaba que no había pasado nada en la organización, y sin forma de reintentar. El aviso se dibuja ahora **una sola vez**, fuera de las dos ramas |
+| Escritorio, tablet y móvil | — | ✅ | `automatizaciones.responsive.spec.ts` — lectura, filtros, paginación y el fallo de carga |
+
+#### Dejado como estaba, a propósito
+
+| Cosa | Por qué |
+|---|---|
+| El título «Audit Trail», en inglés | Es copia visible para el usuario en una aplicación por lo demás en español. Cambiarlo es una decisión de producto, no la corrección de un defecto de uso o de accesibilidad, y el encargo pedía **conservar la copia** salvo en ese caso |
+| El `<select>` de estado de `/cases/[id]` no tiene nombre accesible | Es un defecto **real**, encontrado al conducir el disparo automático desde la ficha. La ficha del expediente está **fuera del alcance** de esta fase, así que se declara aquí y no se toca |
+| `WorkflowLog.idempotencyKey` | La protección contra ejecuciones duplicadas ya existía y no se ha modificado. Sigue marcada 🟡 arriba porque no está probada desde el navegador, no porque se haya debilitado |
 
 ### `/calendar` — Calendario de plazos
 
@@ -750,7 +818,9 @@ contradiciendo y hay que corregirla.
 **Con estados de carga probados** (carga, vacío, error y «Reintentar», vía
 `estados-carga.spec.ts`), pero **sin sus interacciones propias probadas**:
 
-`/audit`, `/workflow-logs`.
+Ninguna. `/audit` y `/workflow-logs` estaban aquí y ya no: tienen sección
+propia arriba, con sus filtros, su paginación, su exportación y su reintento
+conducidos desde el navegador.
 
 Que la pantalla resista un fallo de carga no significa que sus botones estén
 probados.
@@ -758,7 +828,7 @@ probados.
 **Sin ninguna cobertura de interfaz:**
 
 `/reports` (+ `isd`, `pipeline`, `portal`, `team`), `/templates`,
-`/templates/[id]`, `/case-templates`, `/workflow-rules`, `/settings`
+`/templates/[id]`, `/case-templates`, `/settings`
 (+ `general`, `branding`, `integrations`, `notifications`, `users`),
 `/profile`, `/cases/[id]/isd`, `/admin/*`.
 
@@ -848,8 +918,8 @@ pantallas y repetir la corrección a mano garantiza que la próxima nazca rota.
 | `usage-widget` | ✅ | ✅ | ✅ | `dashboard.spec.ts` — HTTP 401, 403, 500, fallo de red y «Reintentar», desde el panel real |
 | `notification-bell` | ✅ | ✅ | ✅ | `notificaciones.spec.ts` — **defecto corregido**: el fallo se guardaba y no se pintaba, así que la campana decía «Sin notificaciones pendientes» con la petición caída. HTTP 401, 500, fallo de red y «Reintentar» |
 | `cases/[id]` (análisis) | ✅ | ✅ | — | ❌ sin prueba de navegador |
-| `audit` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` |
-| `workflow-logs` | ✅ | ✅ | ✅ | `estados-carga.spec.ts` (vía filtro) |
+| `audit` | ✅ | ✅ | ✅ | `auditoria.spec.ts` — HTTP 401, 403, 500 y fallo de red; el aviso se dibuja **una sola vez**, así que la vista de móvil ya no puede quedarse sin él |
+| `workflow-logs` | ✅ | ✅ | ✅ | `registro-automatizaciones.spec.ts` — HTTP 401, 403, 500, red y forma inesperada, provocados al filtrar |
 | `dashboard` (componente de servidor) | — no hay `fetch` | ✅ | recargar | `dashboard.spec.ts` — **defecto corregido**: `safe()` devolvía `0`/`[]`/`null` y el fallo era indistinguible del dato. Ahora cada consulta devuelve `{ ok, datos \| error }` |
 | `today` (componente de servidor) | — no hay `fetch` | ✅ | recargar | `today.spec.ts` — mismo defecto; además «Todo al día» ya no puede aparecer con una fuente caída |
 
