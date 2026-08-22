@@ -443,6 +443,36 @@ export const CIFRAS_AVISOS = {
   notificacionesIsd7dFallidas: contarNotificaciones((i) => i % 5 === 2 && i % 8 === 3),
 };
 
+/**
+ * Reancla la tarea «vence hoy» al FINAL DEL DIA CIVIL DE AHORA MISMO.
+ *
+ * POR QUE NO BASTA CON SEMBRARLA BIEN
+ * -----------------------------------
+ * El plazo tiene que cumplir dos cosas a la vez cuando la prueba lo mira: que
+ * siga siendo HOY, y que siga estando en el FUTURO —el bloque «Plazos
+ * proximos» consulta `deadline >= ahora`—. Cualquier instante fijo elegido al
+ * sembrar deja de cumplir una de las dos segun cuando corra la prueba:
+ *
+ *   - anclado al MEDIODIA, se quedaba en el pasado a partir de las 12:00 de
+ *     Madrid: la suite fallaba TODAS LAS TARDES;
+ *   - anclado al FINAL DEL DIA, sobrevive la jornada entera, pero si el
+ *     sembrado ocurre a las 23:56 y la prueba corre veinte minutos despues, el
+ *     dia civil ya ha cambiado y el plazo ha quedado atras. Eso es justo lo
+ *     que paso en una ejecucion de CI que empezo a las 23:56 de Madrid.
+ *
+ * El hueco entre sembrar y comprobar es de veinte minutos, y no hay instante
+ * que aguante eso cruzando la medianoche. La solucion es no depender del
+ * momento del sembrado: se reancla justo antes de mirar, con lo que la ventana
+ * de riesgo pasa de veinte minutos a los segundos que tarda la prueba.
+ */
+export async function reanclarVenceHoy(prisma: PrismaClient): Promise<void> {
+  const finDeHoy = finDelDiaDeES(new Date());
+  await prisma.task.updateMany({
+    where: { title: `${E2E.panel.prefijo} vence hoy` },
+    data: { deadline: finDeHoy },
+  });
+}
+
 /** Tamano de pagina de /approvals (`PAGE_SIZE` en `approvals-queue.tsx`). */
 export const APROBACIONES_POR_PAGINA = 30;
 

@@ -19,9 +19,25 @@
 import { type Page, type BrowserContext } from "@playwright/test";
 import { test, expect, pantallaUtil, permitirFalloEn } from "./vigilancia";
 import { PrismaClient } from "@prisma/client";
-import { E2E, CIFRAS_PANEL, TAREAS_PANEL } from "./seed-e2e";
+import { E2E, CIFRAS_PANEL, TAREAS_PANEL, reanclarVenceHoy } from "./seed-e2e";
 
 const prisma = new PrismaClient();
+
+/*
+ * El plazo de «vence hoy» se reancla ANTES DE CADA PRUEBA.
+ *
+ * Tiene que ser hoy y estar en el futuro cuando la prueba lo mira, y no hay
+ * instante fijo elegido al sembrar que aguante las dos cosas: anclado al
+ * mediodia caducaba a las 12:00, y anclado al final del dia caducaba si el
+ * sembrado ocurria poco antes de medianoche y la suite cruzaba las 00:00
+ * —que es lo que paso en una ejecucion de CI que empezo a las 23:56 de
+ * Madrid—. Reanclarlo aqui reduce la ventana de riesgo de veinte minutos a
+ * los segundos que dura la prueba.
+ */
+test.beforeEach(async () => {
+  await reanclarVenceHoy(prisma);
+});
+
 
 /**
  * Tareas creadas por las pruebas que mueven contadores del panel.

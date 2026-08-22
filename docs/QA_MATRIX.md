@@ -302,6 +302,7 @@ Inventario real de la pantalla y de sus tres modales. Pruebas en
 | **DISPARO AUTOMÁTICO `DOCUMENT_UPLOADED`** | — | ✅ | `disparadores.spec.ts` — subida real desde la ficha contra **MinIO real**, con `objetoExiste()` confirmando que el objeto está en el bucket. Sólo corre en CI: aquí no se sustituye el almacén por un doble |
 | **Dos documentos seguidos disparan DOS veces** | — | ✅ | **defecto corregido**: el evento `DOCUMENT_UPLOADED` no llevaba **ningún** dato del documento, así que subir varios al mismo expediente en cinco minutos ejecutaba la regla **una sola vez**; los demás no disparaban nada ni dejaban rastro de por qué |
 | Escritorio, tablet y móvil | — | ✅ | `automatizaciones.responsive.spec.ts` — la lista, y el formulario de nueva regla se abre y se rellena con la pantalla estrecha |
+| El plazo «vence hoy» se reancla antes de cada prueba | ✅ | **prueba inestable corregida en dos pasos**: tiene que ser hoy **y** estar en el futuro cuando la prueba lo mira, y ningún instante fijo elegido al sembrar aguanta las dos cosas. Anclado al mediodía caducaba a las 12:00 —fallaba todas las tardes—; anclado al final del día caducaba si el sembrado ocurría poco antes de medianoche y la suite cruzaba las 00:00, que es lo que pasó en una ejecución de CI iniciada a las 23:56 de Madrid. Ahora se reancla en un `beforeEach`: la ventana de riesgo baja de veinte minutos a los segundos que dura la prueba |
 
 ### `/workflow-logs` — Registro de ejecuciones
 
