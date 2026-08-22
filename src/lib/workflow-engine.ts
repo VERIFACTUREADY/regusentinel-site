@@ -203,10 +203,21 @@ type ReclamoLog =
  * Crea o recupera el `WorkflowLog` de esta ejecución **antes de llamar a
  * nadie**.
  *
- * La restricción única sobre `idempotencyKey` decide: la primera petición crea
- * la fila, la segunda choca con P2002 y recupera la existente. A partir de ahí
- * la exclusión real la hace la reclamación POR DESTINATARIO, que es la que
- * protege la llamada externa; este nivel evita además duplicar el registro.
+ * La restricción única sobre `idempotencyKey` decide: sólo una transacción
+ * consigue insertar la fila. A partir de ahí la exclusión real la hace la
+ * reclamación POR DESTINATARIO, que es la que protege la llamada externa;
+ * este nivel evita además duplicar el registro.
+ *
+ * POR QUÉ `createMany` CON `skipDuplicates` Y NO `create` EN UN `try`
+ * ------------------------------------------------------------------
+ * Antes era un `create` dentro de un `try/catch` que esperaba el P2002.
+ * Funcionaba, pero Prisma registra la consulta fallida a nivel ERROR, y el
+ * choque aquí **es el camino normal**: ocurre cada vez que un evento se
+ * entrega dos veces, que es justo lo que este mecanismo existe para absorber.
+ * El resultado era un «Invalid invocation … Unique constraint failed» en el
+ * log del servidor en cada deduplicación correcta. Un log que grita cuando
+ * todo va bien enseña a no leer el log —y ahí es donde se pierden los errores
+ * de verdad—.
  */
 async function reclamarEjecucion(
   clave: string,
@@ -216,9 +227,9 @@ async function reclamarEjecucion(
   nombreRegla: string,
 ): Promise<ReclamoLog> {
   const ahora = new Date();
-  try {
-    const creado = await prisma.workflowLog.create({
-      data: {
+  const creado = await prisma.workflowLog.createMany({
+    data: [
+      {
         ruleId: rule.id,
         caseId: event.caseId,
         status: "PROCESSING",
@@ -226,17 +237,23 @@ async function reclamarEjecucion(
         startedAt: ahora,
         details: { action: accion, ruleName: nombreRegla },
       },
-      select: { id: true },
-    });
-    return { estado: "reclamado", logId: creado.id };
-  } catch (err) {
-    if ((err as { code?: string })?.code !== "P2002") throw err;
-  }
+    ],
+    skipDuplicates: true,
+  });
 
+  // `createMany` no devuelve la fila, así que se relee por su clave. Es la
+  // misma consulta que hacía falta en el camino duplicado; ahora se hace en
+  // los dos, sin ensuciar el log en ninguno.
   const existente = await prisma.workflowLog.findUnique({
     where: { idempotencyKey: clave },
     select: { id: true },
   });
+
+  if (creado.count === 1) {
+    // Carrera improbable: la fila se ha insertado y ya no está.
+    if (!existente) return { estado: "ya_ejecutado", logId: "" };
+    return { estado: "reclamado", logId: existente.id };
+  }
   // Carrera improbable: la fila existía al crear y ya no está. Se trata como
   // ejecutada para no reenviar a ciegas.
   if (!existente) return { estado: "ya_ejecutado", logId: "" };

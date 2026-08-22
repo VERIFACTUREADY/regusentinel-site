@@ -343,6 +343,45 @@ export const E2E = {
     regla: "NO-DEBE-VERSE-regla-vecina",
     accionAuditoria: "NO_DEBE_VERSE.accion_vecina",
   },
+  /**
+   * Organizacion DEDICADA a los disparadores automaticos y a la idempotencia.
+   *
+   * POR QUE OTRA ORGANIZACION MAS
+   * -----------------------------
+   * Estas pruebas cuentan CORREOS EN EL BUZON y FILAS EN LA BASE, y las cifras
+   * tienen que ser exactas: «un solo correo por destinatario», «una sola
+   * ejecucion». En `org-e2e-automatizaciones` hay reglas activas sembradas que
+   * se disparan con `CASE_STATUS_CHANGED`, asi que cualquier prueba que toque
+   * un expediente de alli mete correos y ejecuciones de por medio.
+   *
+   * Aqui NO se siembra ninguna regla activa: las crean las pruebas por la
+   * interfaz, que es ademas lo que exige el encargo. Lo unico sembrado son la
+   * organizacion, sus cuatro roles, un expediente con contacto y unas tareas.
+   */
+  disparadores: {
+    slug: "org-e2e-disparadores",
+    /** OWNER y MANAGER son los destinatarios reales de SEND_EMAIL_TEAM. */
+    owner: "owner.disp.e2e@ejemplo.test",
+    manager: "manager.disp.e2e@ejemplo.test",
+    /** OPERATOR y VIEWER NO deben recibir el aviso del equipo. */
+    operador: "operador.disp.e2e@ejemplo.test",
+    viewer: "viewer.disp.e2e@ejemplo.test",
+
+    caseRef: "EXP-2026-7600",
+    causante: "Causante Disparadores E2E",
+    /** Destinatario de SEND_EMAIL_CONTACT: el contacto del expediente. */
+    contacto: "familia.disp.e2e@ejemplo.test",
+    contactoNombre: "Familia Disparadores E2E",
+    orgNombre: "Gestoria Disparadores E2E",
+
+    /** Tarea que las pruebas mueven de estado una y otra vez. */
+    tarea: "Tarea que cambia de estado",
+    /** Segunda tarea, de otra categoria, para el caso negativo de condiciones. */
+    tareaOtraCategoria: "Tarea de otra categoria",
+
+    /** Expediente aparte para el borde de ejecucion parcial. */
+    caseRefParcial: "EXP-2026-7601",
+  },
   /** Organizacion vecina de la anterior: nada suyo puede filtrarse. */
   avisosVecina: {
     slug: "org-e2e-avisos-vecina",
@@ -1737,6 +1776,75 @@ function plazoDelDia(base: number, dias: number): Date {
         createdAt: new Date(medianocheHoy.getTime() + 31 * 60_000),
       },
     ],
+  });
+
+  /*
+   * ── Organizacion de DISPARADORES AUTOMATICOS e IDEMPOTENCIA ──────────────
+   *
+   * Sin reglas activas a proposito: las crean las pruebas por la interfaz. Asi
+   * las cifras de correos y de ejecuciones son exactas y no las mueve nada
+   * sembrado.
+   */
+  const orgDisp = await prisma.organization.create({
+    data: {
+      name: E2E.disparadores.orgNombre,
+      slug: E2E.disparadores.slug,
+      subscription: { create: { plan: "FIRMA", status: "active" } },
+      onboardingDismissedAt: new Date(),
+    },
+  });
+  for (const [email, nombre, rol] of [
+    [E2E.disparadores.owner, "Owner Disparadores E2E", "OWNER"],
+    [E2E.disparadores.manager, "Manager Disparadores E2E", "MANAGER"],
+    [E2E.disparadores.operador, "Operador Disparadores E2E", "OPERATOR"],
+    [E2E.disparadores.viewer, "Viewer Disparadores E2E", "VIEWER"],
+  ] as const) {
+    const u = await prisma.user.create({ data: { email, name: nombre, passwordHash: hash } });
+    await prisma.membership.create({ data: { userId: u.id, orgId: orgDisp.id, role: rol } });
+  }
+
+  const casoDisp = await prisma.case.create({
+    data: {
+      orgId: orgDisp.id,
+      ref: E2E.disparadores.caseRef,
+      status: "IN_PROGRESS",
+      deceased: { create: { fullName: E2E.disparadores.causante } },
+      contact: {
+        create: {
+          fullName: E2E.disparadores.contactoNombre,
+          email: E2E.disparadores.contacto,
+        },
+      },
+    },
+  });
+  await prisma.task.create({
+    data: {
+      caseId: casoDisp.id,
+      title: E2E.disparadores.tarea,
+      status: "PENDING",
+      category: "OTROS",
+    },
+  });
+  await prisma.task.create({
+    data: {
+      caseId: casoDisp.id,
+      title: E2E.disparadores.tareaOtraCategoria,
+      status: "PENDING",
+      // Categoria distinta: sirve para el caso NEGATIVO de las condiciones.
+      category: "BANCOS",
+    },
+  });
+
+  // Expediente aparte para el borde de ejecucion parcial: asi las cuentas de
+  // correo de ese caso no se mezclan con las del expediente principal.
+  await prisma.case.create({
+    data: {
+      orgId: orgDisp.id,
+      ref: E2E.disparadores.caseRefParcial,
+      status: "IN_PROGRESS",
+      deceased: { create: { fullName: "Causante Parcial E2E" } },
+      contact: { create: { fullName: "Contacto Parcial E2E", email: "parcial.disp.e2e@ejemplo.test" } },
+    },
   });
 
   // ── Organizacion vecina: nada suyo puede filtrarse ──

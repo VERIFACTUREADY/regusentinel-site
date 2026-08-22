@@ -11,7 +11,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../src/lib/prisma", () => ({
   prisma: {
     workflowRule: { findMany: vi.fn(), update: vi.fn() },
-    workflowLog: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
+    workflowLog: {
+      // `create` sigue usandose para los registros SKIPPED y FAILED; la
+      // RECLAMACION de la ejecucion usa `createMany` con `skipDuplicates`.
+      create: vi.fn(),
+      createMany: vi.fn(),
+      update: vi.fn(),
+      findUnique: vi.fn(),
+    },
     workflowDelivery: {
       createMany: vi.fn(),
       findUnique: vi.fn(),
@@ -38,6 +45,14 @@ const caseFindFirst = prisma.case.findFirst as unknown as ReturnType<typeof vi.f
 const caseFindUnique = prisma.case.findUnique as unknown as ReturnType<typeof vi.fn>;
 const caseUpdateMany = prisma.case.updateMany as unknown as ReturnType<typeof vi.fn>;
 const logCreate = prisma.workflowLog.create as unknown as ReturnType<typeof vi.fn>;
+/*
+ * La reclamacion de la ejecucion. Es `createMany` con `skipDuplicates`, no un
+ * `create` dentro de un `try`: el choque de la clave unica es el camino NORMAL
+ * —ocurre cada vez que un evento llega dos veces— y con `create` Prisma dejaba
+ * un ERROR en el log del servidor en cada deduplicacion correcta.
+ */
+const logReclamar = prisma.workflowLog.createMany as unknown as ReturnType<typeof vi.fn>;
+const logFindUnique = prisma.workflowLog.findUnique as unknown as ReturnType<typeof vi.fn>;
 const logUpdate = prisma.workflowLog.update as unknown as ReturnType<typeof vi.fn>;
 /*
  * La reclamacion por destinatario usa `createMany` con `skipDuplicates`, no
@@ -85,6 +100,9 @@ beforeEach(() => {
   // El log se crea reclamado (PROCESSING) y devuelve su id: es lo que el
   // motor necesita para reclamar cada entrega ANTES de enviar.
   logCreate.mockResolvedValue({ id: "log-1" });
+  logReclamar.mockResolvedValue({ count: 1 });
+  // `createMany` no devuelve la fila: el motor la relee por su clave.
+  logFindUnique.mockResolvedValue({ id: "log-1" });
   logUpdate.mockResolvedValue({});
   deliveryCreate.mockResolvedValue({ count: 1 });
   deliveryFindMany.mockResolvedValue([]);
@@ -183,7 +201,7 @@ describe("Prevencion de bucles de estado", () => {
     // El log se reclama en PROCESSING y, al ver que el efecto no llego a
     // aplicarse, pasa a SKIPPED con su motivo. Antes se marcaba SUCCESS: decia
     // que se habia hecho algo que no se hizo.
-    expect(logCreate.mock.calls[0][0].data.status).toBe("PROCESSING");
+    expect(logReclamar.mock.calls[0][0].data[0].status).toBe("PROCESSING");
     const actualizado = logUpdate.mock.calls.at(-1)![0].data;
     expect(actualizado.status).toBe("SKIPPED");
     expect(actualizado.details.reason).toMatch(/cambio mientras/);
@@ -219,9 +237,9 @@ describe("SEND_EMAIL_TEAM reserva ANTES de enviar", () => {
     caseFindFirst.mockResolvedValue(caseRow());
     memberFindMany.mockResolvedValue([{ user: { email: "a@x.es" } }]);
 
-    logCreate.mockImplementation(async () => {
+    logReclamar.mockImplementation(async () => {
       orden.push("reservar-ejecucion");
-      return { id: "log-1" };
+      return { count: 1 };
     });
     deliveryCreate.mockImplementation(async () => {
       orden.push("reservar-entrega");
@@ -244,7 +262,7 @@ describe("SEND_EMAIL_TEAM reserva ANTES de enviar", () => {
 
     await triggerWorkflow(evento);
 
-    const datos = logCreate.mock.calls[0][0].data;
+    const datos = logReclamar.mock.calls[0][0].data[0];
     expect(datos.status).toBe("PROCESSING");
     // SHA-256 en hexadecimal: la clave no lleva emails ni nombres.
     expect(datos.idempotencyKey).toMatch(/^[0-9a-f]{64}$/);
