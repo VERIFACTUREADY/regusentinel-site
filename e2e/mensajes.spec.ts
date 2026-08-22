@@ -106,6 +106,28 @@ test.describe("Mensajes: listado de conversaciones", () => {
   test("el filtro «Sin leer» muestra solo las que tienen mensajes pendientes", async ({
     page,
   }) => {
+    /*
+     * EL MARCADO AUTOMATICO SE AISLA, no se espera a ver si llega tarde.
+     *
+     * Al abrir /messages la primera conversacion se selecciona SOLA y su hilo
+     * se marca leido. Eso hace que ESA conversacion deje de cumplir el filtro
+     * «Sin leer» y desaparezca de la lista a los pocos milisegundos: cualquier
+     * afirmacion sobre lo que hay en pantalla es una carrera contra ese
+     * marcado, y fallaba de vez en cuando en CI.
+     *
+     * Lo que esta prueba comprueba es el FILTRO —que conversaciones deja y
+     * cuales no—, no el marcado automatico, que tiene sus propias pruebas
+     * («Contador del encabezado al entrar» y «el contador total de sin leer
+     * cuadra con la base»). Bloquear el PUT deja el filtro tal y como lo
+     * devolvio el servidor, que es justo lo que hay que mirar. El listado, su
+     * peticion y su dibujado siguen siendo los reales.
+     */
+    await page.route("**/api/cases/*/portal-messages", (route) =>
+      route.request().method() === "PUT"
+        ? route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true,"marked":0}' })
+        : route.continue(),
+    );
+
     await login(page, E2E.avisos.owner);
     await irAMensajes(page);
 
@@ -133,6 +155,8 @@ test.describe("Mensajes: listado de conversaciones", () => {
     await expect(conversacion(page, E2E.avisos.caseLeido)).toHaveCount(0);
     // …y la que no tiene ningun mensaje, tampoco.
     await expect(conversacion(page, E2E.avisos.caseSinMensajes)).toHaveCount(0);
+
+    await page.unroute("**/api/cases/*/portal-messages");
   });
 
   test("el filtro «Todos» añade la conversacion ya leida", async ({ page }) => {
