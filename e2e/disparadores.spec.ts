@@ -171,6 +171,16 @@ async function crearRegla(
   }
 
   await page.getByTestId("guardar-regla").click();
+
+  /*
+   * Si el guardado falla, el modal se queda abierto y la espera de abajo
+   * agotaria el tiempo sin decir por que. Se mira primero el aviso de error,
+   * que es donde el servidor explica que ha rechazado.
+   */
+  const avisoError = page.getByTestId("error-guardar-regla");
+  if ((await avisoError.count()) > 0) {
+    expect(await avisoError.innerText(), "el formulario no ha podido guardar la regla").toBe("");
+  }
   await expect(page.getByTestId("modal-regla")).toHaveCount(0);
   await expect(page.getByText(opciones.nombre)).toBeVisible();
 }
@@ -189,6 +199,35 @@ async function restaurarTareas() {
     where: { caseId: caso.id },
     data: { status: "PENDING" },
   });
+}
+
+/**
+ * Abre la ficha del expediente y su pestana TAREAS.
+ *
+ * Los controles de tarea viven dentro de esa pestana: sin abrirla, el
+ * `<select>` de estado no esta en el DOM.
+ */
+async function abrirTareas(page: Page) {
+  const caso = await casoDisp();
+  await page.goto(`/cases/${caso.id}`);
+  await pantallaUtil(page);
+  const pestana = page.getByRole("button", { name: /^Tareas \(/ });
+  await expect(pestana).toBeVisible({ timeout: 30_000 });
+  await pestana.click();
+  return caso;
+}
+
+/** Cambia el estado de una tarea por el control REAL de la ficha. */
+async function cambiarEstadoTarea(page: Page, tarea: string, estado: string) {
+  const selector = page.getByLabel(`Estado de ${tarea}`);
+  await expect(selector).toBeVisible({ timeout: 30_000 });
+  await selector.scrollIntoViewIfNeeded();
+  await Promise.all([
+    page.waitForResponse(
+      (r) => /\/api\/cases\/[^/]+\/tasks/.test(r.url()) && r.request().method() === "PATCH",
+    ),
+    selector.selectOption(estado),
+  ]);
 }
 
 async function reglaEnBase(nombre: string) {
@@ -490,25 +529,6 @@ test.describe("Disparo automatico: TASK_STATUS_CHANGED", () => {
     await restaurarTareas();
   });
 
-  /** Cambia el estado de una tarea por el control REAL de la ficha. */
-  async function cambiarEstadoTarea(page: Page, tarea: string, estado: string) {
-    const selector = page.getByLabel(`Estado de ${tarea}`);
-    await selector.scrollIntoViewIfNeeded();
-    await Promise.all([
-      page.waitForResponse(
-        (r) => /\/api\/cases\/[^/]+\/tasks/.test(r.url()) && r.request().method() === "PATCH",
-      ),
-      selector.selectOption(estado),
-    ]);
-  }
-
-  async function irAFicha(page: Page) {
-    const caso = await casoDisp();
-    await page.goto(`/cases/${caso.id}`);
-    await pantallaUtil(page);
-    return caso;
-  }
-
   test("mover la tarea a EN CURSO desde la ficha ejecuta la regla UNA vez", async ({ page }) => {
     const nombre = "Comentar al mover la tarea";
     const texto = "La tarea ha empezado (E2E)";
@@ -522,7 +542,7 @@ test.describe("Disparo automatico: TASK_STATUS_CHANGED", () => {
       comentario: texto,
     });
 
-    const caso = await irAFicha(page);
+    const caso = await abrirTareas(page);
     const comentariosAntes = await prisma.auditLog.count({
       where: { caseId: caso.id, action: "case.comment" },
     });
@@ -571,7 +591,7 @@ test.describe("Disparo automatico: TASK_STATUS_CHANGED", () => {
       estadoTarea: "DONE",
     });
 
-    await irAFicha(page);
+    await abrirTareas(page);
 
     // NEGATIVO: pasar a EN CURSO no cumple la condicion.
     await cambiarEstadoTarea(page, E2E.disparadores.tarea, "IN_PROGRESS");
@@ -831,5 +851,251 @@ test.describe("Disparo automatico: DOCUMENT_UPLOADED", () => {
     // Y las dos ejecuciones tienen identidades distintas.
     const claves = (await ejecucionesDe(nombre)).map((e) => e.idempotencyKey);
     expect(new Set(claves).size, "dos hechos distintos, dos identidades").toBe(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5. IDEMPOTENCIA VISTA DESDE EL NAVEGADOR, CON CORREOS DE VERDAD
+// ═══════════════════════════════════════════════════════════════════════════
+
+test.describe("Idempotencia conducida desde la interfaz", () => {
+  test.afterEach(async () => {
+    await limpiar();
+    await restaurarTareas();
+  });
+
+  test("REPETICION LEGITIMA: la misma transicion dos veces en segundos avisa DOS veces", async ({
+    page,
+  }) => {
+    /*
+     * LA PRUEBA QUE FALLA CON EL DISEÑO ANTERIOR, Y LA QUE MAS IMPORTA.
+     *
+     * PENDIENTE -> EN CURSO, de vuelta a PENDIENTE, y otra vez EN CURSO. La
+     * primera y la tercera son transiciones identicas salvo por CUANDO
+     * ocurren, y ocurren con segundos de diferencia.
+     *
+     * Con la clave antigua —`(tarea, estado, ventana de 5 min)`— la tercera
+     * era indistinguible de la primera: se descartaba por duplicada y el aviso
+     * no salia. El gestor movia la tarea, veia el cambio en pantalla, y el
+     * equipo no recibia nada. Sin error, sin registro, sin forma de saberlo.
+     *
+     * La evidencia es el BUZON: dos correos a cada destinatario, no uno.
+     */
+    const nombre = "Avisar al equipo cuando la tarea arranca";
+    const antes = {
+      owner: await cuantosCorreos(page.request, E2E.disparadores.owner),
+      manager: await cuantosCorreos(page.request, E2E.disparadores.manager),
+    };
+
+    await login(page, E2E.disparadores.owner);
+    await irAReglas(page);
+    await crearRegla(page, {
+      nombre,
+      disparador: "TASK_STATUS_CHANGED",
+      accion: "SEND_EMAIL_TEAM",
+      asunto: "La tarea ha arrancado",
+      cuerpo: "Expediente {{case.ref}}.",
+      estadoTarea: "IN_PROGRESS",
+    });
+
+    await abrirTareas(page);
+
+    // Ida…
+    await cambiarEstadoTarea(page, E2E.disparadores.tarea, "IN_PROGRESS");
+    await esperarCorreos(page.request, E2E.disparadores.owner, antes.owner + 1);
+    // …vuelta (no cumple la condicion, no avisa)…
+    await cambiarEstadoTarea(page, E2E.disparadores.tarea, "PENDING");
+    // …y vuelta a ir. ESTA es la que se tragaba.
+    await cambiarEstadoTarea(page, E2E.disparadores.tarea, "IN_PROGRESS");
+
+    const aOwner = await esperarCorreos(page.request, E2E.disparadores.owner, antes.owner + 2);
+    const aManager = await esperarCorreos(
+      page.request,
+      E2E.disparadores.manager,
+      antes.manager + 2,
+    );
+    expect(aOwner.length, "dos transiciones legitimas, dos avisos al OWNER").toBe(antes.owner + 2);
+    expect(aManager.length, "dos transiciones legitimas, dos avisos al MANAGER").toBe(
+      antes.manager + 2,
+    );
+
+    // Dos ejecuciones, con identidades distintas.
+    const ejecuciones = await ejecucionesDe(nombre);
+    expect(ejecuciones).toHaveLength(2);
+    expect(new Set(ejecuciones.map((e) => e.idempotencyKey)).size).toBe(2);
+    expect((await reglaEnBase(nombre)).execCount).toBe(2);
+  });
+
+  test("EVENTO DUPLICADO: dos PATCH concurrentes iguales no duplican el aviso", async ({
+    page,
+  }) => {
+    /*
+     * Dos peticiones identicas y simultaneas a la ruta real de tareas. Es lo
+     * que ocurre con un doble envio del cliente o un reintento de la capa de
+     * transporte.
+     *
+     * La ruta solo emite el evento cuando el estado CAMBIA de verdad
+     * (`status !== task.status`), asi que de las dos peticiones solo una
+     * transiciona. La evidencia sigue siendo el buzon: un correo por
+     * destinatario, no dos.
+     */
+    const nombre = "Avisar una sola vez";
+    const antes = {
+      owner: await cuantosCorreos(page.request, E2E.disparadores.owner),
+      manager: await cuantosCorreos(page.request, E2E.disparadores.manager),
+    };
+
+    await login(page, E2E.disparadores.owner);
+    await irAReglas(page);
+    await crearRegla(page, {
+      nombre,
+      disparador: "TASK_STATUS_CHANGED",
+      accion: "SEND_EMAIL_TEAM",
+      asunto: "Solo una vez",
+      cuerpo: "Expediente {{case.ref}}.",
+      estadoTarea: "DONE",
+    });
+
+    const caso = await casoDisp();
+    const tarea = await prisma.task.findFirstOrThrow({
+      where: { caseId: caso.id, title: E2E.disparadores.tarea },
+      select: { id: true },
+    });
+
+    // Las dos, a la vez, por la ruta real y con la sesion real del navegador.
+    const cuerpo = { taskId: tarea.id, status: "DONE" };
+    const respuestas = await Promise.all([
+      page.request.patch(`/api/cases/${caso.id}/tasks`, { data: cuerpo }),
+      page.request.patch(`/api/cases/${caso.id}/tasks`, { data: cuerpo }),
+    ]);
+    for (const r of respuestas) expect(r.status()).toBeLessThan(400);
+
+    // Llega el aviso…
+    await esperarCorreos(page.request, E2E.disparadores.owner, antes.owner + 1);
+
+    // …y solo uno. Con margen para que un segundo, de haberlo, hubiera salido.
+    await new Promise((r) => setTimeout(r, 2000));
+    expect(
+      await cuantosCorreos(page.request, E2E.disparadores.owner),
+      "un solo aviso al OWNER pese a las dos peticiones",
+    ).toBe(antes.owner + 1);
+    expect(
+      await cuantosCorreos(page.request, E2E.disparadores.manager),
+      "un solo aviso al MANAGER pese a las dos peticiones",
+    ).toBe(antes.manager + 1);
+
+    // Una sola ejecucion, y una sola fila de entrega por destinatario.
+    const ejecuciones = await ejecucionesDe(nombre);
+    expect(ejecuciones, "una sola ejecucion").toHaveLength(1);
+    const entregas = await prisma.workflowDelivery.findMany({
+      where: { workflowLogId: ejecuciones[0].id },
+      select: { recipient: true, status: true },
+    });
+    expect(entregas).toHaveLength(2);
+    expect(entregas.every((e) => e.status === "SENT")).toBe(true);
+    expect((await reglaEnBase(nombre)).execCount).toBe(1);
+  });
+
+  test("EJECUCION PARCIAL: quien ya lo recibio no lo recibe otra vez al reintentar", async ({
+    page,
+  }) => {
+    /*
+     * El limite para el que esta diseñada la arquitectura: la reserva ocurre
+     * ANTES del envio externo.
+     *
+     * Se monta una ejecucion en la que un destinatario quedo SENT y el otro
+     * FAILED —que es como queda tras una caida a medias— y se reintenta desde
+     * la pantalla real de registro. El que ya lo tenia no debe recibir nada.
+     */
+    const nombre = "Aviso a medias";
+    const caso = await casoDisp();
+    const org = await orgDisp();
+
+    const regla = await prisma.workflowRule.create({
+      data: {
+        orgId: org.id,
+        name: nombre,
+        trigger: "CASE_STATUS_CHANGED",
+        conditions: {},
+        action: "SEND_EMAIL_TEAM",
+        actionConfig: { subject: "Aviso a medias", body: "Expediente {{case.ref}}." },
+        isActive: true,
+      },
+    });
+    const ahora = new Date();
+    const log = await prisma.workflowLog.create({
+      data: {
+        ruleId: regla.id,
+        caseId: caso.id,
+        status: "PARTIAL",
+        error: "SMTP 421: servicio no disponible",
+        idempotencyKey: `e2e-parcial-${Date.now()}`,
+      },
+    });
+    await prisma.workflowDelivery.createMany({
+      data: [
+        {
+          workflowLogId: log.id,
+          recipient: E2E.disparadores.owner,
+          status: "SENT",
+          attempts: 1,
+          lastTriedAt: ahora,
+          sentAt: ahora,
+        },
+        {
+          workflowLogId: log.id,
+          recipient: E2E.disparadores.manager,
+          status: "FAILED",
+          error: "SMTP 421: servicio no disponible",
+          attempts: 1,
+          lastTriedAt: ahora,
+        },
+      ],
+    });
+
+    const antes = {
+      owner: await cuantosCorreos(page.request, E2E.disparadores.owner),
+      manager: await cuantosCorreos(page.request, E2E.disparadores.manager),
+    };
+
+    await login(page, E2E.disparadores.owner);
+    await page.goto("/workflow-logs");
+    await pantallaUtil(page);
+    await page.getByTestId(`reintentar-${log.id}`).click();
+    await expect(page.getByTestId("reintento-exito")).toBeVisible();
+
+    // El que fallo lo recibe…
+    const aManager = await esperarCorreos(
+      page.request,
+      E2E.disparadores.manager,
+      antes.manager + 1,
+    );
+    expect(aManager.length, "el destinatario fallido se recupera").toBe(antes.manager + 1);
+
+    // …y el que ya lo tenia, NO.
+    await seguirSinCorreo(
+      page.request,
+      E2E.disparadores.owner,
+      antes.owner,
+      "un destinatario en SENT no vuelve a recibir el mismo aviso",
+    );
+
+    // El estado agregado pasa a ser verdad, y los contadores son coherentes.
+    const despues = await prisma.workflowLog.findUniqueOrThrow({
+      where: { id: log.id },
+      select: { status: true },
+    });
+    expect(despues.status).toBe("SUCCESS");
+
+    const entregas = await prisma.workflowDelivery.findMany({
+      where: { workflowLogId: log.id },
+      select: { recipient: true, status: true, attempts: true },
+      orderBy: { recipient: "asc" },
+    });
+    expect(entregas.every((e) => e.status === "SENT")).toBe(true);
+    const delOwner = entregas.find((e) => e.recipient === E2E.disparadores.owner)!;
+    const delManager = entregas.find((e) => e.recipient === E2E.disparadores.manager)!;
+    expect(delOwner.attempts, "al que ya lo tenia no se le vuelve a intentar").toBe(1);
+    expect(delManager.attempts, "al fallido si se le reintenta").toBeGreaterThan(1);
   });
 });

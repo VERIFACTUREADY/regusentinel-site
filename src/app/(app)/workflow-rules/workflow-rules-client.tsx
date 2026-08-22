@@ -174,11 +174,28 @@ function ConditionsEditor({
   if (trigger === "TASK_STATUS_CHANGED") {
     return (
       <div>
+        {/*
+          `taskStatus`, NO `toStatus`.
+
+          EL DEFECTO QUE CORRIGE
+          ----------------------
+          Este selector escribía en `conditions.toStatus`, que en el motor es
+          un **estado de EXPEDIENTE** (`CaseStatus`). Elegir aquí «DONE» —que
+          es un estado de TAREA— producía una condición que el esquema no
+          admite, así que el servidor rechazaba la regla con un 400 y el
+          formulario se quedaba abierto sin forma de salir adelante: la
+          condición «Hacia estado de tarea» era **imposible de usar**.
+
+          Y si alguna hubiera llegado a guardarse, tampoco habría servido:
+          `evaluateConditions` compara `conditions.taskStatus` con el estado de
+          la tarea del evento, y nunca habría mirado `toStatus`. Una regla
+          guardada que no se dispara jamás, sin un solo error.
+        */}
         <label htmlFor="reglaEstadoTarea" className="block text-xs font-medium text-gray-600 mb-1">Hacia estado de tarea (opcional)</label>
         <select
           id="reglaEstadoTarea"
-            value={conditions.toStatus ?? ""}
-          onChange={(e) => onChange({ ...conditions, toStatus: e.target.value })}
+          value={conditions.taskStatus ?? ""}
+          onChange={(e) => onChange({ ...conditions, taskStatus: e.target.value })}
           className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
         >
           <option value="">Cualquier estado</option>
@@ -874,6 +891,25 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
     setSaving(true);
     setSaveError(null);
     try {
+      /*
+       * Las condiciones vacías se QUITAN, no se mandan como cadena vacía.
+       *
+       * EL DEFECTO QUE CORRIGE
+       * ----------------------
+       * Los selectores de condición usan `""` para «Cualquier estado», y eso
+       * se enviaba tal cual. Pero `ruleConditionsSchema` es estricto y sus
+       * campos son enums: `""` no es un valor válido de `CaseStatus` ni de
+       * `TaskStatus`, así que el servidor devolvía un 400.
+       *
+       * Bastaba con elegir una condición y volver a ponerla en «Cualquier
+       * estado» para que la regla dejara de poder guardarse, con un error que
+       * no decía qué campo lo causaba y sin ninguna forma de deshacerlo desde
+       * el formulario. «Sin condición» es la ausencia del campo, no un campo
+       * con nada dentro.
+       */
+      const conditions = Object.fromEntries(
+        Object.entries(form.conditions).filter(([, valor]) => valor !== "" && valor != null),
+      );
       const url = editingRule ? `/api/workflow-rules/${editingRule.id}` : "/api/workflow-rules";
       const method = editingRule ? "PATCH" : "POST";
       const res = await fetch(url, {
@@ -884,7 +920,7 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
           description: form.description || null,
           isActive: form.isActive,
           trigger: form.trigger,
-          conditions: form.conditions,
+          conditions,
           action: form.action,
           actionConfig: form.actionConfig,
         }),
