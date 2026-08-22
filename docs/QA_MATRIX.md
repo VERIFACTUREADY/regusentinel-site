@@ -434,6 +434,7 @@ emisor futuro que no traiga identidad propia.
 | Reentrega tardía del mismo hecho | ✅ | una hora después, nadie recibe un segundo aviso y `execCount` no se mueve. Con la ventana temporal esto **no** se cumplía |
 | Reclamación por destinatario | ✅ | `workflow-claim-db.test.ts` — SENT nunca se reenvía; FAILED y PENDING siguen siendo reintentables; una PROCESSING colgada se recupera pasado el plazo y una reciente no |
 | Ejecución parcial (uno entregado, otro fallido) | ✅ | `disparadores.spec.ts` — se reintenta desde `/workflow-logs`: al que ya lo tenía **no le llega nada** (`attempts` sigue en 1), el fallido se recupera y el estado agregado pasa a ser verdad |
+| **La transición de una tarea se reclama de forma atómica** | ✅ | **defecto corregido, encontrado por la prueba de evento duplicado**: la ruta decidía si el estado había cambiado con `status !== task.status`, leído ANTES de escribir. Dos peticiones simultáneas leían las dos el estado viejo, las dos pasaban la comprobación y las dos emitían el evento —con `updatedAt` distinto, así que con identidades distintas—: dos avisos, dos entradas de auditoría y dos ejecuciones por UNA transición. Esto no lo puede arreglar el motor: le llegan dos hechos que dicen ser distintos. Ahora se reclama con un `updateMany` condicionado al estado leído, y sólo quien obtiene `count === 1` audita y emite |
 | **Deduplicar no parece un fallo en el log** | ✅ | **defecto corregido**: la reclamación era un `create` dentro de un `try` que esperaba el P2002, y Prisma registra la consulta fallida a nivel ERROR. Como el choque es el **camino normal**, el servidor escupía un «Unique constraint failed» en cada deduplicación correcta. Hay una prueba que captura `stderr` durante una deduplicación concurrente y exige que ese texto no aparezca |
 
 #### Límite conocido, declarado
@@ -449,8 +450,8 @@ conservador: se ejecuta una vez, no dos.
 | Cosa | Por qué |
 |---|---|
 | El título «Audit Trail», en inglés | Es copia visible para el usuario en una aplicación por lo demás en español. Cambiarlo es una decisión de producto, no la corrección de un defecto de uso o de accesibilidad, y el encargo pedía **conservar la copia** salvo en ese caso |
-| El `<select>` de estado de `/cases/[id]` no tiene nombre accesible | Es un defecto **real**, encontrado al conducir el disparo automático desde la ficha. La ficha del expediente está **fuera del alcance** de esta fase, así que se declara aquí y no se toca |
-| `WorkflowLog.idempotencyKey` | La protección contra ejecuciones duplicadas ya existía y no se ha modificado. Sigue marcada 🟡 arriba porque no está probada desde el navegador, no porque se haya debilitado |
+| El `<select>` de estado del EXPEDIENTE en `/cases/[id]` no tiene nombre accesible | Es un defecto **real**, encontrado al conducir el disparo automático desde la ficha: hay que localizarlo por su estructura porque no tiene rótulo. (El de estado de cada TAREA sí lo tiene —`aria-label="Estado de …"`— y es el que usan las pruebas de `TASK_STATUS_CHANGED`.) La ficha del expediente está **fuera del alcance** de esta fase y de su continuación, así que se declara aquí, se deja para su propia fase y no se toca |
+| El diseño de `WorkflowLog.idempotencyKey` | La restricción única y la reclamación por destinatario **no se han sustituido**: seguían siendo correctas. Lo que faltaba era la identidad del hecho que se les pasaba, y eso es lo que se ha corregido en los emisores. La ventana de cinco minutos se conserva como red para cualquier emisor futuro que no traiga identidad propia |
 
 ### `/calendar` — Calendario de plazos
 
