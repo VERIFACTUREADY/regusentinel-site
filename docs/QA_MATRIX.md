@@ -10,14 +10,14 @@ ejerce como la ejercería una persona. Las columnas que dicen «API» señalan
 justamente eso — hay red de seguridad en el servidor, pero nadie ha comprobado
 que el botón la llame.
 
-Suites (27 ficheros, **850** pruebas de navegador contando los tres tamaños de
+Suites (28 ficheros, **863** pruebas de navegador contando los tres tamaños de
 pantalla): `smoke`, `calendar`, `invitaciones`, `correo-real`, `estados-carga`,
 `expedientes`, `acciones-expedientes`, `tareas`, `tareas.responsive`,
 `documentos`, `documentos.responsive`, `usuarios`, `usuarios.responsive`,
 `autenticacion`, `sesion-y-roles`, `navegacion.responsive`, `dashboard`, `today`,
 `panel.responsive`, `mensajes`, `notificaciones`, `aprobaciones`,
 `avisos.responsive`, `automatizaciones`, `registro-automatizaciones`,
-`auditoria` y `automatizaciones.responsive`. Todas corren con el vigilante de
+`auditoria`, `automatizaciones.responsive` y `disparadores`. Todas corren con el vigilante de
 `e2e/vigilancia.ts` activo (ver «Detección global»).
 
 ## Leyenda
@@ -291,9 +291,16 @@ Inventario real de la pantalla y de sus tres modales. Pruebas en
 | OPERATOR y VIEWER no ven controles de gestión | `workflow.manage` | ✅ | `automatizaciones.spec.ts` |
 | El servidor rechaza a OPERATOR y VIEWER | — | ✅ | crear, editar, borrar y probar → 403; nada cambia |
 | Aislamiento entre organizaciones | — | ✅ | la lista no la muestra; leer, editar, borrar y probar la ajena → 404 |
-| Idempotencia del motor | — | 🟡 | `idempotencyKey` existe en el esquema y **no se ha tocado**; su comportamiento bajo evento duplicado no se ha probado desde el navegador en esta fase |
-| «Probar regla» con una acción de CORREO | `workflow.manage` | ❌ | **hueco declarado**: el modal de prueba se conduce con la regla de comentario, cuyo efecto se comprueba en el expediente. Con `SEND_EMAIL_CONTACT` o `SEND_EMAIL_TEAM` no se ha comprobado contra el buzón de pruebas. (El envío por correo del motor **sí** está probado contra el buzón, pero por la vía del reintento de `/workflow-logs`, no por este modal) |
-| DISPARO AUTOMÁTICO de los otros tres disparadores | — | ❌ | **hueco declarado**: sólo `CASE_STATUS_CHANGED` se ha conducido de punta a punta desde la interfaz. `TASK_STATUS_CHANGED`, `CASE_CREATED` y `DOCUMENT_UPLOADED` se comprueban al crear y guardar la regla, pero no se ha provocado el evento real que los dispara |
+| **«Probar regla» con `SEND_EMAIL_CONTACT`** | `workflow.manage` | ✅ | `disparadores.spec.ts` — regla creada por el formulario, expediente buscado y pulsado en el modal, y **el correo leído del buzón de pruebas**: destinatario, asunto y cuerpo con `{{case.ref}}`, `{{contact.fullName}}` y `{{deceased.fullName}}` ya interpolados (ni un `{{` suelto). Una `WorkflowDelivery` en SENT, `execCount` a 1 y `lastRunAt` no nulo |
+| **«Probar regla» con `SEND_EMAIL_TEAM`** | `workflow.manage` | ✅ | `disparadores.spec.ts` — organización dedicada con OWNER y MANAGER conocidos: **un correo a cada uno y ninguno al OPERATOR ni al VIEWER**, comprobado contra el buzón. Una fila de entrega por destinatario, sin duplicados |
+| **«Probar regla»: el modal deja de anunciar éxito siempre** | — | ✅ | **defecto corregido**: el endpoint respondía `success: true` sin mirar nada, porque `triggerWorkflow` devuelve `void`. Si las condiciones no encajaban, si el envío fallaba o si la acción se omitía, el gestor leía «Regla ejecutada» igual. Ahora relee el `WorkflowLog` por su clave y responde el estado real; probado con un expediente sin correo de contacto (queda SKIPPED y el modal lo dice) y con el servidor caído |
+| **«Probar regla» dos veces ejecuta dos veces** | — | ✅ | **defecto corregido**: sin `eventKey`, la segunda pulsación sobre el mismo expediente dentro de cinco minutos caía en la misma ventana, se descartaba por duplicada… y la pantalla decía que sí. Dos pulsaciones dejan ahora dos ejecuciones y dos comentarios |
+| **La condición «Hacia estado de tarea» se puede usar** | `workflow.manage` | ✅ | **defecto corregido**: el selector escribía en `conditions.toStatus`, que en el motor es un estado de **expediente**. Elegir «DONE» daba un 400 y el formulario se quedaba abierto sin salida: la condición era **imposible de guardar**. Y de haberse guardado tampoco habría servido, porque `evaluateConditions` mira `taskStatus`: una regla que no se dispara jamás, sin un solo error |
+| **Volver una condición a «Cualquier estado» no rompe el guardado** | — | ✅ | **defecto corregido**: los selectores mandaban `""`, que el esquema estricto rechaza por no ser un valor del enum. Bastaba elegir una condición y deshacerla para que la regla dejara de poder guardarse. «Sin condición» es ahora la ausencia del campo |
+| **DISPARO AUTOMÁTICO `TASK_STATUS_CHANGED`** | — | ✅ | `disparadores.spec.ts` — se mueve la tarea con el `<select>` real de la pestaña Tareas. Una ejecución, un comentario, `execCount` +1, `lastRunAt` cambiado, y persiste tras recargar. Con caso **positivo y negativo** de la condición de estado |
+| **DISPARO AUTOMÁTICO `CASE_CREATED`** | — | ✅ | `disparadores.spec.ts` — el alta se hace por el **asistente real de cinco pasos**, no sembrando el expediente. Una sola ejecución, sobre el expediente recién creado, y el efecto comprobado **aparte** del registro |
+| **DISPARO AUTOMÁTICO `DOCUMENT_UPLOADED`** | — | ✅ | `disparadores.spec.ts` — subida real desde la ficha contra **MinIO real**, con `objetoExiste()` confirmando que el objeto está en el bucket. Sólo corre en CI: aquí no se sustituye el almacén por un doble |
+| **Dos documentos seguidos disparan DOS veces** | — | ✅ | **defecto corregido**: el evento `DOCUMENT_UPLOADED` no llevaba **ningún** dato del documento, así que subir varios al mismo expediente en cinco minutos ejecutaba la regla **una sola vez**; los demás no disparaban nada ni dejaban rastro de por qué |
 | Escritorio, tablet y móvil | — | ✅ | `automatizaciones.responsive.spec.ts` — la lista, y el formulario de nueva regla se abre y se rellena con la pantalla estrecha |
 
 ### `/workflow-logs` — Registro de ejecuciones
@@ -336,7 +343,7 @@ Pruebas en `registro-automatizaciones.spec.ts` (50 en escritorio) y
 | Tabla con `caption` y `scope` en toda cabecera | — | ✅ | `registro-automatizaciones.spec.ts` |
 | El mensaje de error de una fila se lee entero | — | ✅ | **defecto corregido**: estaba en un `truncate` con el texto completo sólo en `title`: inalcanzable con teclado y en móvil |
 | Escritorio, tablet y móvil | — | ✅ | `automatizaciones.responsive.spec.ts` — se llega por el enlace (no `page.goto`), caben las cinco tarjetas, se filtra, se reintenta y el fallo de carga se explica |
-| Idempotencia del motor | — | 🟡 | `idempotencyKey` existe y **no se ha tocado**; su comportamiento bajo evento duplicado no se ha probado desde el navegador |
+| **Idempotencia del motor** | — | ✅ | ver la sección «Identidad de los eventos e idempotencia» más abajo |
 
 ### `/audit` — Traza de auditoría
 
@@ -377,6 +384,65 @@ Pruebas en `auditoria.spec.ts` (43 en escritorio) y
 | El botón de CSV declara su alcance | — | ✅ | `auditoria.spec.ts` |
 | **En MÓVIL, un fallo de carga no dice «No hay registros»** | — | ✅ | **defecto corregido**: la rama `md:hidden` de tarjetas no miraba el error. En un teléfono, una auditoría que no había podido cargarse afirmaba que no había pasado nada en la organización, y sin forma de reintentar. El aviso se dibuja ahora **una sola vez**, fuera de las dos ramas |
 | Escritorio, tablet y móvil | — | ✅ | `automatizaciones.responsive.spec.ts` — lectura, filtros, paginación y el fallo de carga |
+
+### Identidad de los eventos e idempotencia
+
+Pruebas en `__tests__/integration/workflow-event-identity-db.test.ts` (12,
+contra PostgreSQL real), `__tests__/integration/workflow-claim-db.test.ts` (16,
+ya existentes) y `disparadores.spec.ts` (las tres conducidas desde el
+navegador, con el buzón de pruebas como evidencia).
+
+#### Qué se encontró al inspeccionar los emisores reales
+
+`WorkflowEvent.eventKey` existía en la interfaz del evento y **ningún emisor lo
+pasaba**. Los siete caían en la ventana temporal de cinco minutos, que como
+identidad falla en las **dos** direcciones a la vez:
+
+| Emisor | Identidad que tenía | Qué rompía |
+|---|---|---|
+| `DOCUMENT_UPLOADED` (ficha y portal) | `(org, regla, expediente, tipo, ventana)` — **nada del documento** | Subir tres documentos al mismo expediente en cinco minutos ejecutaba la regla **una vez**. Los otros dos no disparaban nada ni dejaban rastro |
+| `TASK_STATUS_CHANGED` (ficha, lote y cron) | `(…, tarea, estado, ventana)` | Mover una tarea a EN CURSO, devolverla y volver a moverla se tragaba la segunda |
+| `CASE_STATUS_CHANGED` | `(…, desde, hacia, ventana)` | Lo mismo con una transición de expediente repetida |
+| `CASE_CREATED` | `(…, expediente, ventana)` | Correcto por casualidad: el id del expediente ya era único |
+| «Probar regla» | `(…, expediente, estado, ventana)` | La segunda pulsación no ejecutaba nada, y la pantalla decía que sí |
+
+#### Qué sirve como identidad y qué no
+
+Tiene que cumplir **las dos** condiciones:
+
+1. **Estable** ante una reentrega del mismo hecho. Un `randomUUID()` por
+   llamada no vale: dos entregas darían claves distintas y el aviso saldría
+   dos veces.
+2. **Distinta** para dos hechos legítimos, por juntos que ocurran. La ventana
+   de cinco minutos sola no vale: colapsa hechos que de verdad son dos.
+
+Todas las claves salen ahora de datos **ya persistidos** —el id de la fila
+creada, o su `updatedAt` tras la escritura—: se leen, no se generan.
+`claveDeEvento`, en `src/lib/workflow-engine.ts`, las reúne con el contrato
+documentado. La ventana de cinco minutos se conserva como red para cualquier
+emisor futuro que no traiga identidad propia.
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| Mismo hecho entregado dos veces: UNA ejecución | ✅ | efecto sin destinatario (un comentario) y con destinatarios (una llamada por destinatario) |
+| **Concurrencia**, no sólo secuencia | ✅ | `Promise.all` con dos entregas, y otra prueba con **diez**: una sola identidad de ejecución, un solo `execCount` |
+| Ninguna llamada externa duplicada | ✅ | se cuentan las **llamadas al proveedor**, no las filas: una prueba que mirase sólo `WorkflowDelivery` daría por bueno un diseño que enviara dos veces y escribiera una |
+| Sin mutación duplicada de comentario ni de estado | ✅ | `ADD_CASE_COMMENT` y `CHANGE_CASE_STATUS` con disparos concurrentes |
+| **Repetición legítima dentro de cinco minutos SÍ se ejecuta** | ✅ | dos documentos distintos → dos ejecuciones; tarea PENDIENTE→EN CURSO→PENDIENTE→EN CURSO en segundos → **tres** ejecuciones con tres identidades; dos altas seguidas → dos ejecuciones |
+| Lo mismo, conducido desde el navegador y con correos reales | ✅ | `disparadores.spec.ts` — la misma transición dos veces deja **dos** correos a cada destinatario en el buzón, no uno |
+| Evento duplicado desde la interfaz | ✅ | dos `PATCH` concurrentes idénticos a la ruta real de tareas → **un** correo por destinatario, una ejecución, una fila de entrega por destinatario |
+| Reentrega tardía del mismo hecho | ✅ | una hora después, nadie recibe un segundo aviso y `execCount` no se mueve. Con la ventana temporal esto **no** se cumplía |
+| Reclamación por destinatario | ✅ | `workflow-claim-db.test.ts` — SENT nunca se reenvía; FAILED y PENDING siguen siendo reintentables; una PROCESSING colgada se recupera pasado el plazo y una reciente no |
+| Ejecución parcial (uno entregado, otro fallido) | ✅ | `disparadores.spec.ts` — se reintenta desde `/workflow-logs`: al que ya lo tenía **no le llega nada** (`attempts` sigue en 1), el fallido se recupera y el estado agregado pasa a ser verdad |
+| **Deduplicar no parece un fallo en el log** | ✅ | **defecto corregido**: la reclamación era un `create` dentro de un `try` que esperaba el P2002, y Prisma registra la consulta fallida a nivel ERROR. Como el choque es el **camino normal**, el servidor escupía un «Unique constraint failed» en cada deduplicación correcta. Hay una prueba que captura `stderr` durante una deduplicación concurrente y exige que ese texto no aparezca |
+
+#### Límite conocido, declarado
+
+Las claves de versión usan `updatedAt` con precisión de **milisegundo**. Dos
+transiciones distintas de la misma fila dentro del mismo milisegundo
+compartirían identidad. No es alcanzable desde la interfaz —hace falta una
+escritura y una respuesta HTTP entre ambas— y, de darse, el error cae del lado
+conservador: se ejecuta una vez, no dos.
 
 #### Dejado como estaba, a propósito
 

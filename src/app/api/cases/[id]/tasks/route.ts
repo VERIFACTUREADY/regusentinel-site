@@ -117,6 +117,38 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
+  /*
+   * LA TRANSICIÓN SE RECLAMA ANTES DE ESCRIBIR NADA MÁS.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * La comprobación de «¿ha cambiado de verdad el estado?» era
+   * `status !== task.status`, con `task` leído ANTES de escribir. Eso es un
+   * leer-comprobar-escribir sin atomicidad: dos peticiones simultáneas con el
+   * mismo estado destino leían las dos el estado viejo, las dos pasaban la
+   * comprobación y las dos emitían el evento.
+   *
+   * Como cada escritura deja su propio `updatedAt`, los dos eventos tenían
+   * identidades distintas y el motor —con razón— los ejecutaba los dos: dos
+   * avisos al equipo, dos entradas en la auditoría y dos ejecuciones por UNA
+   * sola transición. La deduplicación del motor no puede arreglar esto,
+   * porque a él le llegan dos hechos que dicen ser distintos; hay que no
+   * inventárselos aquí.
+   *
+   * `updateMany` condicionado al estado leído es atómico: sólo una de las dos
+   * peticiones obtiene `count === 1`, y sólo esa audita y emite. Es el mismo
+   * patrón que ya usaba el cron de desbloqueo.
+   */
+  const transiciona = Boolean(status && status !== task.status);
+  let ganaLaTransicion = transiciona;
+  if (transiciona) {
+    const reclamo = await prisma.task.updateMany({
+      where: { id: task.id, status: task.status },
+      data: { status },
+    });
+    ganaLaTransicion = reclamo.count === 1;
+  }
+
   const updated = await prisma.task.update({
     where: { id: task.id },
     data: {
@@ -138,7 +170,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     },
   });
 
-  if (status && status !== task.status) {
+  if (status && transiciona && ganaLaTransicion) {
     await logAudit({
       orgId: session.user.orgId,
       userId: session.user.id,

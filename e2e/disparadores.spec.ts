@@ -602,10 +602,16 @@ test.describe("Disparo automatico: TASK_STATUS_CHANGED", () => {
 
     // POSITIVO: completarla si.
     await cambiarEstadoTarea(page, E2E.disparadores.tarea, "DONE");
+    /*
+     * El estado se comprueba DENTRO de la espera: la fila se crea en
+     * PROCESSING y pasa a SUCCESS un instante despues. Afirmarlo fuera era
+     * una carrera contra ese paso.
+     */
     await expect(async () => {
-      expect(await ejecucionesDe(nombre)).toHaveLength(1);
+      const logs = await ejecucionesDe(nombre);
+      expect(logs).toHaveLength(1);
+      expect(logs[0].status).toBe("SUCCESS");
     }).toPass({ timeout: 20_000 });
-    expect((await ejecucionesDe(nombre))[0].status).toBe("SUCCESS");
   });
 });
 
@@ -961,6 +967,10 @@ test.describe("Idempotencia conducida desde la interfaz", () => {
       where: { caseId: caso.id, title: E2E.disparadores.tarea },
       select: { id: true },
     });
+    // Punto de partida propio: otras pruebas del fichero mueven esta tarea.
+    const auditoriaAntes = await prisma.auditLog.count({
+      where: { caseId: caso.id, action: "task.done" },
+    });
 
     // Las dos, a la vez, por la ruta real y con la sesion real del navegador.
     const cuerpo = { taskId: tarea.id, status: "DONE" };
@@ -983,6 +993,12 @@ test.describe("Idempotencia conducida desde la interfaz", () => {
       await cuantosCorreos(page.request, E2E.disparadores.manager),
       "un solo aviso al MANAGER pese a las dos peticiones",
     ).toBe(antes.manager + 1);
+
+    // Y una sola entrada en la auditoria: la tarea transiciono UNA vez.
+    expect(
+      await prisma.auditLog.count({ where: { caseId: caso.id, action: "task.done" } }),
+      "una transicion, una entrada de auditoria",
+    ).toBe(auditoriaAntes + 1);
 
     // Una sola ejecucion, y una sola fila de entrega por destinatario.
     const ejecuciones = await ejecucionesDe(nombre);
