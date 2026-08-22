@@ -768,7 +768,9 @@ test.describe("Disparo automatico: DOCUMENT_UPLOADED", () => {
     });
 
     await subirDesdeFicha(page, archivo);
-    await expect(page.getByText(archivo)).toBeVisible({ timeout: 45_000 });
+    // `.first()`: la tarjeta del documento repite el nombre (rotulo y titulo
+    // del enlace), y sin esto el localizador estricto encuentra dos.
+    await expect(page.getByText(archivo).first()).toBeVisible({ timeout: 45_000 });
 
     // ── El objeto EXISTE de verdad en MinIO ──
     const fila = await prisma.document.findFirstOrThrow({
@@ -830,9 +832,9 @@ test.describe("Disparo automatico: DOCUMENT_UPLOADED", () => {
     const primero = `DISP-E2E-A-${sufijo}.pdf`;
     const segundo = `DISP-E2E-B-${sufijo}.pdf`;
     await subirDesdeFicha(page, primero);
-    await expect(page.getByText(primero)).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByText(primero).first()).toBeVisible({ timeout: 45_000 });
     await subirDesdeFicha(page, segundo);
-    await expect(page.getByText(segundo)).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByText(segundo).first()).toBeVisible({ timeout: 45_000 });
 
     // Los dos objetos estan en el bucket.
     for (const archivo of [primero, segundo]) {
