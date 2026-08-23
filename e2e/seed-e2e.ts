@@ -465,12 +465,110 @@ export const CIFRAS_AVISOS = {
  * momento del sembrado: se reancla justo antes de mirar, con lo que la ventana
  * de riesgo pasa de veinte minutos a los segundos que tarda la prueba.
  */
+/*
+ * Los tres ayudantes de plazos viven a nivel de MODULO, no dentro de `main`:
+ * los usan tanto el sembrado como el reanclado que corre antes de cada prueba,
+ * y duplicar la formula seria pedir que las dos versiones se separen.
+ */
+/**
+ * Plazo para probar el borde de una ventana RODANTE de `dias` dias.
+ *
+ * Una hora antes del corte para los que deben entrar, y justo en el corte del
+ * dia siguiente para los que deben quedarse fuera. Asi el resultado no depende
+ * de la hora a la que se ejecute la suite.
+ */
+function plazoRodante(base: number, dias: number): Date {
+  const HORA_MS = 60 * 60 * 1000;
+  return new Date(base + dias * 86_400_000 - HORA_MS);
+}
+
+function mediodiaCivilES(base: number, dias: number): Date {
+  const inicio = sumarDiasES(new Date(base), dias);
+  return new Date(inicio.getTime() + 12 * 60 * 60 * 1000);
+}
+
+/**
+ * Plazo dentro del dia civil espanol indicado.
+ *
+ * EL DEFECTO QUE CORRIGE
+ * ----------------------
+ * El de HOY se anclaba al mediodia, igual que todos los demas. Pero la
+ * consulta del panel es `deadline >= ahora`, asi que a partir de las 12:00 de
+ * Madrid la tarea «vence hoy» quedaba en el pasado y desaparecia del bloque
+ * «Plazos proximos». Es decir: `dashboard.spec.ts` fallaba TODAS LAS TARDES,
+ * y solo pasaba si la suite tocaba correr por la manana. En CI eso se traduce
+ * en un rojo que va y viene sin que nadie haya cambiado nada, que es la peor
+ * clase de prueba: la que ensena a no creerse el rojo.
+ *
+ * El de hoy se ancla al FINAL de su dia civil, asi que sigue siendo hoy y
+ * sigue estando en el futuro a cualquier hora de la jornada. Los de dias
+ * pasados o futuros se quedan al mediodia, que ya estaba bien: nunca cambian
+ * de lado respecto a `ahora`.
+ */
+function plazoDelDia(base: number, dias: number): Date {
+  return dias === 0 ? finDelDiaDeES(new Date(base)) : mediodiaCivilES(base, dias);
+}
+
+
 export async function reanclarVenceHoy(prisma: PrismaClient): Promise<void> {
   const finDeHoy = finDelDiaDeES(new Date());
   await prisma.task.updateMany({
     where: { title: `${E2E.panel.prefijo} vence hoy` },
     data: { deadline: finDeHoy },
   });
+}
+
+/**
+ * Reancla los plazos de TODAS las tareas del panel, no solo el de «vence hoy».
+ *
+ * EL MISMO DEFECTO, EN LAS DEMAS TAREAS
+ * -------------------------------------
+ * `reanclarVenceHoy` arreglo el borde de hoy, pero dejo fuera a las vencidas,
+ * que se anclan al mediodia del dia civil del SEMBRADO. Cruzar la medianoche
+ * de Madrid entre sembrar y comprobar las corre un dia entero:
+ *
+ *     sembrado 23:53  ->  «vencida hace 3 dias»
+ *     prueba   00:16  ->  la pantalla dice «hace 4d», y la asercion pide 3
+ *
+ * Ocurrio de verdad en una ejecucion completa que empezo a las 23:53 y termino
+ * a las 00:16. Falló `today` por el contador, `dashboard` por un desajuste de
+ * hidratacion —el servidor pinto el texto antes de medianoche y el cliente
+ * hidrato despues— y `auditoria` porque la lista se reagrupa por dia civil y
+ * el boton «Siguiente» desaparecio entre contarlo y pulsarlo.
+ *
+ * No cambia ninguna asercion: las pruebas siguen exigiendo «hace 3d» y
+ * «hace 10d». Lo que cambia es que el plazo se calcula contra el dia civil que
+ * esta en vigor cuando la prueba mira, y no contra el de hace veinte minutos.
+ */
+export async function reanclarPlazosDelPanel(prisma: PrismaClient): Promise<void> {
+  const ahora = Date.now();
+  const DIA = 24 * 60 * 60 * 1000;
+
+  for (const t of TAREAS_PANEL) {
+    if (t.dias === null) continue;
+    const plazo = t.rodante ? plazoRodante(ahora, t.dias) : plazoDelDia(ahora, t.dias);
+
+    /*
+     * `updatedAt` SE ESCRIBE A MANO, Y NO ES OPCIONAL.
+     *
+     * `updatedAt` lleva `@updatedAt` en el esquema, asi que Prisma lo pisa con
+     * la hora actual en CUALQUIER escritura. Reanclar solo el plazo borraba de
+     * paso el «bloqueada desde hace N dias», que es justo lo que mide el
+     * bloque de bloqueadas criticas: las tres tareas pasaban a estar
+     * bloqueadas «desde hace cero dias», ninguna superaba el umbral de siete y
+     * el bloque desaparecia entero de la pantalla.
+     *
+     * Se reancla tambien, con el mismo desfase relativo. Ademas de arreglar el
+     * estropicio, cura el mismo mal de medianoche en esa cuenta.
+     */
+    await prisma.task.updateMany({
+      where: { title: `${E2E.panel.prefijo} ${t.titulo}` },
+      data: {
+        deadline: plazo,
+        updatedAt: new Date(ahora - (t.bloqueadaDesdeHace ?? 0) * DIA),
+      },
+    });
+  }
 }
 
 /** Tamano de pagina de /approvals (`PAGE_SIZE` en `approvals-queue.tsx`). */
@@ -1162,45 +1260,6 @@ async function main() {
  * dia, asi que el sembrado y la pantalla cuentan los dias igual. El mediodia
  * evita ademas los bordes de la medianoche en los dos sentidos.
  */
-/**
- * Plazo para probar el borde de una ventana RODANTE de `dias` dias.
- *
- * Una hora antes del corte para los que deben entrar, y justo en el corte del
- * dia siguiente para los que deben quedarse fuera. Asi el resultado no depende
- * de la hora a la que se ejecute la suite.
- */
-function plazoRodante(base: number, dias: number): Date {
-  const HORA_MS = 60 * 60 * 1000;
-  return new Date(base + dias * 86_400_000 - HORA_MS);
-}
-
-function mediodiaCivilES(base: number, dias: number): Date {
-  const inicio = sumarDiasES(new Date(base), dias);
-  return new Date(inicio.getTime() + 12 * 60 * 60 * 1000);
-}
-
-/**
- * Plazo dentro del dia civil espanol indicado.
- *
- * EL DEFECTO QUE CORRIGE
- * ----------------------
- * El de HOY se anclaba al mediodia, igual que todos los demas. Pero la
- * consulta del panel es `deadline >= ahora`, asi que a partir de las 12:00 de
- * Madrid la tarea «vence hoy» quedaba en el pasado y desaparecia del bloque
- * «Plazos proximos». Es decir: `dashboard.spec.ts` fallaba TODAS LAS TARDES,
- * y solo pasaba si la suite tocaba correr por la manana. En CI eso se traduce
- * en un rojo que va y viene sin que nadie haya cambiado nada, que es la peor
- * clase de prueba: la que ensena a no creerse el rojo.
- *
- * El de hoy se ancla al FINAL de su dia civil, asi que sigue siendo hoy y
- * sigue estando en el futuro a cualquier hora de la jornada. Los de dias
- * pasados o futuros se quedan al mediodia, que ya estaba bien: nunca cambian
- * de lado respecto a `ahora`.
- */
-function plazoDelDia(base: number, dias: number): Date {
-  return dias === 0 ? finDelDiaDeES(new Date(base)) : mediodiaCivilES(base, dias);
-}
-
 // El plazo se ancla al mediodia del dia civil espanol: asi el dia civil espanol
   // coincide con el dia UTC y estas tareas no dependen de a que hora corra la
   // suite. Las pruebas de zona horaria usan tareas propias, con hora extrema.

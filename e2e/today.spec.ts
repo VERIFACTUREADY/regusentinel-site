@@ -15,7 +15,7 @@
 import { type Page, type BrowserContext } from "@playwright/test";
 import { test, expect, pantallaUtil } from "./vigilancia";
 import { PrismaClient } from "@prisma/client";
-import { E2E, CIFRAS_PANEL, reanclarVenceHoy } from "./seed-e2e";
+import { E2E, CIFRAS_PANEL, reanclarPlazosDelPanel } from "./seed-e2e";
 
 const prisma = new PrismaClient();
 
@@ -31,7 +31,7 @@ const prisma = new PrismaClient();
  * los segundos que dura la prueba.
  */
 test.beforeEach(async () => {
-  await reanclarVenceHoy(prisma);
+  await reanclarPlazosDelPanel(prisma);
 });
 
 
