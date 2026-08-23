@@ -491,6 +491,76 @@ ella, y ninguna de las dos se entera.
 Las cinco filas marcadas «antes» fallan sobre el SHA anterior
 (`87fca3d`) y pasan sobre el actual.
 
+#### Atomicidad de «cambio de estado + auditoría»
+
+Pruebas en `__tests__/integration/transicion-atomica-db.test.ts` (7, contra
+PostgreSQL real).
+
+**El hueco que quedaba.** El compara-y-intercambia arregla *quién* gana, no
+*qué se confirma junto*. Las rutas seguían escribiendo en operaciones
+confirmadas por separado:
+
+```
+1. updateMany condicionado  →  el estado nuevo queda ya COMMITEADO
+2. update del resto de campos
+3. insert en AuditLog        →  si falla aquí, el paso 1 ya no se puede deshacer
+```
+
+Un fallo en la 2 o en la 3 dejaba **el estado cambiado y ninguna fila que
+dijera quién lo cambió, cuándo ni desde qué estado**. Y como la identidad del
+evento ES esa fila, tampoco había evento, ni ejecución, ni aviso: la
+automatización configurada no ocurría, en silencio.
+
+**La corrección.** Las tres escrituras van en una `prisma.$transaction`, en las
+**cuatro** rutas que persisten transiciones: tarea, expediente, lote
+(`/api/tasks/batch`) y cron de desbloqueo. `logAudit()` acepta el cliente de la
+transacción, de modo que la fila entra en el mismo COMMIT. Si la auditoría no
+se puede escribir, la transición se deshace. Dentro de la transacción no se
+llama a nadie de fuera: motor y correos van **después** del commit, porque
+sostenerla abierta esperando a un proveedor bloquea la fila y agota el pool.
+
+**Cómo se prueba.** No se mockea Prisma ni se falsea una respuesta: un
+**disparador de PostgreSQL** rechaza el INSERT en `"AuditLog"` para la acción
+bajo prueba. Quien aborta es la base de datos y quien deshace es su propio
+ROLLBACK.
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| TAREA: auditoría rechazada → la transición se deshace | ✅ | la petición falla, la tarea sigue en PENDIENTE, cero auditorías, cero `WorkflowLog`, `execCount` 0, cero correos |
+| TAREA: los demás campos del PATCH también se deshacen | ✅ | un PATCH que además renombraba la tarea: el título sigue siendo el original |
+| EXPEDIENTE: auditoría rechazada → la transición se deshace | ✅ | el expediente sigue en `IN_PROGRESS`, sin auditoría, sin ejecución, sin correo |
+| EXPEDIENTE: los demás campos también se deshacen | ✅ | `notes` sigue vacío |
+| EXPEDIENTE: `closedAt` no sobrevive al fallo | ✅ | si quedara puesto con el expediente abierto, los informes de cierre contarían un cierre que nadie hizo |
+| Los controles no son vacíos | ✅ | dos pruebas ejecutan lo mismo **sin** el disparador: transicionan, auditan, ejecutan la regla y entregan el correo a cada destinatario |
+
+#### Hasta dónde llega la garantía, y hasta dónde no
+
+Una transacción hace atómicos **estado + auditoría**. No puede hacer atómico
+**commit de base de datos + ejecución externa asíncrona**, y esto no se
+presenta como si lo hiciera:
+
+| Tramo | Garantía |
+|---|---|
+| Transición ↔ fila de `AuditLog` ↔ identidad del evento | **Atómico.** Un COMMIT. O están las tres o no está ninguna |
+| Entrega al motor (`triggerWorkflow`) tras el commit | **Post-commit, con reintento sólo dentro de una ejecución ya registrada.** Si el proceso muere entre el COMMIT y la creación del `WorkflowLog`, la transición queda correctamente registrada y **la automatización no llega a dispararse** |
+
+**No hay hoy un mecanismo duradero que recupere ese último tramo.** Lo
+comprobado en el repositorio: `reintentarEntregasFallidas()` reintenta las
+entregas de un `WorkflowLog` **que ya existe** —recupera destinatarios, no
+disparos perdidos—, y se invoca a mano desde `/workflow-logs`; no hay cron ni
+proceso que reconcilie transiciones auditadas contra ejecuciones. `vercel.json`
+declara once crons y ninguno hace esa reconciliación; el único emisor de
+workflows fuera de las rutas es `cron/unblock-tasks`, que dispara los suyos, no
+recupera los de otros.
+
+Introducir un *outbox* —persistir el evento en el mismo COMMIT y que un
+proceso aparte lo entregue— es la solución correcta, y es un cambio de
+arquitectura: tabla nueva, migración, cron y su propia idempotencia. **Queda
+declarado como partida propia de fiabilidad de producción**, no colado en un
+parche de concurrencia. La ventana es estrecha (entre el COMMIT y la primera
+escritura del motor) y su consecuencia es un aviso que no sale, no un dato
+incorrecto: la base y el histórico siguen coincidiendo.
+
 #### Dejado como estaba, a propósito
 
 | Cosa | Por qué |
