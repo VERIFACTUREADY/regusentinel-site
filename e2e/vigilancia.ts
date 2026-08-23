@@ -170,11 +170,37 @@ export const test = base.extend<{ vigilante: void }>({
 export async function pantallaUtil(page: Page, opciones: { esperaMs?: number } = {}) {
   const espera = opciones.esperaMs ?? 15_000;
 
-  // Pagina de error de Next / React.
-  const textoError = await page
-    .locator("body")
-    .innerText()
-    .catch(() => "");
+  const cuerpo = () =>
+    page
+      .locator("body")
+      .innerText()
+      .catch(() => "");
+
+  /*
+   * Pantalla en blanco: hay DOM pero el usuario no ve nada.
+   *
+   * POR QUE SE ESPERA EN VEZ DE MIRAR UNA VEZ
+   * -----------------------------------------
+   * Antes esto era UNA lectura instantanea de `innerText`, justo despues de
+   * navegar. Con React 19 el armazon de la pagina se envia antes —el streaming
+   * empieza en cuanto hay algo que mandar—, asi que `load` puede dispararse
+   * con el cuerpo todavia casi vacio y el contenido llegar un instante
+   * despues. La lectura unica caia a veces en ese hueco y la prueba fallaba
+   * diciendo «practicamente vacia» sobre una pagina que se pintaba entera.
+   *
+   * El umbral NO cambia: siguen exigiendose mas de 20 caracteres visibles. Lo
+   * unico que cambia es que se le da a la pagina el tiempo que un usuario le
+   * daria. Una pantalla que de verdad no pinta nada agota la espera y falla
+   * igual.
+   */
+  await expect(async () => {
+    const visible = (await cuerpo()).replace(/\s+/g, " ").trim();
+    expect(visible.length, "La pantalla esta practicamente vacia").toBeGreaterThan(20);
+  }).toPass({ timeout: espera });
+
+  // Pagina de error de Next / React. Se relee: para entonces la pagina ya ha
+  // pintado, asi que si hay un error de cliente el texto esta presente.
+  const textoError = await cuerpo();
   for (const marca of [
     "Application error: a client-side exception",
     "Application error: a server-side exception",
@@ -183,10 +209,6 @@ export async function pantallaUtil(page: Page, opciones: { esperaMs?: number } =
   ]) {
     expect(textoError, `La pagina muestra el error de Next: "${marca}"`).not.toContain(marca);
   }
-
-  // Pantalla en blanco: hay DOM pero el usuario no ve nada.
-  const visible = textoError.replace(/\s+/g, " ").trim();
-  expect(visible.length, "La pantalla esta practicamente vacia").toBeGreaterThan(20);
 
   // Carga infinita: el indicador sigue ahi cuando ya deberia haberse ido.
   const cargando = page.getByText(/^\s*(Cargando|Loading)\.{0,3}\s*$/i);

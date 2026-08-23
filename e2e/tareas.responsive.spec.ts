@@ -91,13 +91,36 @@ test.describe("Tareas en las tres pantallas", () => {
     await page.goto("/tasks");
     await pantallaUtil(page);
 
+    /*
+     * Se anotan TODAS las peticiones al listado y luego se exige que alguna
+     * lleve el filtro.
+     *
+     * Antes esto era un `waitForRequest` a la primera peticion que encajara
+     * con `/api/tasks?`. El problema es que la carga inicial de la pagina
+     * dispara su propia peticion, y si todavia estaba en vuelo al pulsar el
+     * filtro, se capturaba ESA: la asercion leia entonces la URL de la carga
+     * inicial —con los estados por defecto— y fallaba sin que el filtro
+     * tuviera nada malo.
+     *
+     * La exigencia es la misma: seleccionar HECHA tiene que producir una
+     * peticion con `status=DONE`. Si el filtro no llega a la peticion, esto
+     * agota la espera y falla igual.
+     */
+    const peticiones: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/tasks?")) peticiones.push(r.url());
+    });
+
     // El filtro se toca donde esta, sin trucos: si quedara fuera de pantalla o
     // tapado, `selectOption` fallaria por actionability.
-    const [peticion] = await Promise.all([
-      page.waitForRequest((r) => r.url().includes("/api/tasks?"), { timeout: 25_000 }),
-      page.getByLabel("Estado", { exact: true }).selectOption("DONE"),
-    ]);
-    expect(peticion.url()).toContain("status=DONE");
+    await page.getByLabel("Estado", { exact: true }).selectOption("DONE");
+
+    await expect
+      .poll(() => peticiones.some((u) => u.includes("status=DONE")), {
+        message: "el filtro de estado no ha llegado a la peticion del listado",
+        timeout: 25_000,
+      })
+      .toBe(true);
     await sinDesbordeHorizontal(page);
   });
 
