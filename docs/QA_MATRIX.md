@@ -417,11 +417,20 @@ Tiene que cumplir **las dos** condiciones:
 2. **Distinta** para dos hechos legítimos, por juntos que ocurran. La ventana
    de cinco minutos sola no vale: colapsa hechos que de verdad son dos.
 
-Todas las claves salen ahora de datos **ya persistidos** —el id de la fila
-creada, o su `updatedAt` tras la escritura—: se leen, no se generan.
-`claveDeEvento`, en `src/lib/workflow-engine.ts`, las reúne con el contrato
-documentado. La ventana de cinco minutos se conserva como red para cualquier
-emisor futuro que no traiga identidad propia.
+Todas las claves salen de datos **ya persistidos** —el id de la fila creada—:
+se leen, no se generan. `claveDeEvento`, en `src/lib/workflow-engine.ts`, las
+reúne con el contrato documentado. La ventana de cinco minutos se conserva como
+red para cualquier emisor futuro que no traiga identidad propia.
+
+Para las transiciones de estado esa fila es **la de la auditoría**. Antes era
+`updatedAt`, y tenía dos problemas: la precisión de milisegundo, y —el que
+importa— que identificaba **la escritura y no la transición**, así que
+renombrar o reasignar una tarea movía la identidad de un hecho de negocio que
+no había ocurrido. `logAudit()` ya devolvía la fila creada, de modo que usar su
+id no añade tablas, ni outbox, ni cambios de esquema: hace que **el cambio de
+estado, su registro en la auditoría y la identidad del evento se refieran a la
+misma transición ya confirmada**. Si la transición no se gana, no hay fila y no
+hay evento.
 
 | Elemento | Estado | Prueba |
 |---|---|---|
@@ -435,16 +444,52 @@ emisor futuro que no traiga identidad propia.
 | Reentrega tardía del mismo hecho | ✅ | una hora después, nadie recibe un segundo aviso y `execCount` no se mueve. Con la ventana temporal esto **no** se cumplía |
 | Reclamación por destinatario | ✅ | `workflow-claim-db.test.ts` — SENT nunca se reenvía; FAILED y PENDING siguen siendo reintentables; una PROCESSING colgada se recupera pasado el plazo y una reciente no |
 | Ejecución parcial (uno entregado, otro fallido) | ✅ | `disparadores.spec.ts` — se reintenta desde `/workflow-logs`: al que ya lo tenía **no le llega nada** (`attempts` sigue en 1), el fallido se recupera y el estado agregado pasa a ser verdad |
-| **La transición de una tarea se reclama de forma atómica** | ✅ | **defecto corregido, encontrado por la prueba de evento duplicado**: la ruta decidía si el estado había cambiado con `status !== task.status`, leído ANTES de escribir. Dos peticiones simultáneas leían las dos el estado viejo, las dos pasaban la comprobación y las dos emitían el evento —con `updatedAt` distinto, así que con identidades distintas—: dos avisos, dos entradas de auditoría y dos ejecuciones por UNA transición. Esto no lo puede arreglar el motor: le llegan dos hechos que dicen ser distintos. Ahora se reclama con un `updateMany` condicionado al estado leído, y sólo quien obtiene `count === 1` audita y emite |
+| **La transición de una tarea se reclama de forma atómica** | ✅ | **defecto corregido, encontrado por la prueba de evento duplicado**: la ruta decidía si el estado había cambiado con `status !== task.status`, leído ANTES de escribir. Dos peticiones simultáneas leían las dos el estado viejo, las dos pasaban la comprobación y las dos emitían el evento —con `updatedAt` distinto, así que con identidades distintas—: dos avisos, dos entradas de auditoría y dos ejecuciones por UNA transición. Esto no lo puede arreglar el motor: le llegan dos hechos que dicen ser distintos. Ahora se reclama con un `updateMany` condicionado al estado leído, y sólo quien obtiene `count === 1` audita y emite. **Esa reclamación no bastaba**: el `update` posterior seguía escribiendo el estado del perdedor. Ver «Concurrencia de las transiciones de estado» más abajo |
 | **Deduplicar no parece un fallo en el log** | ✅ | **defecto corregido**: la reclamación era un `create` dentro de un `try` que esperaba el P2002, y Prisma registra la consulta fallida a nivel ERROR. Como el choque es el **camino normal**, el servidor escupía un «Unique constraint failed» en cada deduplicación correcta. Hay una prueba que captura `stderr` durante una deduplicación concurrente y exige que ese texto no aparezca |
 
-#### Límite conocido, declarado
+#### Concurrencia de las transiciones de estado
 
-Las claves de versión usan `updatedAt` con precisión de **milisegundo**. Dos
-transiciones distintas de la misma fila dentro del mismo milisegundo
-compartirían identidad. No es alcanzable desde la interfaz —hace falta una
-escritura y una respuesta HTTP entre ambas— y, de darse, el error cae del lado
-conservador: se ejecuta una vez, no dos.
+Pruebas en `e2e/concurrencia-estados.spec.ts` (9, conducidas contra la ruta
+autenticada real y contra la ficha del expediente).
+
+**El hueco que quedaba.** La reclamación atómica decidía quién auditaba y quién
+emitía, pero **no era el único que escribía el estado**: justo después, el
+`update` normal volvía a incluir `status`. La petición que **perdía** la
+reclamación —y que por tanto no auditaba ni emitía nada— escribía igualmente su
+estado encima del ganador. Reproducido contra la ruta real, tarea en PENDIENTE,
+A → HECHA y B → EN CURSO a la vez: las dos respondían **200**, la base quedaba
+en **EN CURSO** y la auditoría contenía **únicamente `task.done`**. Un cambio de
+estado sin entrada de auditoría, sin evento y sin automatización. En el
+expediente el mismo hueco daba, con dos peticiones **idénticas**, **dos**
+entradas `IN_PROGRESS -> FOLLOW_UP` por una sola transición.
+
+**La semántica elegida: comparar-y-cambiar.** El `updateMany` condicionado al
+estado observado es ahora la **única** escritura del estado, en las dos rutas.
+Quien pierde la reclamación no escribe nada:
+
+- pedía **el mismo estado**: la intención ya está cumplida → **200 idempotente**,
+  sin segunda auditoría, sin segundo evento, sin segundo `execCount`;
+- pedía **otro estado**: → **409** con `currentStatus`, y **no se escribe ningún
+  campo**, tampoco los que no son el estado, porque todos salen de la misma
+  lectura caduca.
+
+Se descartó encadenarlas como dos transiciones reales: deshace en silencio la
+decisión que otra persona acaba de tomar, apoyándose en una pantalla anterior a
+ella, y ninguna de las dos se entera.
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| TAREA, dos peticiones al **mismo** destino | ✅ | `[200, 200]`, estado final HECHA, **1** auditoría, **1** ejecución, `execCount` **1**, **1** correo por destinatario. Ya era correcto antes de esta fase: esta prueba lo fija |
+| TAREA, dos peticiones a destinos **distintos** | ✅ | `[200, 409]`; el estado final es el del ganador, hay **exactamente 1** auditoría y es la suya, **1** ejecución, `execCount` **1**, **1** correo por destinatario. Antes: `[200, 200]` y estado sin auditoría |
+| La rechazada **no escribe los demás campos** | ✅ | un PATCH perdedor que además renombraba la tarea: el título no se escribe. (Y si es la que gana, sí se escribe: se comprueba el desenlace que toque) |
+| EXPEDIENTE, dos peticiones al **mismo** destino | ✅ | `[200, 200]`, **1** auditoría cuyo detalle es exactamente `IN_PROGRESS -> FOLLOW_UP`. Antes: **dos** auditorías idénticas por una transición |
+| EXPEDIENTE, dos peticiones a destinos **distintos** | ✅ | `[200, 409]`; **1** auditoría y su detalle es `IN_PROGRESS -> <ganador>`: nadie puede afirmar que venía de IN_PROGRESS si no fue así |
+| Un PATCH que no toca el estado no compite | ✅ | 200, el estado no se mueve, y **no** aparece auditoría de transición |
+| La pantalla **no finge** que se guardó (tarea) | ✅ | con un 409 del servidor, la ficha muestra el motivo **real** en su aviso de error y el desplegable vuelve al estado que hay en la base |
+| La pantalla no finge que se guardó (expediente) | ✅ | **defecto corregido**: `updateStatus` y `confirmClose` no miraban `res.ok`. El desplegable volvía solo a su sitio **sin una palabra**, que es indistinguible de un fallo de la aplicación —o de que sí se guardó y la pantalla va con retraso— |
+
+Las cinco filas marcadas «antes» fallan sobre el SHA anterior
+(`87fca3d`) y pasan sobre el actual.
 
 #### Dejado como estaba, a propósito
 
