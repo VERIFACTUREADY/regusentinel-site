@@ -122,7 +122,12 @@ Todas en `.env.example`. Las que conviene destacar:
 | `SMTP_*`, `EMAIL_FROM` | Sí | Envío de correo |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Para cobrar | Stripe |
 | `STRIPE_PRICE_*` | Para cobrar | 8 precios: 3 planes × 2 intervalos + 2 altas |
-| `CRON_SECRET` | Sí | Autoriza los cron de Vercel |
+| `CRON_SECRET` | Sí | Autoriza los cron de Vercel **y los de GitHub Actions**; el mismo valor en los dos sitios |
+| `LEGAL_ENTITY_NAME` | **Sí en Production** | Denominación social. Sin ella el build de producción falla |
+| `LEGAL_ENTITY_NIF` | **Sí en Production** | NIF de la entidad |
+| `LEGAL_ENTITY_ADDRESS` | **Sí en Production** | Domicilio social |
+| `LEGAL_PRIVACY_EMAIL` | **Sí en Production** | Dirección para el ejercicio de derechos (RGPD art. 13) |
+| `LEGAL_DPO_CONTACT` | No | Sólo si se ha designado delegado (RGPD art. 37) |
 | `ADMIN_EMAILS` | Recomendada | Panel interno. Vacío ⇒ inaccesible |
 | `SECRETS_ENCRYPTION_KEY` | Si usas webhooks propios | AES-256-GCM, 32 bytes (`openssl rand -base64 32`). Sin ella no se pueden guardar secretos |
 | `MAX_UPLOAD_MB` | No (20) | Tamaño máximo por archivo |
@@ -130,18 +135,91 @@ Todas en `.env.example`. Las que conviene destacar:
 | `ANTHROPIC_API_KEY` | No | Sin ella, la IA usa el modo determinista local |
 | `DEMO_ENABLED` | No | Demo pública y su reseteo diario |
 
+Las cuatro `LEGAL_*` obligatorias las comprueba `scripts/check-legal-config.mjs`
+al empezar el build: en Production **detienen el despliegue** si falta alguna;
+en Preview y en local sólo avisan, y los textos legales muestran
+«[Entidad responsable pendiente de constituir e inscribir]». **No las rellenes
+con datos provisionales**: mientras la sociedad no esté constituida e inscrita,
+lo correcto es no desplegar a producción.
+
+### Configuración fuera de `.env`: GitHub Actions
+
+`.github/workflows/crons.yml` dispara la recuperación de cobros de Stripe cada
+10 minutos, porque el plan Hobby de Vercel sólo admite crons diarios. Necesita
+dos ajustes **en el repositorio**, en *Settings → Secrets and variables →
+Actions*:
+
+| Dónde | Nombre | Valor |
+|---|---|---|
+| Pestaña **Variables** | `APP_URL` | URL pública del despliegue de producción |
+| Pestaña **Secrets** | `CRON_SECRET` | **El mismo valor** que `CRON_SECRET` en Vercel |
+
+Si no coinciden, el endpoint responde 401 y el workflow falla con un mensaje
+que lo dice; el workflow comprueba antes que las dos existan, para que una
+variable mal puesta no produzca un cron que falla en silencio.
+
+**El workflow no se ejecuta hasta que llegue a `main`**: GitHub sólo lanza
+`schedule` desde la rama por defecto, y el botón «Run workflow» tampoco aparece
+antes. Configura las dos entradas antes o después del merge, pero comprueba tras
+el merge que el primer disparo sale verde.
+
 ---
 
 ## Migraciones
 
-Se aplican **solas durante el build** (`scripts/migrate-deploy.mjs`), porque
-Vercel no ejecuta `npm start`. Cubre base vacía, base ya migrada y base creada
-con `db push` sin historial.
+**Sólo migra un despliegue de PRODUCCIÓN de Vercel.** El último paso de
+`npm run build` es `scripts/migrar-en-produccion.mjs`, que decide así:
+
+| Contexto | `VERCEL_ENV` | Qué hace |
+|---|---|---|
+| Local, CI, contenedor | *(sin `VERCEL`)* | no toca ninguna base |
+| Preview de Vercel | `preview` | **no migra**: un PR no cambia el esquema de producción |
+| Producción de Vercel | `production` | aplica las pendientes con `prisma migrate deploy` |
+
+Va **después** de `next build`, así que una aplicación que no compila no mueve
+el esquema; y Vercel promueve el despliegue cuando el build termina, así que
+migrar ahí es migrar **antes de que la versión nueva quede operativa**. Si una
+migración falla, el script sale con error, el build falla y Vercel **no**
+promueve: sigue sirviendo el despliegue anterior. `prisma migrate deploy` sólo
+aplica lo pendiente y toma un bloqueo de aviso en PostgreSQL, así que dos builds
+simultáneos se serializan y cada migración se aplica **una vez**.
+
+En producción, **la falta de `DATABASE_URL` detiene el despliegue**: publicar
+sin migrar dejaría la versión nueva contra un esquema viejo.
+
+Nunca se ejecuta `db push`, `migrate reset` ni `--accept-data-loss`; ver
+`scripts/migrate-deploy.mjs`.
+
+> **Antes de esta versión el README decía que las migraciones se aplicaban
+> solas durante el build, y no era cierto:** `npm run build` ejecutaba
+> `check-legal-config`, `prisma generate` y `next build`, y nada más. Un
+> despliegue podía publicar código nuevo contra un esquema viejo.
 
 ```bash
-npx prisma migrate deploy     # aplicar
-npx prisma migrate status     # comprobar
+npx prisma migrate deploy     # aplicar a mano
+npm run db:check              # ¿queda algo pendiente? (sale con 2 si sí)
 ```
+
+### Lo que este repositorio NO puede garantizar por sí solo
+
+El paso automático depende de dos cosas que viven en el panel de Vercel y que
+**no se pueden verificar desde el repositorio**:
+
+1. Que `DATABASE_URL` esté definida en el entorno **Production**. Si falta, el
+   build falla con un mensaje explícito — así que este caso está cubierto.
+2. Que el proyecto **no** tenga un *Ignored Build Step* que se salte el build de
+   producción. Si el build no corre, no hay migración **y tampoco hay código
+   nuevo**, así que no se puede publicar una versión sin migrar; pero conviene
+   comprobarlo.
+
+Comprobación manual inequívoca antes de dar por buena una publicación:
+
+```bash
+DATABASE_URL="<la de produccion>" npm run db:check   # debe decir "al dia"
+```
+
+Si eso no dice «al día» **después** de un despliegue de producción, el paso
+automático no se ha ejecutado y el release no está completo.
 
 Una migración (`20260805000000_case_ref_unique_per_org`) **renombra las
 referencias de expediente duplicadas** que puedan existir, añadiendo `-D2`,
