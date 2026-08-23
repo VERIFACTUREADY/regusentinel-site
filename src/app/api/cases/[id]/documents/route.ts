@@ -43,7 +43,40 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   if (!c) return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
 
   try {
-    const formData = await req.formData();
+    /*
+     * EL CUERPO SE PARSEA APARTE, PORQUE NEXT 15 SE NIEGA A PARSEAR UNO ENORME.
+     *
+     * EL DEFECTO QUE CORRIGE
+     * ----------------------
+     * Con Next 14, un multipart de 21 MB se parseaba y la comprobacion de
+     * tamano de mas abajo devolvia 413 con el limite concreto: «El archivo
+     * supera el maximo de 20 MB». Con Next 15, `req.formData()` lanza antes
+     * —«Failed to parse body as FormData»—, la excepcion caia en el `catch`
+     * general y el usuario leia «Error al subir archivo»: un mensaje que no
+     * dice que ha pasado ni que puede hacer al respecto.
+     *
+     * Aqui se distingue ese caso. NO se compara `content-length` a secas
+     * contra el maximo: el multipart anade su propio armazon, asi que un
+     * archivo de exactamente 20 MB declara algo mas y quedaria rechazado sin
+     * motivo. Solo se mira lo declarado CUANDO EL PARSEO YA HA FALLADO, que es
+     * justo cuando hace falta saber por que.
+     */
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch (errorDeParseo) {
+      const declarado = Number(req.headers.get("content-length") ?? "");
+      if (Number.isFinite(declarado) && declarado > MAX_FILE_BYTES) {
+        return NextResponse.json(
+          { error: `El archivo supera el máximo de ${MAX_FILE_MB} MB.` },
+          { status: 413 },
+        );
+      }
+      // Cualquier otro fallo de parseo sigue su camino: no es un problema de
+      // tamano y decir que lo es seria mentir.
+      throw errorDeParseo;
+    }
+
     const file = formData.get("file");
     const manualTaskId = formData.get("taskId") as string | null;
     if (!(file instanceof File)) {

@@ -59,7 +59,30 @@ export async function POST(req: NextRequest, props: { params: Promise<{ token: s
   let fileKey: string | null = null;
 
   try {
-    const formData = await req.formData();
+    /*
+     * Mismo caso que en la subida desde la ficha: Next 15 lanza al parsear un
+     * multipart demasiado grande, antes de que la comprobacion de tamano de
+     * abajo pueda responder con el limite. La familia se merece leer por que
+     * se ha rechazado su documento tanto como el gestor.
+     *
+     * Lo declarado solo se mira cuando el parseo YA ha fallado: el armazon del
+     * multipart abulta, y comparar `content-length` a secas rechazaria un
+     * archivo de exactamente el maximo.
+     */
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch (errorDeParseo) {
+      const declarado = Number(req.headers.get("content-length") ?? "");
+      if (Number.isFinite(declarado) && declarado > MAX_FILE_BYTES) {
+        return NextResponse.json(
+          { error: `El archivo supera el máximo de ${MAX_FILE_MB} MB.` },
+          { status: 413 },
+        );
+      }
+      throw errorDeParseo;
+    }
+
     const file = formData.get("file");
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "No se encontro archivo" }, { status: 400 });
