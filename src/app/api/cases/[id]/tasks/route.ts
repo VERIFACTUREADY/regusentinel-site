@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { AuditLog, Task, TaskStatus } from "@prisma/client";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { createTaskSchema, updateTaskSchema } from "@/lib/validations";
@@ -159,69 +160,130 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
    * tomar, basándose en una pantalla anterior a ella, y ninguno de los dos se
    * entera. Rechazar y contar el estado real es el mismo patrón atómico que ya
    * usan el cron de desbloqueo y las reclamaciones del motor.
+   *
+   * LA TRANSICIÓN Y SU AUDITORÍA SE CONFIRMAN JUNTAS
+   * -----------------------------------------------
+   * La reclamación, la escritura de los demás campos y la fila de `AuditLog`
+   * de la transición van en UNA transacción. Antes eran tres operaciones
+   * confirmadas por separado, y entre la primera y la tercera cabía un fallo:
+   * el estado quedaba escrito y la auditoría no llegaba a existir. Y como la
+   * identidad del evento ES esa fila, tampoco habría evento ni automatización.
+   * Un estado que nadie puede justificar es peor que un cambio que no ocurre.
+   *
+   * Dentro de la transacción no se llama a nadie de fuera. El motor de
+   * automatizaciones y los correos van DESPUÉS del commit: mantener abierta
+   * una transacción mientras se espera a un proveedor de correo bloquea la
+   * fila y agota el pool con la primera lentitud del proveedor.
    */
-  let ganaLaTransicion = false;
-  if (status) {
-    const reclamo = await prisma.task.updateMany({
-      where: { id: task.id, status: task.status },
-      data: { status },
+  type Resultado =
+    | { tipo: "aplicado"; tarea: Task; transicion: AuditLog | null }
+    | { tipo: "no_encontrada" }
+    | { tipo: "conflicto"; actual: TaskStatus };
+
+  const resultado = await prisma.$transaction(async (tx): Promise<Resultado> => {
+    let ganaLaTransicion = false;
+
+    if (status) {
+      const reclamo = await tx.task.updateMany({
+        where: { id: task.id, status: task.status },
+        data: { status },
+      });
+
+      if (reclamo.count === 0) {
+        // La fila se movió entre la lectura y la escritura.
+        const actual = await tx.task.findFirst({
+          where: { id: task.id, case: { orgId: session.user.orgId } },
+          select: { status: true },
+        });
+        if (!actual) return { tipo: "no_encontrada" };
+        if (actual.status !== status) return { tipo: "conflicto", actual: actual.status };
+        // Mismo destino: alguien se nos adelantó con la MISMA transición. La
+        // intención está cumplida, así que esto es un éxito idempotente; lo
+        // que no puede es constar dos veces.
+      } else {
+        ganaLaTransicion = status !== task.status;
+      }
+    }
+
+    const tarea = await tx.task.update({
+      where: { id: task.id },
+      data: {
+        // `status` NO se escribe aquí: lo escribe —y sólo él— el
+        // compara-y-intercambia de arriba.
+        ...(assigneeId !== undefined && { assigneeId: assigneeId ?? null }),
+        ...(status === "BLOCKED" && {
+          blockReason: blockReason ?? null,
+          blockedUntil: blockedUntil ?? null,
+        }),
+        ...(status && status !== "BLOCKED" && {
+          blockReason: null,
+          blockedUntil: null,
+        }),
+        ...(dependsOnId !== undefined && { dependsOnId: dependsOnId ?? null }),
+        ...(deadline !== undefined && { deadline: deadline ?? null }),
+        ...(dueDate !== undefined && { dueDate: dueDate ?? null }),
+        ...(title !== undefined && { title }),
+        ...(description !== undefined && { description: description ?? null }),
+      },
     });
 
-    if (reclamo.count === 0) {
-      // La fila se movió entre la lectura y la escritura.
-      const actual = await prisma.task.findFirst({
-        where: { id: task.id, case: { orgId: session.user.orgId } },
-        select: { status: true },
-      });
-      if (!actual) return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
+    const transicion =
+      status && ganaLaTransicion
+        ? await logAudit(
+            {
+              orgId: session.user.orgId,
+              userId: session.user.id,
+              caseId: params.id,
+              action: `task.${status.toLowerCase()}`,
+              details: `Tarea "${task.title}" marcada como ${status}`,
+            },
+            tx,
+          )
+        : null;
 
-      if (actual.status !== status) {
-        return NextResponse.json(
-          {
-            error: `La tarea ya no está en ${task.status}: otra persona la ha marcado como ${actual.status}. No se ha cambiado nada; revisa el estado actual antes de volver a intentarlo.`,
-            currentStatus: actual.status,
-          },
-          { status: 409 },
-        );
-      }
-      // Mismo destino: alguien se nos adelantó con la MISMA transición. La
-      // intención está cumplida, así que esto es un éxito idempotente; lo que
-      // no puede es constar dos veces.
-    } else {
-      ganaLaTransicion = status !== task.status;
+    // La auditoría de la asignación acompaña a la escritura de `assigneeId`,
+    // por el mismo motivo: o constan las dos, o no consta ninguna.
+    if (assigneeId !== undefined && assigneeId !== task.assigneeId) {
+      await logAudit(
+        {
+          orgId: session.user.orgId,
+          userId: session.user.id,
+          caseId: params.id,
+          action: "task.assigned",
+          details: assigneeId
+            ? `Tarea "${task.title}" asignada`
+            : `Tarea "${task.title}" desasignada`,
+        },
+        tx,
+      );
     }
-  }
 
-  const updated = await prisma.task.update({
-    where: { id: task.id },
-    data: {
-      // `status` NO se escribe aquí: lo escribe —y sólo él— el
-      // compara-y-intercambia de arriba.
-      ...(assigneeId !== undefined && { assigneeId: assigneeId ?? null }),
-      ...(status === "BLOCKED" && {
-        blockReason: blockReason ?? null,
-        blockedUntil: blockedUntil ?? null,
-      }),
-      ...(status && status !== "BLOCKED" && {
-        blockReason: null,
-        blockedUntil: null,
-      }),
-      ...(dependsOnId !== undefined && { dependsOnId: dependsOnId ?? null }),
-      ...(deadline !== undefined && { deadline: deadline ?? null }),
-      ...(dueDate !== undefined && { dueDate: dueDate ?? null }),
-      ...(title !== undefined && { title }),
-      ...(description !== undefined && { description: description ?? null }),
-    },
+    return { tipo: "aplicado", tarea, transicion };
   });
 
-  if (status && ganaLaTransicion) {
-    const transicion = await logAudit({
-      orgId: session.user.orgId,
-      userId: session.user.id,
-      caseId: params.id,
-      action: `task.${status.toLowerCase()}`,
-      details: `Tarea "${task.title}" marcada como ${status}`,
-    });
+  if (resultado.tipo === "no_encontrada") {
+    return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
+  }
+  if (resultado.tipo === "conflicto") {
+    return NextResponse.json(
+      {
+        error: `La tarea ya no está en ${task.status}: otra persona la ha marcado como ${resultado.actual}. No se ha cambiado nada; revisa el estado actual antes de volver a intentarlo.`,
+        currentStatus: resultado.actual,
+      },
+      { status: 409 },
+    );
+  }
+
+  const updated = resultado.tarea;
+
+  /*
+   * A PARTIR DE AQUÍ, TODO ESTÁ YA CONFIRMADO EN LA BASE.
+   *
+   * Nada de lo que sigue puede deshacer la transición, y ninguna de estas
+   * llamadas se hace con la transacción abierta.
+   */
+  const transicion = resultado.transicion;
+  if (status && transicion) {
     triggerWorkflow({
       type: "TASK_STATUS_CHANGED",
       orgId: session.user.orgId,
@@ -276,17 +338,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
+  // La auditoría de esta asignación ya se ha escrito dentro de la transacción;
+  // aquí sólo queda el aviso, que es una llamada externa.
   if (assigneeId !== undefined && assigneeId !== task.assigneeId) {
-    await logAudit({
-      orgId: session.user.orgId,
-      userId: session.user.id,
-      caseId: params.id,
-      action: "task.assigned",
-      details: assigneeId
-        ? `Tarea "${task.title}" asignada`
-        : `Tarea "${task.title}" desasignada`,
-    });
-
     if (assigneeId && assigneeId !== session.user.id) {
       const [assignee, caseData] = await Promise.all([
         prisma.user.findUnique({ where: { id: assigneeId }, select: { email: true, name: true } }),

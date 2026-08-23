@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import type { AuditLog, CaseStatus } from "@prisma/client";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { getCaseDeadlines } from "@/lib/deadline-engine";
 import { getPresignedUrl } from "@/lib/s3";
 import { triggerWorkflow, claveDeEvento } from "@/lib/workflow-engine";
+
+/** Lo que devuelve el `case.update` del PATCH, con sus relaciones incluidas. */
+type CaseConRelaciones = Prisma.CaseGetPayload<{
+  include: { deceased: true; contact: true };
+}>;
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireOrgPermission("cases.read");
@@ -128,38 +134,48 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
    *     vez una transición que sólo ocurrió una;
    *   - si pedía otro estado, se responde 409 con el estado real y no se
    *     escribe ningún campo, porque todos vienen de la misma lectura caduca.
+   *
+   * LA TRANSICIÓN Y SU AUDITORÍA SE CONFIRMAN JUNTAS
+   * -----------------------------------------------
+   * La reclamación, el resto de escrituras de este PATCH y las filas de
+   * `AuditLog` que las acompañan van en UNA transacción. Antes eran
+   * operaciones confirmadas por separado, y entre la primera y la última cabía
+   * un fallo: el expediente quedaba con el estado nuevo y sin ninguna fila que
+   * dijera quién lo cambió ni desde dónde. Como la identidad del evento ES esa
+   * fila, tampoco habría evento ni automatización.
+   *
+   * Dentro de la transacción no se llama a nadie de fuera: el motor va después
+   * del commit.
    */
-  let ganaLaTransicion = false;
-  if (status) {
-    const reclamo = await prisma.case.updateMany({
-      where: { id: params.id, orgId: session.user.orgId, deletedAt: null, status: c.status },
-      data: { status, ...(status === "CLOSED" && { closedAt: new Date() }) },
-    });
+  type Resultado =
+    | { tipo: "aplicado"; expediente: CaseConRelaciones; transicion: AuditLog | null }
+    | { tipo: "no_encontrado" }
+    | { tipo: "conflicto"; actual: CaseStatus };
 
-    if (reclamo.count === 0) {
-      const actual = await prisma.case.findFirst({
-        where: { id: params.id, orgId: session.user.orgId, deletedAt: null },
-        select: { status: true },
+  const resultado = await prisma.$transaction(async (tx): Promise<Resultado> => {
+    let ganaLaTransicion = false;
+
+    if (status) {
+      const reclamo = await tx.case.updateMany({
+        where: { id: params.id, orgId: session.user.orgId, deletedAt: null, status: c.status },
+        data: { status, ...(status === "CLOSED" && { closedAt: new Date() }) },
       });
-      if (!actual) return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
 
-      if (actual.status !== status) {
-        return NextResponse.json(
-          {
-            error: `El expediente ya no está en ${c.status}: otra persona lo ha pasado a ${actual.status}. No se ha cambiado nada; revisa el estado actual antes de volver a intentarlo.`,
-            currentStatus: actual.status,
-          },
-          { status: 409 },
-        );
+      if (reclamo.count === 0) {
+        const actual = await tx.case.findFirst({
+          where: { id: params.id, orgId: session.user.orgId, deletedAt: null },
+          select: { status: true },
+        });
+        if (!actual) return { tipo: "no_encontrado" };
+        if (actual.status !== status) return { tipo: "conflicto", actual: actual.status };
+      } else {
+        ganaLaTransicion = status !== c.status;
       }
-    } else {
-      ganaLaTransicion = status !== c.status;
     }
-  }
 
-  const updated = await prisma.case.update({
-    where: { id: params.id },
-    data: {
+    const expediente = await tx.case.update({
+      where: { id: params.id },
+      data: {
       // `status` y `closedAt` NO se escriben aquí: los escribe —y sólo él— el
       // compara-y-intercambia de arriba.
       ...(notes !== undefined && { notes }),
@@ -201,74 +217,112 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           ? appliedReductions
           : Prisma.DbNull,
       }),
-      ...(referenciaCatastral !== undefined && {
-        // Sólo guardamos lo que parezca una RC plausible (20 caracteres
-        // alfanuméricos), normalizada a mayúsculas y sin separadores.
-        referenciaCatastral: (() => {
-          if (typeof referenciaCatastral !== "string") return null;
-          const cleaned = referenciaCatastral.toUpperCase().replace(/[\s\-]/g, "").trim();
-          return /^[0-9A-Z]{20}$/.test(cleaned) ? cleaned : null;
-        })(),
-      }),
-    },
-    include: { deceased: true, contact: true },
+        ...(referenciaCatastral !== undefined && {
+          // Sólo guardamos lo que parezca una RC plausible (20 caracteres
+          // alfanuméricos), normalizada a mayúsculas y sin separadores.
+          referenciaCatastral: (() => {
+            if (typeof referenciaCatastral !== "string") return null;
+            const cleaned = referenciaCatastral.toUpperCase().replace(/[\s\-]/g, "").trim();
+            return /^[0-9A-Z]{20}$/.test(cleaned) ? cleaned : null;
+          })(),
+        }),
+      },
+      include: { deceased: true, contact: true },
+    });
+
+    // Update deceased info if provided
+    if (deceased && typeof deceased === "object") {
+      const deceasedData: Record<string, unknown> = {};
+      if (deceased.fullName?.trim()) deceasedData.fullName = deceased.fullName.trim();
+      if (deceased.deathDate !== undefined) deceasedData.deathDate = deceased.deathDate ? new Date(deceased.deathDate) : null;
+      if (deceased.dni !== undefined) deceasedData.dni = deceased.dni?.trim() || null;
+      if (Object.keys(deceasedData).length > 0) {
+        await tx.deceased.update({ where: { caseId: params.id }, data: deceasedData });
+        await logAudit(
+          {
+            orgId: session.user.orgId,
+            userId: session.user.id,
+            caseId: params.id,
+            action: "case.deceased_updated",
+            details: `Datos del fallecido actualizados`,
+          },
+          tx,
+        );
+      }
+    }
+
+    // Update contact info if provided
+    if (contact && typeof contact === "object") {
+      const contactData: Record<string, unknown> = {};
+      if (contact.fullName?.trim()) contactData.fullName = contact.fullName.trim();
+      if (contact.phone !== undefined) contactData.phone = contact.phone?.trim() || null;
+      if (contact.email !== undefined) contactData.email = contact.email?.trim() || null;
+      if (contact.relationship !== undefined) contactData.relationship = contact.relationship?.trim() || null;
+      if (Object.keys(contactData).length > 0) {
+        await tx.caseContact.update({ where: { caseId: params.id }, data: contactData });
+        await logAudit(
+          {
+            orgId: session.user.orgId,
+            userId: session.user.id,
+            caseId: params.id,
+            action: "case.contact_updated",
+            details: `Datos del solicitante actualizados`,
+          },
+          tx,
+        );
+      }
+    }
+
+    if (portalEnabled !== undefined && portalEnabled !== c.portalEnabled) {
+      await logAudit(
+        {
+          orgId: session.user.orgId,
+          userId: session.user.id,
+          caseId: params.id,
+          action: portalEnabled ? "case.portal_enabled" : "case.portal_disabled",
+          details: `Acceso al portal ${portalEnabled ? "habilitado" : "deshabilitado"}`,
+        },
+        tx,
+      );
+    }
+
+    const transicion =
+      status && ganaLaTransicion
+        ? await logAudit(
+            {
+              orgId: session.user.orgId,
+              userId: session.user.id,
+              caseId: params.id,
+              action: "case.status_changed",
+              details: `${c.status} -> ${status}`,
+            },
+            tx,
+          )
+        : null;
+
+    return { tipo: "aplicado", expediente, transicion };
   });
 
-  // Update deceased info if provided
-  if (deceased && typeof deceased === "object") {
-    const deceasedData: Record<string, unknown> = {};
-    if (deceased.fullName?.trim()) deceasedData.fullName = deceased.fullName.trim();
-    if (deceased.deathDate !== undefined) deceasedData.deathDate = deceased.deathDate ? new Date(deceased.deathDate) : null;
-    if (deceased.dni !== undefined) deceasedData.dni = deceased.dni?.trim() || null;
-    if (Object.keys(deceasedData).length > 0) {
-      await prisma.deceased.update({ where: { caseId: params.id }, data: deceasedData });
-      await logAudit({
-        orgId: session.user.orgId,
-        userId: session.user.id,
-        caseId: params.id,
-        action: "case.deceased_updated",
-        details: `Datos del fallecido actualizados`,
-      });
-    }
+  if (resultado.tipo === "no_encontrado") {
+    return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
+  }
+  if (resultado.tipo === "conflicto") {
+    return NextResponse.json(
+      {
+        error: `El expediente ya no está en ${c.status}: otra persona lo ha pasado a ${resultado.actual}. No se ha cambiado nada; revisa el estado actual antes de volver a intentarlo.`,
+        currentStatus: resultado.actual,
+      },
+      { status: 409 },
+    );
   }
 
-  // Update contact info if provided
-  if (contact && typeof contact === "object") {
-    const contactData: Record<string, unknown> = {};
-    if (contact.fullName?.trim()) contactData.fullName = contact.fullName.trim();
-    if (contact.phone !== undefined) contactData.phone = contact.phone?.trim() || null;
-    if (contact.email !== undefined) contactData.email = contact.email?.trim() || null;
-    if (contact.relationship !== undefined) contactData.relationship = contact.relationship?.trim() || null;
-    if (Object.keys(contactData).length > 0) {
-      await prisma.caseContact.update({ where: { caseId: params.id }, data: contactData });
-      await logAudit({
-        orgId: session.user.orgId,
-        userId: session.user.id,
-        caseId: params.id,
-        action: "case.contact_updated",
-        details: `Datos del solicitante actualizados`,
-      });
-    }
-  }
+  const updated = resultado.expediente;
 
-  if (portalEnabled !== undefined && portalEnabled !== c.portalEnabled) {
-    await logAudit({
-      orgId: session.user.orgId,
-      userId: session.user.id,
-      caseId: params.id,
-      action: portalEnabled ? "case.portal_enabled" : "case.portal_disabled",
-      details: `Acceso al portal ${portalEnabled ? "habilitado" : "deshabilitado"}`,
-    });
-  }
-
-  if (status && ganaLaTransicion) {
-    const transicion = await logAudit({
-      orgId: session.user.orgId,
-      userId: session.user.id,
-      caseId: params.id,
-      action: "case.status_changed",
-      details: `${c.status} -> ${status}`,
-    });
+  /*
+   * A PARTIR DE AQUÍ, TODO ESTÁ YA CONFIRMADO EN LA BASE. El motor no puede
+   * deshacer la transición, y no se le llama con la transacción abierta.
+   */
+  if (status && resultado.transicion) {
     // Fire-and-forget workflow triggers
     triggerWorkflow({
       type: "CASE_STATUS_CHANGED",
@@ -281,7 +335,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
        * La identidad del evento es la fila de auditoría de ESTA transición:
        * existe porque la transición se ganó y se registró, y no existe si no.
        */
-      eventKey: claveDeEvento.transicionAuditada(transicion.id),
+      eventKey: claveDeEvento.transicionAuditada(resultado.transicion.id),
     }).catch(console.error);
   }
 
