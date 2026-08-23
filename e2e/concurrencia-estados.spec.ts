@@ -90,7 +90,10 @@ async function limpiar() {
   const caso = await casoDisp();
   await prisma.workflowLog.deleteMany({ where: { rule: { orgId: org.id } } });
   await prisma.workflowRule.deleteMany({ where: { orgId: org.id } });
-  await prisma.task.updateMany({ where: { caseId: caso.id }, data: { status: "PENDING" } });
+  await prisma.task.updateMany({
+    where: { caseId: caso.id },
+    data: { status: "PENDING", description: null },
+  });
   await prisma.case.update({ where: { id: caso.id }, data: { status: "IN_PROGRESS" } });
   await prisma.auditLog.deleteMany({
     where: { caseId: caso.id, action: { startsWith: "task." } },
@@ -283,32 +286,64 @@ test.describe("Concurrencia: estado de TAREA", () => {
      * El 409 rechaza la peticion ENTERA, no sólo el estado. Quien pidió el
      * cambio lo pidió sobre una pantalla que ya no refleja la realidad: sus
      * demás campos se apoyan en la misma lectura obsoleta.
+     *
+     * Cuál de las dos gana la reclamación no se puede forzar desde fuera —esa
+     * es la naturaleza de la carrera—, así que se comprueba el invariante que
+     * corresponda al desenlace. Los dos dicen algo:
+     *
+     *   - si la rechazada es la que traía el título, ese título NO puede estar
+     *     escrito;
+     *   - si la rechazada es la otra, la que traía el título ganó y su título
+     *     SÍ debe estar escrito, junto con su estado.
+     *
+     * Lo que no puede ocurrir en ningún caso es lo de antes: que las dos
+     * escriban.
      */
     const caso = await casoDisp();
     const tarea = await tareaDisp();
     const tituloOriginal = E2E.disparadores.tarea;
+    const tituloNuevo = "Tarea renombrada por la prueba de concurrencia";
 
     await login(page, E2E.disparadores.owner);
 
-    const [a, b] = await Promise.all([
-      page.request.patch(`/api/cases/${caso.id}/tasks`, {
-        data: { taskId: tarea.id, status: "DONE" },
-        failOnStatusCode: false,
-      }),
-      page.request.patch(`/api/cases/${caso.id}/tasks`, {
-        data: { taskId: tarea.id, status: "IN_PROGRESS", title: "TITULO-OBSOLETO-E2E" },
-        failOnStatusCode: false,
-      }),
-    ]);
-    expect([a.status(), b.status()].sort()).toEqual([200, 409]);
+    try {
+      const [a, b] = await Promise.all([
+        page.request.patch(`/api/cases/${caso.id}/tasks`, {
+          data: { taskId: tarea.id, status: "DONE" },
+          failOnStatusCode: false,
+        }),
+        page.request.patch(`/api/cases/${caso.id}/tasks`, {
+          data: { taskId: tarea.id, status: "IN_PROGRESS", title: tituloNuevo },
+          failOnStatusCode: false,
+        }),
+      ]);
+      expect([a.status(), b.status()].sort()).toEqual([200, 409]);
 
-    const despues = await prisma.task.findUniqueOrThrow({
-      where: { id: tarea.id },
-      select: { title: true },
-    });
-    // Si la perdedora fue la que traía el titulo, no se ha escrito.
-    if (b.status() === 409) {
-      expect(despues.title, "una peticion rechazada no escribe nada").toBe(tituloOriginal);
+      const despues = await prisma.task.findUniqueOrThrow({
+        where: { id: tarea.id },
+        select: { title: true, status: true },
+      });
+
+      if (b.status() === 409) {
+        expect(despues.title, "una peticion rechazada no escribe NADA").toBe(tituloOriginal);
+        expect(despues.status).toBe("DONE");
+      } else {
+        expect(despues.title, "quien gana si escribe sus campos").toBe(tituloNuevo);
+        expect(despues.status).toBe("IN_PROGRESS");
+      }
+
+      // En los dos desenlaces: una sola transicion, una sola auditoria.
+      expect(
+        await prisma.auditLog.count({
+          where: { caseId: caso.id, action: { startsWith: "task." } },
+        }),
+      ).toBe(1);
+    } finally {
+      // El titulo es parte del sembrado y otras pruebas lo localizan por el.
+      await prisma.task.update({
+        where: { id: tarea.id },
+        data: { title: tituloOriginal },
+      });
     }
   });
 
@@ -518,13 +553,20 @@ test.describe("Concurrencia: la pantalla no finge que se guardo", () => {
 
     await selector.selectOption("IN_PROGRESS");
 
-    // NO se puede dar por guardado.
-    const aviso = page.getByTestId("conflicto-tarea");
+    /*
+     * NO se puede dar por guardado. Se usa el aviso de error que la ficha ya
+     * tiene, no uno nuevo: el 409 es un rechazo del servidor como cualquier
+     * otro y la ficha ya sabe contarlos. Lo que importa es que el motivo REAL
+     * —el que manda el servidor— llegue a la pantalla en vez de un «no se ha
+     * podido guardar» genérico.
+     */
+    const aviso = page.getByTestId("toast-error");
     await expect(aviso).toBeVisible();
-    await expect(aviso).toContainText("ha cambiado");
+    await expect(aviso).toContainText("ha cambiado de estado mientras tanto");
 
-    // Y la pantalla no se queda mostrando un estado que el servidor rechazo.
-    await expect(selector).not.toHaveValue("IN_PROGRESS");
+    // Y la pantalla no se queda mostrando un estado que el servidor rechazo:
+    // se recarga y vuelve a lo que hay en la base.
+    await expect(selector).toHaveValue("PENDING");
 
     // La base no se ha tocado: era un 409.
     const despues = await prisma.task.findUniqueOrThrow({
@@ -534,5 +576,63 @@ test.describe("Concurrencia: la pantalla no finge que se guardo", () => {
     expect(despues.status).toBe("PENDING");
 
     await page.unroute("**/api/cases/*/tasks");
+  });
+
+  test("un 409 al mover el expediente se avisa y el desplegable vuelve al estado real", async ({
+    page,
+  }) => {
+    /*
+     * Este camino NO miraba `res.ok`: hacia el PATCH, llamaba a `fetchCase()` y
+     * ya. Con el rechazo por conflicto eso habria sido lo peor de los dos
+     * mundos: el desplegable volvia solo a su sitio sin que nadie explicara por
+     * que, que es indistinguible de un fallo de la aplicacion —o, peor, de que
+     * si se guardo y la pantalla va con retraso—.
+     */
+    const caso = await casoDisp();
+
+    await login(page, E2E.disparadores.owner);
+    await page.goto(`/cases/${caso.id}`);
+    await pantallaUtil(page);
+
+    /*
+     * El desplegable de estado del expediente no tiene nombre accesible; es un
+     * defecto DECLARADO y con fase propia, y no se toca aqui. Se localiza por
+     * las opciones que contiene, no por un `title` ni por su posicion.
+     */
+    const selector = page
+      .locator("select")
+      .filter({ has: page.locator('option[value="PENDING_DOCS"]') })
+      .first();
+    await expect(selector).toBeVisible({ timeout: 30_000 });
+    await expect(selector).toHaveValue("IN_PROGRESS");
+
+    await page.route(`**/api/cases/${caso.id}`, (route) =>
+      route.request().method() === "PATCH"
+        ? route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({
+              error: "El expediente ha cambiado de estado mientras tanto.",
+              currentStatus: "FOLLOW_UP",
+            }),
+          })
+        : route.continue(),
+    );
+
+    await selector.selectOption("PENDING_DOCS");
+
+    const aviso = page.getByTestId("toast-error");
+    await expect(aviso).toBeVisible();
+    await expect(aviso).toContainText("ha cambiado de estado mientras tanto");
+
+    await expect(selector, "vuelve al estado real, no al intentado").toHaveValue("IN_PROGRESS");
+
+    const despues = await prisma.case.findUniqueOrThrow({
+      where: { id: caso.id },
+      select: { status: true },
+    });
+    expect(despues.status).toBe("IN_PROGRESS");
+
+    await page.unroute(`**/api/cases/${caso.id}`);
   });
 });
