@@ -9,7 +9,8 @@ export const metadata = {
   robots: { index: false },
 };
 
-export default async function TemplateDetailPage({ params }: { params: { id: string } }) {
+export default async function TemplateDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getVerifiedSession();
   if (!session) redirect("/login");
   if (!hasPermission(session.user.role, "templates.read")) redirect("/dashboard");

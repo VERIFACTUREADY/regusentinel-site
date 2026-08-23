@@ -5,7 +5,8 @@ import { rateLimit } from "@/lib/api-rate-limit";
 import { resolvePortalAccess } from "@/lib/portal-access";
 import { getConsentStatus } from "@/lib/portal-consent";
 
-export async function GET(req: NextRequest, { params }: { params: { token: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   // Rate limit por IP: 60 lecturas/min. El token es CUID (espacio ~10^36) y
   // el bruteforce es invianle, pero si un enlace se filtra (WhatsApp, search
   // engine) impedimos scraping pesado del expediente.

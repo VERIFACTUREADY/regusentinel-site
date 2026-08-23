@@ -32,7 +32,8 @@ import { triggerWorkflow, claveEjecucion } from "@/lib/workflow-engine";
  * pulsaciones son dos peticiones, y las dos deben ejecutarse. El doble clic lo
  * corta el cliente, que deshabilita el botón mientras hay una en vuelo.
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("workflow.manage");
   if (!auth.ok) return auth.response;
   const session = auth.session;

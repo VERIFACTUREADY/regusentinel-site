@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { calculateTaskDeadlines } from "@/lib/deadline-engine";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("tasks.create");
   if (!auth.ok) return auth.response;
   const session = auth.session;

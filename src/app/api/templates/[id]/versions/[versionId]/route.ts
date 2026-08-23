@@ -4,8 +4,9 @@ import { prisma } from "@/lib/prisma";
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string; versionId: string } }
+  props: { params: Promise<{ id: string; versionId: string }> }
 ) {
+  const params = await props.params;
   const auth = await requireOrgPermission("templates.update");
   if (!auth.ok) return auth.response;
   const session = auth.session;

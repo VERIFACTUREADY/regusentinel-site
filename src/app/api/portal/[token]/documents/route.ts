@@ -15,7 +15,8 @@ import { validateFile, sanitizeFileName, buildFileKey, MAX_FILE_BYTES, MAX_FILE_
  * cada uno con su URL de descarga prefirmada. El filtro `visibleToFamily` es
  * la corrección: los documentos internos son privados por defecto.
  */
-export async function GET(req: NextRequest, { params }: { params: { token: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   const limited = rateLimit(req, { bucket: "portal-docs-read", windowMs: 60_000, max: 60 });
   if (limited) return limited;
 
@@ -45,7 +46,8 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
   return NextResponse.json(docsWithUrls);
 }
 
-export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   // 10 uploads/min por IP. Limite muy bajo porque cada upload escribe en S3 + DB.
   const limited = rateLimit(req, { bucket: "portal-docs-upload", windowMs: 60_000, max: 10 });
   if (limited) return limited;

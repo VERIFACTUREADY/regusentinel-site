@@ -25,7 +25,7 @@ export function SearchModal() {
   const [reintento, setReintento] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const controllerRef = useRef<AbortController>();
+  const controllerRef = useRef<AbortController | undefined>(undefined);
   const router = useRouter();
 
   useEffect(() => {

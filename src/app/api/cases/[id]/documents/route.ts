@@ -8,7 +8,8 @@ import { findTaskInCase } from "@/lib/tenancy";
 import { validateFile, sanitizeFileName, buildFileKey, MAX_FILE_BYTES, MAX_FILE_MB } from "@/lib/file-policy";
 import { triggerWorkflow, claveDeEvento } from "@/lib/workflow-engine";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("documents.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -32,7 +33,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json(docsWithUrls);
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("documents.create");
   if (!auth.ok) return auth.response;
   const session = auth.session;

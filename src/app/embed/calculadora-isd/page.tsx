@@ -14,7 +14,8 @@ interface SearchParams {
   utm_source?: string;  // tracking del host
 }
 
-export default function EmbedCalculadoraISD({ searchParams }: { searchParams: SearchParams }) {
+export default async function EmbedCalculadoraISD(props: { searchParams: Promise<SearchParams> }) {
+  const searchParams = await props.searchParams;
   const theme = searchParams.theme === "dark" ? "dark" : "light";
   const primary = (searchParams.primary || "").replace(/[^a-fA-F0-9]/g, "").slice(0, 6);
   const ccaa = (searchParams.ccaa || "MADRID").toUpperCase();

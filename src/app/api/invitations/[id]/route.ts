@@ -18,7 +18,8 @@ import { estadoVisible, sePuedeRevocar, invalidarEnlace } from "@/lib/invitacion
  *
  * NO se borra la cuenta de usuario: puede pertenecer a otras organizaciones.
  */
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("org.members.invite");
   if (!auth.ok) return auth.response;
   const { orgId, userId } = auth.session;

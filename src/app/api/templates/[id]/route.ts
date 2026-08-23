@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("templates.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -16,7 +17,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json(template);
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("templates.update");
   if (!auth.ok) return auth.response;
   const session = auth.session;

@@ -85,7 +85,7 @@ export default function CasesPage() {
   >(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const presets = [
     { id: "mine", label: "Mis expedientes", apply: () => { setMyTasksFilter(true); setUrgentFilter(false); setStatusFilter(""); setCategoryFilter(""); setIsdExpiringFilter(""); }, className: "border-blue-300 text-blue-700" },

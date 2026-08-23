@@ -43,46 +43,27 @@ import { execFileSync } from "node:child_process";
  * `BLOQUEOS_DECLARADOS`, que falla a propósito.
  */
 const ALTAS_NO_APLICABLES_EN_PRODUCCION = {
-  "GHSA-c4j6-fc7j-m34r": {
-    paquete: "next",
-    motivo:
-      "SSRF en aplicaciones que usan actualizaciones a WebSocket. Esta " +
-      "aplicacion no abre ninguna: no hay `upgrade`, ni `ws`, ni socket.io, y " +
-      "las funciones de Vercel no atienden la actualizacion de protocolo.",
-    revisadaEl: "2026-08-23",
-  },
-  "GHSA-36qx-fr4f-26g5": {
-    paquete: "next",
-    motivo:
-      "Bypass de middleware en aplicaciones del PAGES ROUTER que usan i18n. " +
-      "Aqui todo es App Router (`src/app`), no existe `src/pages`, y " +
-      "`next.config.js` no declara `i18n`.",
-    revisadaEl: "2026-08-23",
-  },
-  "GHSA-m99w-x7hq-7vfj": {
-    paquete: "next",
-    motivo:
-      "DoS en App Router a traves de Server Actions. No se usa ninguna: " +
-      "`grep -rl '\"use server\"' src/` no devuelve nada; las mutaciones van " +
-      "por manejadores de ruta.",
-    revisadaEl: "2026-08-23",
-  },
-  "GHSA-89xv-2m56-2m9x": {
-    paquete: "next",
-    motivo:
-      "SSRF en Server Actions sobre SERVIDORES PERSONALIZADOS. No hay Server " +
-      "Actions ni servidor propio: el despliegue es el runtime gestionado de " +
-      "Vercel.",
-    revisadaEl: "2026-08-23",
-  },
-  "GHSA-p9j2-gv94-2wf4": {
-    paquete: "next",
-    motivo:
-      "SSRF mediante `rewrites` con destino controlado por el atacante. " +
-      "`next.config.js` no define `rewrites` ni `redirects`; solo `headers` e " +
-      "`images.remotePatterns`.",
-    revisadaEl: "2026-08-23",
-  },
+  /*
+   * VACÍA A PROPÓSITO — y esa es la buena noticia.
+   *
+   * Hasta el 2026-08-23 esta lista tenía cinco avisos de `next@14.2.35`
+   * (GHSA-c4j6-fc7j-m34r, GHSA-36qx-fr4f-26g5, GHSA-m99w-x7hq-7vfj,
+   * GHSA-89xv-2m56-2m9x y GHSA-p9j2-gv94-2wf4), justificados uno a uno porque
+   * su superficie —WebSocket upgrades, Pages Router con i18n, Server Actions,
+   * servidor propio y `rewrites`— no existe en esta aplicación.
+   *
+   * Y `BLOQUEOS_DECLARADOS` tenía otros tres que SÍ nos alcanzaban: los DoS de
+   * React Server Components. Esos no se podían justificar, así que esta puerta
+   * fallaba a propósito y el release quedó marcado NO LISTO PARA MERGE.
+   *
+   * Las ocho han desaparecido **porque la dependencia está parcheada**:
+   * `next` pasó de 14.2.35 a 15.5.21. No se ha movido ningún aviso de una
+   * lista a otra, ni se ha bajado ningún umbral. Con el árbol nuevo,
+   * `npm audit --omit=dev` no devuelve ninguna ALTA de producción.
+   *
+   * Vaciarla también endurece la puerta: si cualquiera de esos avisos
+   * reapareciera, ya no estaría revisado y el pipeline volvería a fallar.
+   */
 };
 
 /**
@@ -92,26 +73,12 @@ const ALTAS_NO_APLICABLES_EN_PRODUCCION = {
  * Están aquí para que el fallo diga QUÉ es y QUÉ hace falta, no para
  * silenciarlo: la puerta falla igual. Vaciar esta lista sin actualizar la
  * dependencia sería exactamente la trampa que esta puerta existe para impedir.
+ *
+ * Vacía desde el 2026-08-23: los tres DoS de React Server Components que la
+ * ocupaban se resolvieron actualizando `next` a 15.5.21, que es justamente el
+ * arreglo que esta lista pedía.
  */
-const BLOQUEOS_DECLARADOS = {
-  "GHSA-h25m-26qc-wcjf": {
-    paquete: "next",
-    motivo:
-      "DoS por deserializacion de la peticion en React Server Components. " +
-      "La aplicacion es App Router con RSC, asi que la superficie existe.",
-    arreglo: "next >= 15.5.21",
-  },
-  "GHSA-q4gf-8mx6-v5v3": {
-    paquete: "next",
-    motivo: "DoS con Server Components. Misma superficie: App Router con RSC.",
-    arreglo: "next >= 15.5.21",
-  },
-  "GHSA-8h8q-6873-q5fj": {
-    paquete: "next",
-    motivo: "DoS con Server Components (segundo aviso). Misma superficie.",
-    arreglo: "next >= 15.5.21",
-  },
-};
+const BLOQUEOS_DECLARADOS = {};
 
 /**
  * Vulnerabilidades de HERRAMIENTAS DE DESARROLLO aceptadas conscientemente.

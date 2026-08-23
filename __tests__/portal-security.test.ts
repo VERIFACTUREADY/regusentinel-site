@@ -79,7 +79,7 @@ beforeEach(() => {
 
 describe("Visibilidad documental", () => {
   it("el portal solo consulta documentos marcados visibles para la familia", async () => {
-    await docsGET(req(), { params: { token: "tok" } });
+    await docsGET(req(), { params: Promise.resolve({ token: "tok" }) });
 
     expect(docFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -92,12 +92,12 @@ describe("Visibilidad documental", () => {
     // La consulta ya los excluye; si alguien relajara el filtro, este test
     // seguiria fallando porque el where deja de contener visibleToFamily.
     const where = () => (docFindMany.mock.calls[0][0] as any).where;
-    await docsGET(req(), { params: { token: "tok" } });
+    await docsGET(req(), { params: Promise.resolve({ token: "tok" }) });
     expect(where().visibleToFamily).toBe(true);
   });
 
   it("excluye los documentos con borrado pendiente en S3", async () => {
-    await docsGET(req(), { params: { token: "tok" } });
+    await docsGET(req(), { params: Promise.resolve({ token: "tok" }) });
     expect((docFindMany.mock.calls[0][0] as any).where.deletionState).toBeNull();
   });
 });
@@ -108,7 +108,7 @@ describe("Consentimiento como requisito", () => {
   });
 
   it("sin consentimiento no se listan documentos", async () => {
-    const res = await docsGET(req(), { params: { token: "tok" } });
+    const res = await docsGET(req(), { params: Promise.resolve({ token: "tok" }) });
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.consentRequired).toBe(true);
@@ -121,19 +121,19 @@ describe("Consentimiento como requisito", () => {
       fd.set("file", new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], "x.pdf", { type: "application/pdf" }));
       return fd;
     };
-    const res = await docsPOST(req({}, form), { params: { token: "tok" } });
+    const res = await docsPOST(req({}, form), { params: Promise.resolve({ token: "tok" }) });
     expect(res.status).toBe(403);
     expect(prisma.document.create).not.toHaveBeenCalled();
   });
 
   it("sin consentimiento no se leen mensajes", async () => {
-    const res = await messagesGET(req(), { params: { token: "tok" } });
+    const res = await messagesGET(req(), { params: Promise.resolve({ token: "tok" }) });
     expect(res.status).toBe(403);
     expect(prisma.portalMessage.findMany).not.toHaveBeenCalled();
   });
 
   it("sin consentimiento no se envian mensajes", async () => {
-    const res = await messagesPOST(req({ content: "Hola" }), { params: { token: "tok" } });
+    const res = await messagesPOST(req({ content: "Hola" }), { params: Promise.resolve({ token: "tok" }) });
     expect(res.status).toBe(403);
     expect(prisma.portalMessage.create).not.toHaveBeenCalled();
   });
@@ -144,7 +144,7 @@ describe("Consentimiento como requisito", () => {
       textHash: "viejo",
       acceptedAt: new Date("2020-01-01"),
     });
-    const res = await docsGET(req(), { params: { token: "tok" } });
+    const res = await docsGET(req(), { params: Promise.resolve({ token: "tok" }) });
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error).toMatch(/condiciones han cambiado/i);
@@ -157,7 +157,7 @@ describe("Consentimiento como requisito", () => {
       textHash: "x",
       acceptedAt: new Date("2026-01-01"),
     });
-    const res = await docsGET(req(), { params: { token: "tok" } });
+    const res = await docsGET(req(), { params: Promise.resolve({ token: "tok" }) });
     expect(res.status).toBe(200);
   });
 });
@@ -166,7 +166,7 @@ describe("Revocacion y caducidad del token", () => {
   it("un token revocado deja de funcionar de inmediato", async () => {
     caseFindFirst.mockResolvedValue(portalCase({ portalTokenRevokedAt: new Date("2026-02-01") }));
 
-    const res = await docsGET(req(), { params: { token: "tok" } });
+    const res = await docsGET(req(), { params: Promise.resolve({ token: "tok" }) });
     expect(res.status).toBe(403);
     expect((await res.json()).error).toMatch(/revocado/i);
     expect(docFindMany).not.toHaveBeenCalled();
@@ -177,7 +177,7 @@ describe("Revocacion y caducidad del token", () => {
       portalCase({ portalTokenExpiresAt: new Date(Date.now() - 86_400_000) }),
     );
 
-    const res = await docsGET(req(), { params: { token: "tok" } });
+    const res = await docsGET(req(), { params: Promise.resolve({ token: "tok" }) });
     expect(res.status).toBe(403);
     expect((await res.json()).error).toMatch(/caducado/i);
   });
@@ -186,13 +186,13 @@ describe("Revocacion y caducidad del token", () => {
     caseFindFirst.mockResolvedValue(
       portalCase({ portalTokenExpiresAt: new Date(Date.now() + 86_400_000) }),
     );
-    const res = await docsGET(req(), { params: { token: "tok" } });
+    const res = await docsGET(req(), { params: Promise.resolve({ token: "tok" }) });
     expect(res.status).toBe(200);
   });
 
   it("un token inexistente da 404 sin revelar si el expediente existe", async () => {
     caseFindFirst.mockResolvedValue(null);
-    const res = await docsGET(req(), { params: { token: "inventado" } });
+    const res = await docsGET(req(), { params: Promise.resolve({ token: "inventado" }) });
     expect(res.status).toBe(404);
   });
 });
@@ -205,7 +205,7 @@ describe("Politica de archivos aplicada en el portal", () => {
         fd.set("file", file);
         return fd;
       }),
-      { params: { token: "tok" } },
+      { params: Promise.resolve({ token: "tok" }) },
     );
   }
 

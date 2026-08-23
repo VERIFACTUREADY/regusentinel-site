@@ -85,7 +85,7 @@ export default function TasksPage() {
   const [errorNotas, setErrorNotas] = useState<string | null>(null);
   const [noteInput, setNoteInput] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
-  const controllerRef = useRef<AbortController>();
+  const controllerRef = useRef<AbortController | undefined>(undefined);
 
   /*
    * Resultado de la ultima accion que escribe (completar, iniciar, lote, nota).

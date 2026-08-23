@@ -17,7 +17,8 @@ import {
  * No exige consentimiento previo (es el endpoint que lo presenta) y no expone
  * ningún dato del expediente más allá de si ya está aceptado.
  */
-export async function GET(req: NextRequest, { params }: { params: { token: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   const limited = rateLimit(req, { bucket: "portal-consent-read", windowMs: 60_000, max: 30 });
   if (limited) return limited;
 
@@ -43,7 +44,8 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
  * texto se aceptó ni desde dónde. Ahora cada aceptación crea una fila de
  * evidencia con versión, hash del texto, IP y user-agent.
  */
-export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   const limited = rateLimit(req, { bucket: "portal-consent", windowMs: 60_000, max: 10 });
   if (limited) return limited;
 

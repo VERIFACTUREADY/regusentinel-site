@@ -136,7 +136,7 @@ describe("checkRoleAssignment — reglas puras", () => {
 describe("PATCH /api/users/[id] — cambio de rol", () => {
   it("rechaza un rol inventado antes de tocar la base de datos", async () => {
     actor(Role.OWNER);
-    const res = await patchMember(req({ role: "SUPERUSER" }), { params: { id: "u2" } });
+    const res = await patchMember(req({ role: "SUPERUSER" }), { params: Promise.resolve({ id: "u2" }) });
     expect(res.status).toBe(400);
     expect(prisma.membership.update).not.toHaveBeenCalled();
     expect(txMock).not.toHaveBeenCalled();
@@ -146,7 +146,7 @@ describe("PATCH /api/users/[id] — cambio de rol", () => {
     actor(Role.MANAGER);
     memFindFirst.mockResolvedValue({ id: "mem-2", role: Role.OPERATOR });
 
-    const res = await patchMember(req({ role: "OWNER" }), { params: { id: "u2" } });
+    const res = await patchMember(req({ role: "OWNER" }), { params: Promise.resolve({ id: "u2" }) });
     expect(res.status).toBe(403);
     expect(txMock).not.toHaveBeenCalled();
   });
@@ -155,7 +155,7 @@ describe("PATCH /api/users/[id] — cambio de rol", () => {
     actor(Role.MANAGER, "manager-1");
     memFindFirst.mockResolvedValue({ id: "mem-1", role: Role.MANAGER });
 
-    const res = await patchMember(req({ role: "OWNER" }), { params: { id: "manager-1" } });
+    const res = await patchMember(req({ role: "OWNER" }), { params: Promise.resolve({ id: "manager-1" }) });
     expect(res.status).toBe(403);
     expect(txMock).not.toHaveBeenCalled();
   });
@@ -165,7 +165,7 @@ describe("PATCH /api/users/[id] — cambio de rol", () => {
     memFindFirst.mockResolvedValue({ id: "mem-2", role: Role.OWNER });
     runTransaction({ role: Role.OWNER, ownerCount: 1 });
 
-    const res = await patchMember(req({ role: "VIEWER" }), { params: { id: "u2" } });
+    const res = await patchMember(req({ role: "VIEWER" }), { params: Promise.resolve({ id: "u2" }) });
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error).toMatch(/al menos un Owner/i);
@@ -176,7 +176,7 @@ describe("PATCH /api/users/[id] — cambio de rol", () => {
     memFindFirst.mockResolvedValue({ id: "mem-2", role: Role.OWNER });
     runTransaction({ role: Role.OWNER, ownerCount: 2 });
 
-    const res = await patchMember(req({ role: "MANAGER" }), { params: { id: "u2" } });
+    const res = await patchMember(req({ role: "MANAGER" }), { params: Promise.resolve({ id: "u2" }) });
     expect(res.status).toBe(200);
   });
 
@@ -185,7 +185,7 @@ describe("PATCH /api/users/[id] — cambio de rol", () => {
     memFindFirst.mockResolvedValue({ id: "mem-2", role: Role.OWNER });
     runTransaction({ role: Role.OWNER, ownerCount: 2 });
 
-    await patchMember(req({ role: "MANAGER" }), { params: { id: "u2" } });
+    await patchMember(req({ role: "MANAGER" }), { params: Promise.resolve({ id: "u2" }) });
 
     // El count de fuera de la transaccion no debe usarse para decidir: si se
     // usara, dos degradaciones simultaneas podrian dejar la org sin OWNER.
@@ -200,7 +200,7 @@ describe("DELETE /api/users/[id] — expulsion", () => {
     memFindFirst.mockResolvedValue({ id: "mem-2", role: Role.OWNER });
     runTransaction({ role: Role.OWNER, ownerCount: 1 });
 
-    const res = await deleteMember({} as any, { params: { id: "u2" } });
+    const res = await deleteMember({} as any, { params: Promise.resolve({ id: "u2" }) });
     expect(res.status).toBe(409);
   });
 
@@ -208,14 +208,14 @@ describe("DELETE /api/users/[id] — expulsion", () => {
     actor(Role.MANAGER);
     memFindFirst.mockResolvedValue({ id: "mem-2", role: Role.OWNER });
 
-    const res = await deleteMember({} as any, { params: { id: "u2" } });
+    const res = await deleteMember({} as any, { params: Promise.resolve({ id: "u2" }) });
     expect(res.status).toBe(403);
     expect(txMock).not.toHaveBeenCalled();
   });
 
   it("nadie puede eliminarse a si mismo", async () => {
     actor(Role.OWNER, "actor-1");
-    const res = await deleteMember({} as any, { params: { id: "actor-1" } });
+    const res = await deleteMember({} as any, { params: Promise.resolve({ id: "actor-1" }) });
     expect(res.status).toBe(400);
   });
 });

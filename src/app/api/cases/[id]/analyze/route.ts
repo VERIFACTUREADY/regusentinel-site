@@ -4,10 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { analyzeCase, getLatestAnalysis } from "@/lib/case-analyzer";
 import { logAudit } from "@/lib/audit";
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("cases.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -22,10 +20,8 @@ export async function GET(
   return NextResponse.json({ analysis });
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("autopilot.run");
   if (!auth.ok) return auth.response;
   const session = auth.session;

@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/api-rate-limit";
 import { resolvePortalAccess } from "@/lib/portal-access";
 
-export async function GET(req: NextRequest, { params }: { params: { token: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   // 60 lecturas/min por IP. El token es CUID (~10^36) asi que el riesgo es
   // scraping si el enlace se filtra, no bruteforce.
   const limited = rateLimit(req, { bucket: "portal-messages-read", windowMs: 60_000, max: 60 });
@@ -22,7 +23,8 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
   return NextResponse.json(messages);
 }
 
-export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   // 20 mensajes/min por IP. Limite mas bajo que la lectura porque el write
   // crea filas en BD; sin esto un atacante con token filtrado podria spammear
   // miles de mensajes en el expediente.

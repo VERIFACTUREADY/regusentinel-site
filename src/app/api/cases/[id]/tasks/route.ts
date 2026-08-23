@@ -8,7 +8,8 @@ import { logAudit } from "@/lib/audit";
 import { sendEmail } from "@/lib/email";
 import { triggerWorkflow, claveDeEvento } from "@/lib/workflow-engine";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("tasks.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -22,7 +23,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json(tasks);
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("tasks.create");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -67,7 +69,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json(task, { status: 201 });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("tasks.update");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -376,7 +379,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json(updated);
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("tasks.delete");
   if (!auth.ok) return auth.response;
   const session = auth.session;

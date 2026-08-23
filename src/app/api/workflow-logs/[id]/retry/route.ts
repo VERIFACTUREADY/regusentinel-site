@@ -37,7 +37,8 @@ import { reintentarEntregasFallidas } from "@/lib/workflow-engine";
  *     así que dos reintentos simultáneos producen UNA sola llamada.
  *   - El estado agregado (SUCCESS / PARTIAL / FAILED) se recalcula al terminar.
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // Provoca envíos externos bajo demanda: sin límite, sirve para bombardear a
   // los destinatarios pulsando el botón en bucle.
   const limitado = rateLimit(req, { bucket: "workflow-retry", windowMs: 60_000, max: 10 });

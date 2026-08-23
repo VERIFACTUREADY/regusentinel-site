@@ -148,13 +148,13 @@ describe("GET /api/portal/[token] — vista principal del expediente", () => {
 
   it("404 si el token no corresponde a ningun expediente", async () => {
     caseFindFirst.mockResolvedValueOnce(null);
-    const res = await portalGET(fakeReq(), { params: { token: "invalid" } });
+    const res = await portalGET(fakeReq(), { params: Promise.resolve({ token: "invalid" }) });
     expect(res.status).toBe(404);
   });
 
   it("filtra por portalEnabled=true y deletedAt=null (no expone disabled ni borrados)", async () => {
     caseFindFirst.mockResolvedValue(fakeCase());
-    await portalGET(fakeReq(), { params: { token: "tok123" } });
+    await portalGET(fakeReq(), { params: Promise.resolve({ token: "tok123" }) });
 
     const where = caseFindFirst.mock.calls[0][0].where;
     expect(where.portalEnabled).toBe(true);
@@ -164,21 +164,21 @@ describe("GET /api/portal/[token] — vista principal del expediente", () => {
 
   it("plan INICIA muestra 'Powered by Heredia' (showPoweredBy=true)", async () => {
     caseFindFirst.mockResolvedValue(fakeCase({ org: { ...fakeCase().org, subscription: { plan: "INICIA" } } }));
-    const res = await portalGET(fakeReq(), { params: { token: "tok123" } });
+    const res = await portalGET(fakeReq(), { params: Promise.resolve({ token: "tok123" }) });
     const body = await res.json();
     expect(body.branding.showPoweredBy).toBe(true);
   });
 
   it("plan DESPACHO oculta 'Powered by Heredia' (white-label)", async () => {
     caseFindFirst.mockResolvedValue(fakeCase({ org: { ...fakeCase().org, subscription: { plan: "DESPACHO" } } }));
-    const res = await portalGET(fakeReq(), { params: { token: "tok123" } });
+    const res = await portalGET(fakeReq(), { params: Promise.resolve({ token: "tok123" }) });
     const body = await res.json();
     expect(body.branding.showPoweredBy).toBe(false);
   });
 
   it("plan FIRMA tambien oculta 'Powered by Heredia'", async () => {
     caseFindFirst.mockResolvedValue(fakeCase({ org: { ...fakeCase().org, subscription: { plan: "FIRMA" } } }));
-    const res = await portalGET(fakeReq(), { params: { token: "tok123" } });
+    const res = await portalGET(fakeReq(), { params: Promise.resolve({ token: "tok123" }) });
     const body = await res.json();
     expect(body.branding.showPoweredBy).toBe(false);
   });
@@ -193,7 +193,7 @@ describe("GET /api/portal/[token] — vista principal del expediente", () => {
       documents: [],
     }));
 
-    const res = await portalGET(fakeReq(), { params: { token: "tok123" } });
+    const res = await portalGET(fakeReq(), { params: Promise.resolve({ token: "tok123" }) });
     const body = await res.json();
 
     expect(body.pendingDocs).toHaveLength(1);
@@ -209,7 +209,7 @@ describe("GET /api/portal/[token] — vista principal del expediente", () => {
       documents: [],
     }));
 
-    const res = await portalGET(fakeReq(), { params: { token: "tok123" } });
+    const res = await portalGET(fakeReq(), { params: Promise.resolve({ token: "tok123" }) });
     const body = await res.json();
     expect(body.pendingDocs).toHaveLength(0);
   });
@@ -222,7 +222,7 @@ describe("POST /api/portal/[token]/consent — aceptacion RGPD del heredero", ()
 
   it("404 si el expediente no existe", async () => {
     caseFindFirst.mockResolvedValueOnce(null);
-    const res = await consentPOST(fakeReq({ body: { authorName: "Andrea" } }), { params: { token: "x" } });
+    const res = await consentPOST(fakeReq({ body: { authorName: "Andrea" } }), { params: Promise.resolve({ token: "x" }) });
     expect(res.status).toBe(404);
     expect(caseUpdate).not.toHaveBeenCalled();
   });
@@ -232,7 +232,7 @@ describe("POST /api/portal/[token]/consent — aceptacion RGPD del heredero", ()
     denyConsent(); // aun no ha aceptado
     caseUpdate.mockResolvedValueOnce({});
 
-    const res = await consentPOST(fakeReq({ body: { authorName: "Andrea Martin" } }), { params: { token: "tok123" } });
+    const res = await consentPOST(fakeReq({ body: { authorName: "Andrea Martin" } }), { params: Promise.resolve({ token: "tok123" }) });
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -255,7 +255,7 @@ describe("POST /api/portal/[token]/consent — aceptacion RGPD del heredero", ()
     caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1", ref: "EXP", portalEnabled: true });
     grantConsent();
 
-    const res = await consentPOST(fakeReq({ body: { authorName: "Andrea" } }), { params: { token: "tok123" } });
+    const res = await consentPOST(fakeReq({ body: { authorName: "Andrea" } }), { params: Promise.resolve({ token: "tok123" }) });
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -268,7 +268,7 @@ describe("POST /api/portal/[token]/consent — aceptacion RGPD del heredero", ()
     denyConsent();
     caseUpdate.mockResolvedValueOnce({});
 
-    await consentPOST(fakeReq({ body: { authorName: "   " } }), { params: { token: "tok123" } });
+    await consentPOST(fakeReq({ body: { authorName: "   " } }), { params: Promise.resolve({ token: "tok123" }) });
 
     expect(consentCreate.mock.calls[0][0].data.declaredName).toBeNull();
   });
@@ -281,7 +281,7 @@ describe("GET /api/portal/[token]/messages — historial de mensajes", () => {
 
   it("404 si el expediente no existe", async () => {
     caseFindFirst.mockResolvedValueOnce(null);
-    const res = await messagesGET(fakeReq(), { params: { token: "x" } });
+    const res = await messagesGET(fakeReq(), { params: Promise.resolve({ token: "x" }) });
     expect(res.status).toBe(404);
   });
 
@@ -292,7 +292,7 @@ describe("GET /api/portal/[token]/messages — historial de mensajes", () => {
       { id: "m2", fromFamily: false, authorName: "Gestor", content: "Recibido", createdAt: new Date("2026-01-11") },
     ]);
 
-    const res = await messagesGET(fakeReq(), { params: { token: "tok123" } });
+    const res = await messagesGET(fakeReq(), { params: Promise.resolve({ token: "tok123" }) });
     const body = await res.json();
 
     expect(body).toHaveLength(2);
@@ -305,21 +305,21 @@ describe("POST /api/portal/[token]/messages — enviar mensaje familiar", () => 
 
   it("404 si el expediente no existe", async () => {
     caseFindFirst.mockResolvedValueOnce(null);
-    const res = await messagesPOST(fakeReq({ body: { content: "Hola" } }), { params: { token: "x" } });
+    const res = await messagesPOST(fakeReq({ body: { content: "Hola" } }), { params: Promise.resolve({ token: "x" }) });
     expect(res.status).toBe(404);
     expect(msgCreate).not.toHaveBeenCalled();
   });
 
   it("400 si el mensaje esta vacio", async () => {
     caseFindFirst.mockResolvedValueOnce({ id: "case_abc" });
-    const res = await messagesPOST(fakeReq({ body: { content: "" } }), { params: { token: "tok123" } });
+    const res = await messagesPOST(fakeReq({ body: { content: "" } }), { params: Promise.resolve({ token: "tok123" }) });
     expect(res.status).toBe(400);
   });
 
   it("400 si el mensaje supera 2000 caracteres", async () => {
     caseFindFirst.mockResolvedValueOnce({ id: "case_abc" });
     const longMsg = "x".repeat(2001);
-    const res = await messagesPOST(fakeReq({ body: { content: longMsg } }), { params: { token: "tok123" } });
+    const res = await messagesPOST(fakeReq({ body: { content: longMsg } }), { params: Promise.resolve({ token: "tok123" }) });
     expect(res.status).toBe(400);
     expect(msgCreate).not.toHaveBeenCalled();
   });
@@ -328,7 +328,7 @@ describe("POST /api/portal/[token]/messages — enviar mensaje familiar", () => 
     caseFindFirst.mockResolvedValueOnce({ id: "case_abc" });
     msgCreate.mockResolvedValueOnce({ id: "m1", fromFamily: true, authorName: "Andrea", content: "Hola gestor", createdAt: new Date() });
 
-    const res = await messagesPOST(fakeReq({ body: { content: "Hola gestor", authorName: "Andrea" } }), { params: { token: "tok123" } });
+    const res = await messagesPOST(fakeReq({ body: { content: "Hola gestor", authorName: "Andrea" } }), { params: Promise.resolve({ token: "tok123" }) });
 
     expect(res.status).toBe(201);
     expect(msgCreate).toHaveBeenCalledWith({
@@ -350,7 +350,7 @@ describe("GET /api/portal/[token]/documents — listar documentos", () => {
 
   it("404 si el expediente no existe", async () => {
     caseFindFirst.mockResolvedValueOnce(null);
-    const res = await docsGET(fakeReq(), { params: { token: "x" } });
+    const res = await docsGET(fakeReq(), { params: Promise.resolve({ token: "x" }) });
     expect(res.status).toBe(404);
   });
 
@@ -360,7 +360,7 @@ describe("GET /api/portal/[token]/documents — listar documentos", () => {
       { id: "d1", fileName: "DNI.pdf", fileKey: "org1/case_abc/portal/dni.pdf", createdAt: new Date(), isPortalUpload: true, task: { id: "t1", title: "Subir DNI", category: "DOCS" } },
     ]);
 
-    const res = await docsGET(fakeReq(), { params: { token: "tok123" } });
+    const res = await docsGET(fakeReq(), { params: Promise.resolve({ token: "tok123" }) });
     const body = await res.json();
 
     expect(body).toHaveLength(1);
@@ -397,14 +397,14 @@ describe("POST /api/portal/[token]/documents — subir documento", () => {
 
   it("404 si el expediente no existe", async () => {
     caseFindFirst.mockResolvedValueOnce(null);
-    const res = await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: { token: "x" } });
+    const res = await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: Promise.resolve({ token: "x" }) });
     expect(res.status).toBe(404);
     expect(uploadMock).not.toHaveBeenCalled();
   });
 
   it("400 si no se envia archivo", async () => {
     caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
-    const res = await docsPOST(fakeFormReq(null), { params: { token: "tok123" } });
+    const res = await docsPOST(fakeFormReq(null), { params: Promise.resolve({ token: "tok123" }) });
     expect(res.status).toBe(400);
     expect(uploadMock).not.toHaveBeenCalled();
   });
@@ -417,7 +417,7 @@ describe("POST /api/portal/[token]/documents — subir documento", () => {
     taskFindFirst.mockResolvedValueOnce({ id: "t1", title: "Subir DNI heredero", status: "PENDING" });
     taskUpdate.mockResolvedValueOnce({});
 
-    const res = await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: { token: "tok123" } });
+    const res = await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: Promise.resolve({ token: "tok123" }) });
     const body = await res.json();
 
     expect(res.status).toBe(201);
@@ -470,7 +470,7 @@ describe("POST /api/portal/[token]/documents — subir documento", () => {
     matchMock.mockReturnValueOnce(null); // no se identifica el tag
     docCreate.mockResolvedValueOnce({ id: "doc_new" });
 
-    await docsPOST(fakeFormReq(fakeFile("otro.pdf")), { params: { token: "tok123" } });
+    await docsPOST(fakeFormReq(fakeFile("otro.pdf")), { params: Promise.resolve({ token: "tok123" }) });
 
     expect(docCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -490,7 +490,7 @@ describe("POST /api/portal/[token]/documents — subir documento", () => {
     docCreate.mockResolvedValueOnce({ id: "doc_new" });
     taskFindUnique.mockResolvedValueOnce({ id: "t1", title: "Subir DNI", status: "DONE" });
 
-    await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: { token: "tok123" } });
+    await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: Promise.resolve({ token: "tok123" }) });
 
     expect(taskUpdate).not.toHaveBeenCalled();
   });
@@ -499,7 +499,7 @@ describe("POST /api/portal/[token]/documents — subir documento", () => {
     caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
     uploadMock.mockRejectedValueOnce(new Error("S3 quota exceeded"));
 
-    const res = await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: { token: "tok123" } });
+    const res = await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: Promise.resolve({ token: "tok123" }) });
     const body = await res.json();
 
     expect(res.status).toBe(500);

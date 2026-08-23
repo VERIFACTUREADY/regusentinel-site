@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
 /**
  * GET: lista las plantillas disponibles con su pre-relleno desde el expediente.
  */
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("cases.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -59,7 +60,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 /**
  * POST: genera el PDF de una plantilla concreta con los valores finales.
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("cases.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;

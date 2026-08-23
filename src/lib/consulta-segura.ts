@@ -134,7 +134,7 @@ const COOKIE_FALLOS = "e2e-fallos";
 async function falloForzado(nombre: NombreConsulta): Promise<boolean> {
   if (process.env.E2E_INYECCION_FALLOS !== "1") return false;
   try {
-    const valor = cookies().get(COOKIE_FALLOS)?.value;
+    const valor = (await cookies()).get(COOKIE_FALLOS)?.value;
     if (!valor) return false;
     return decodeURIComponent(valor)
       .split(",")

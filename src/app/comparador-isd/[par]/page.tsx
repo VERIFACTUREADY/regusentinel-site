@@ -41,7 +41,8 @@ function parsePair(par: string): { a: CCAAKey; b: CCAAKey } | null {
   return { a: a.ccaa, b: b.ccaa };
 }
 
-export async function generateMetadata({ params }: { params: { par: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ par: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const pair = parsePair(params.par);
   if (!pair) return {};
   const labelA = CCAA_LABELS[pair.a];
@@ -95,7 +96,8 @@ function compute(ccaa: CCAAKey, group: ParentescoGroup, base: number): CellResul
   return { cuota: result.cuotaAPagar, bonifPct: bonif.pct, foral: bonif.foralRegime };
 }
 
-export default function PairPage({ params }: { params: { par: string } }) {
+export default async function PairPage(props: { params: Promise<{ par: string }> }) {
+  const params = await props.params;
   const pair = parsePair(params.par);
   if (!pair) return notFound();
 

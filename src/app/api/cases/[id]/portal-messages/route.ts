@@ -3,7 +3,8 @@ import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("cases.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -30,7 +31,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
  * de la familia. Acción explícita de escritura, invocada por la interfaz
  * cuando el usuario abre la conversación.
  */
-export async function PUT(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("cases.update");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -49,7 +51,8 @@ export async function PUT(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({ ok: true, marked: result.count });
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("cases.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;

@@ -3,10 +3,8 @@ import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { generateHandoffBriefing, getLastHandoffBriefing } from "@/lib/handoff-briefing";
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("cases.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -21,10 +19,8 @@ export async function GET(
   return NextResponse.json({ briefing });
 }
 
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("cases.write");
   if (!auth.ok) return auth.response;
   const session = auth.session;

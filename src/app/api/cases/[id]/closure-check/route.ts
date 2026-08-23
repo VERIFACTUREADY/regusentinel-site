@@ -18,10 +18,8 @@ export interface ClosureCheckResult {
   };
 }
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("cases.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;

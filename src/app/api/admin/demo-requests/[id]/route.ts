@@ -11,10 +11,8 @@ const patchSchema = z.object({
   internalNotes: z.string().max(2000).optional(),
 });
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const verified = await getVerifiedUser();
   const session = verified ? { user: verified } : null;
   // Solo equipo Heredia: demoRequests son leads B2B globales (pre-onboarding,

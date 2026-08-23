@@ -20,7 +20,8 @@ import {
  * invitacion puede haber acabado en un correo reenviado a terceros, y cada
  * reenvio tiene que cerrar el anterior.
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // Provoca correo saliente bajo demanda: sin limite sirve para bombardear.
   const limitado = rateLimit(req, { bucket: "invitacion-reenvio", windowMs: 60_000, max: 10 });
   if (limitado) return limitado;

@@ -6,7 +6,8 @@ import { getChecklistForCategories } from "@/lib/checklist-rules";
 import { calculateTaskDeadlines } from "@/lib/deadline-engine";
 import { PLAN_PRICING } from "@/lib/stripe";
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("cases.create");
   if (!auth.ok) return auth.response;
   const session = auth.session;

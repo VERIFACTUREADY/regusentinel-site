@@ -203,7 +203,7 @@ describe("TAREA: si la auditoría de la transición no se escribe, el estado no 
 
     const res = await como(owner.id, org.id, () =>
       patchTareas(peticion(`/api/cases/${expediente.id}/tasks`, { taskId: tarea.id, status: "DONE" }), {
-        params: { id: expediente.id },
+        params: Promise.resolve({ id: expediente.id }),
       }),
     );
     expect(res.status).toBe(200);
@@ -232,7 +232,7 @@ describe("TAREA: si la auditoría de la transición no se escribe, el estado no 
      */
     const fallo = como(owner.id, org.id, () =>
       patchTareas(peticion(`/api/cases/${expediente.id}/tasks`, { taskId: tarea.id, status: "DONE" }), {
-        params: { id: expediente.id },
+        params: Promise.resolve({ id: expediente.id }),
       }),
     );
     await expect(fallo).rejects.toThrow(/fallo inyectado/);
@@ -269,7 +269,7 @@ describe("TAREA: si la auditoría de la transición no se escribe, el estado no 
           status: "DONE",
           title: "Titulo que no debe quedar escrito",
         }),
-        { params: { id: expediente.id } },
+        { params: Promise.resolve({ id: expediente.id }) },
       ),
     );
     await expect(fallo).rejects.toThrow(/fallo inyectado/);
@@ -296,7 +296,7 @@ describe("EXPEDIENTE: si la auditoría de la transición no se escribe, el estad
 
     const res = await como(owner.id, org.id, () =>
       patchExpediente(peticion(`/api/cases/${expediente.id}`, { status: "FOLLOW_UP" }), {
-        params: { id: expediente.id },
+        params: Promise.resolve({ id: expediente.id }),
       }),
     );
     expect(res.status).toBe(200);
@@ -324,7 +324,7 @@ describe("EXPEDIENTE: si la auditoría de la transición no se escribe, el estad
 
     const fallo = como(owner.id, org.id, () =>
       patchExpediente(peticion(`/api/cases/${expediente.id}`, { status: "FOLLOW_UP" }), {
-        params: { id: expediente.id },
+        params: Promise.resolve({ id: expediente.id }),
       }),
     );
     await expect(fallo).rejects.toThrow(/fallo inyectado/);
@@ -359,7 +359,7 @@ describe("EXPEDIENTE: si la auditoría de la transición no se escribe, el estad
           status: "FOLLOW_UP",
           notes: "Nota que no debe quedar escrita",
         }),
-        { params: { id: expediente.id } },
+        { params: Promise.resolve({ id: expediente.id }) },
       ),
     );
     await expect(fallo).rejects.toThrow(/fallo inyectado/);
@@ -383,7 +383,7 @@ describe("EXPEDIENTE: si la auditoría de la transición no se escribe, el estad
 
     const fallo = como(owner.id, org.id, () =>
       patchExpediente(peticion(`/api/cases/${expediente.id}`, { status: "CLOSED" }), {
-        params: { id: expediente.id },
+        params: Promise.resolve({ id: expediente.id }),
       }),
     );
     await expect(fallo).rejects.toThrow(/fallo inyectado/);

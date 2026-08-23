@@ -13,7 +13,8 @@ export async function generateStaticParams() {
   return GLOSSARY.map((t) => ({ term: t.slug }));
 }
 
-export async function generateMetadata({ params }: { params: { term: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ term: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const t = getTermBySlug(params.term);
   if (!t) return {};
   return {
@@ -45,7 +46,8 @@ const CATEGORY_COLORS: Record<string, string> = {
   Documentacion: "bg-gray-100 text-gray-700",
 };
 
-export default function GlossaryTermPage({ params }: { params: { term: string } }) {
+export default async function GlossaryTermPage(props: { params: Promise<{ term: string }> }) {
+  const params = await props.params;
   const t = getTermBySlug(params.term);
   if (!t) return notFound();
 

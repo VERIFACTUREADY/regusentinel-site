@@ -190,7 +190,7 @@ describe("Ultimo OWNER bajo concurrencia real", () => {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ role: "OPERATOR" }),
           }),
-          { params: { id: b.id } },
+          { params: Promise.resolve({ id: b.id }) },
         ),
       ),
     ]);
@@ -206,7 +206,7 @@ describe("Ultimo OWNER bajo concurrencia real", () => {
     const expulsar = (id: string) =>
       como(actor.id, org.id, () =>
         deleteMember(new NextRequest("http://localhost/api/users/x", { method: "DELETE" }), {
-          params: { id },
+          params: Promise.resolve({ id }),
         }),
       );
 

@@ -17,7 +17,8 @@ import { lockOrgForOwnership } from "@/lib/plan-limits";
  * Ahora: rol validado contra el enum, política de OWNER centralizada y la
  * comprobación del último owner dentro de la misma transacción que escribe.
  */
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("org.members");
   if (!auth.ok) return auth.response;
   const { orgId, userId: actorId, role: actorRole } = auth.session;
@@ -108,7 +109,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
  * Tras esto la sesión del expulsado deja de servir de inmediato: la
  * autorización relee la membresía en cada petición (ver `lib/session.ts`).
  */
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("org.members");
   if (!auth.ok) return auth.response;
   const { orgId, userId: actorId, role: actorRole } = auth.session;

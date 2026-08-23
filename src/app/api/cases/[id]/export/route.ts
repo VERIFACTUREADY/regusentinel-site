@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { generateDossierPdf } from "@/lib/pdf";
 import { logAudit } from "@/lib/audit";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("cases.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;

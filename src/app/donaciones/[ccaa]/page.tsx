@@ -14,7 +14,8 @@ export async function generateStaticParams() {
   return Object.values(CCAA_CONTENT).map((c) => ({ ccaa: c.slug }));
 }
 
-export async function generateMetadata({ params }: { params: { ccaa: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ ccaa: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const content = getCCAABySlug(params.ccaa);
   if (!content) return {};
   const label = CCAA_LABELS[content.ccaa];
@@ -49,7 +50,8 @@ function formatEUR(n: number) {
   return n.toLocaleString("es-ES", { maximumFractionDigits: 0 }) + " €";
 }
 
-export default function DonacionCCAAPage({ params }: { params: { ccaa: string } }) {
+export default async function DonacionCCAAPage(props: { params: Promise<{ ccaa: string }> }) {
+  const params = await props.params;
   const content = getCCAABySlug(params.ccaa);
   if (!content) return notFound();
 

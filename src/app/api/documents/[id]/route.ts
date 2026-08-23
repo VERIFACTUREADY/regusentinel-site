@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getPresignedUrl, deleteFile } from "@/lib/s3";
 import { logAudit } from "@/lib/audit";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("documents.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -22,7 +23,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({ downloadUrl });
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("documents.delete");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -87,7 +89,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
  * Los documentos internos son privados por defecto. Este endpoint es la vía
  * explícita para compartir uno con la familia (y para dejar de compartirlo).
  */
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("documents.update");
   if (!auth.ok) return auth.response;
   const session = auth.session;

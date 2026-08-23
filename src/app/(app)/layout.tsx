@@ -100,7 +100,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // la exención de /billing ya no depende de un header ausente. Si aun así
     // faltara, se falla cerrado (pantalla de suspensión) salvo para el OWNER,
     // que necesita llegar a Facturación para reactivar el plan.
-    const pathname = headers().get("x-pathname") ?? "";
+    const pathname = (await headers()).get("x-pathname") ?? "";
     const isExempt = SUSPENSION_EXEMPT_PATHS.some(
       (p) => pathname === p || pathname.startsWith(`${p}/`),
     );

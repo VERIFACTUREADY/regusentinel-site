@@ -139,8 +139,8 @@ describe("4. Dos reintentos simultaneos: una sola entrega", () => {
     const { org, owner, correos, log } = await escenarioConFallos(2);
 
     const [a, b] = await Promise.all([
-      como(owner.id, org.id, () => reintentar(peticion(), { params: { id: log.id } })),
-      como(owner.id, org.id, () => reintentar(peticion(), { params: { id: log.id } })),
+      como(owner.id, org.id, () => reintentar(peticion(), { params: Promise.resolve({ id: log.id }) })),
+      como(owner.id, org.id, () => reintentar(peticion(), { params: Promise.resolve({ id: log.id }) })),
     ]);
 
     // LO DECISIVO: el proveedor se llamo una vez por destinatario fallido.
@@ -160,7 +160,7 @@ describe("5. Aislamiento entre organizaciones", () => {
     const otra = await createOrg();
 
     const res = await como(otra.owner.id, otra.org.id, () =>
-      reintentar(peticion(), { params: { id: log.id } }),
+      reintentar(peticion(), { params: Promise.resolve({ id: log.id }) }),
     );
 
     expect(res.status).toBe(404);
@@ -177,7 +177,7 @@ describe("5. Aislamiento entre organizaciones", () => {
     const otra = await createOrg();
 
     const inexistente = await como(otra.owner.id, otra.org.id, () =>
-      reintentar(peticion(), { params: { id: "log-que-no-existe" } }),
+      reintentar(peticion(), { params: Promise.resolve({ id: "log-que-no-existe" }) }),
     );
 
     expect(inexistente.status).toBe(404);
@@ -200,7 +200,7 @@ describe("6. Permisos", () => {
     const { org, log } = await escenarioConFallos(2);
     const viewer = await miembro(org.id, "VIEWER");
 
-    const res = await como(viewer, org.id, () => reintentar(peticion(), { params: { id: log.id } }));
+    const res = await como(viewer, org.id, () => reintentar(peticion(), { params: Promise.resolve({ id: log.id }) }));
 
     expect(res.status).toBe(403);
     expect(llamadas).toHaveLength(0);
@@ -211,7 +211,7 @@ describe("6. Permisos", () => {
     const operator = await miembro(org.id, "OPERATOR");
 
     const res = await como(operator, org.id, () =>
-      reintentar(peticion(), { params: { id: log.id } }),
+      reintentar(peticion(), { params: Promise.resolve({ id: log.id }) }),
     );
 
     expect(res.status).toBe(403);
@@ -223,7 +223,7 @@ describe("6. Permisos", () => {
     const manager = await miembro(org.id, "MANAGER");
 
     const res = await como(manager, org.id, () =>
-      reintentar(peticion(), { params: { id: log.id } }),
+      reintentar(peticion(), { params: Promise.resolve({ id: log.id }) }),
     );
 
     expect(res.status).toBe(200);
@@ -232,7 +232,7 @@ describe("6. Permisos", () => {
 
   it("sin sesion, 401", async () => {
     const { log } = await escenarioConFallos(2);
-    const res = await reintentar(peticion(), { params: { id: log.id } });
+    const res = await reintentar(peticion(), { params: Promise.resolve({ id: log.id }) });
     expect(res.status).toBe(401);
     expect(llamadas).toHaveLength(0);
   });
@@ -243,7 +243,7 @@ describe("7 y 8. Solo los fallidos; los enviados no repiten", () => {
     const { org, owner, correos, log } = await escenarioConFallos(2);
 
     const res = await como(owner.id, org.id, () =>
-      reintentar(peticion(), { params: { id: log.id } }),
+      reintentar(peticion(), { params: Promise.resolve({ id: log.id }) }),
     );
     const cuerpo = await res.json();
 
@@ -265,7 +265,7 @@ describe("7 y 8. Solo los fallidos; los enviados no repiten", () => {
     fallan.add(correos[0]);
 
     const res = await como(owner.id, org.id, () =>
-      reintentar(peticion(), { params: { id: log.id } }),
+      reintentar(peticion(), { params: Promise.resolve({ id: log.id }) }),
     );
     const cuerpo = await res.json();
 
@@ -289,7 +289,7 @@ describe("9. PROCESSING colgado se recupera desde el endpoint", () => {
     });
 
     const res = await como(owner.id, org.id, () =>
-      reintentar(peticion(), { params: { id: log.id } }),
+      reintentar(peticion(), { params: Promise.resolve({ id: log.id }) }),
     );
     const cuerpo = await res.json();
 
@@ -313,7 +313,7 @@ describe("El contenido no viene del cliente", () => {
       }),
     });
 
-    const res = await como(owner.id, org.id, () => reintentar(maliciosa, { params: { id: log.id } }));
+    const res = await como(owner.id, org.id, () => reintentar(maliciosa, { params: Promise.resolve({ id: log.id }) }));
 
     expect(res.status).toBe(200);
     // Solo el destinatario real de la ejecucion; nada de lo enviado por el cliente.
@@ -326,7 +326,7 @@ describe("Auditoria", () => {
   it("el reintento queda registrado", async () => {
     const { org, owner, log } = await escenarioConFallos(2);
 
-    await como(owner.id, org.id, () => reintentar(peticion(), { params: { id: log.id } }));
+    await como(owner.id, org.id, () => reintentar(peticion(), { params: Promise.resolve({ id: log.id }) }));
 
     const entrada = await prisma.auditLog.findFirst({
       where: { orgId: org.id, action: "workflow.retry" },

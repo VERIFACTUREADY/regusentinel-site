@@ -12,10 +12,8 @@ const bodySchema = z.object({
   days: z.number().int().min(1).max(90),
 });
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const verified = await getVerifiedUser();
   const session = verified ? { user: verified } : null;
   // Solo el equipo de Heredia (ADMIN_EMAILS whitelist) puede otorgar trials

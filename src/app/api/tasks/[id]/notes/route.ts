@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("tasks.read");
   if (!auth.ok) return auth.response;
   const session = auth.session;
@@ -31,7 +32,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
  * visible para todos, colada bajo un permiso de lectura. Pide `tasks.update`,
  * que es lo que corresponde a modificar una tarea.
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireOrgPermission("tasks.update");
   if (!auth.ok) return auth.response;
   const session = auth.session;

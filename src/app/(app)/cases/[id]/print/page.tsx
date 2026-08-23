@@ -27,7 +27,8 @@ const CASE_STATUS_ES: Record<string, string> = {
   ARCHIVED: "Archivado",
 };
 
-export default async function CasePrintPage({ params }: { params: { id: string } }) {
+export default async function CasePrintPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getVerifiedSession();
   if (!session) redirect("/login");
   if (!hasPermission(session.user.role, "cases.read")) redirect("/dashboard");
