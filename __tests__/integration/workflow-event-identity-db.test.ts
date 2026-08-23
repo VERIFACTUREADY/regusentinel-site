@@ -44,6 +44,7 @@ vi.mock("../../src/lib/email", () => ({
 
 import { prisma, resetDatabase, createOrg, createCase } from "./helpers/db";
 import { triggerWorkflow, claveDeEvento, claveEjecucion } from "../../src/lib/workflow-engine";
+import { logAudit } from "../../src/lib/audit";
 
 beforeAll(async () => {
   await resetDatabase();
@@ -125,16 +126,15 @@ describe("5. La identidad que fabrican los emisores reales", () => {
     expect(claveDeEvento.documentoSubido("doc_1")).toBe(a);
   });
 
-  it("dos transiciones distintas de la misma tarea son DOS hechos", () => {
-    const primera = new Date("2026-08-22T10:00:00.000Z");
-    const segunda = new Date("2026-08-22T10:00:30.000Z");
-    expect(claveDeEvento.estadoTarea("t1", primera)).not.toBe(
-      claveDeEvento.estadoTarea("t1", segunda),
-    );
-    // Media hora entre ellas o treinta segundos da igual: son dos versiones
-    // distintas de la fila, y por tanto dos hechos.
-    expect(claveDeEvento.estadoTarea("t1", primera)).toBe(
-      claveDeEvento.estadoTarea("t1", new Date(primera)),
+  it("dos transiciones distintas son DOS hechos, aunque sean de la misma fila", () => {
+    /*
+     * Cada transición escribe su propia fila en la auditoría, así que dos
+     * transiciones de la misma tarea nunca comparten identidad —ni siquiera si
+     * ocurren en el mismo milisegundo, que era el límite conocido de la
+     * identidad anterior basada en `updatedAt`—.
+     */
+    expect(claveDeEvento.transicionAuditada("audit_1")).not.toBe(
+      claveDeEvento.transicionAuditada("audit_2"),
     );
   });
 
@@ -144,9 +144,8 @@ describe("5. La identidad que fabrican los emisores reales", () => {
      * identidad se generase en cada emisión, dos entregas del mismo hecho
      * tendrían claves distintas y el aviso saldría dos veces.
      */
-    const version = new Date("2026-08-22T10:00:00.000Z");
-    const primeraEmision = claveDeEvento.estadoExpediente("c1", version);
-    const reentrega = claveDeEvento.estadoExpediente("c1", new Date(version.getTime()));
+    const primeraEmision = claveDeEvento.transicionAuditada("audit_1");
+    const reentrega = claveDeEvento.transicionAuditada("audit_1");
     expect(reentrega).toBe(primeraEmision);
   });
 
@@ -372,9 +371,15 @@ describe("7. La deduplicacion no se traga hechos legitimos", () => {
 
     /** Escribe la transicion y emite el evento como lo hace la ruta real. */
     async function transicion(estado: "PENDING" | "IN_PROGRESS") {
-      const actualizada = await prisma.task.update({
-        where: { id: tarea.id },
-        data: { status: estado },
+      await prisma.task.update({ where: { id: tarea.id }, data: { status: estado } });
+      // Igual que la ruta real: la fila de auditoria de la transicion es su
+      // identidad. Cada transicion escribe la suya, asi que tres transiciones
+      // son tres identidades aunque dos de ellas sean al mismo estado.
+      const registro = await logAudit({
+        orgId: org.id,
+        caseId: expediente.id,
+        action: `task.${estado.toLowerCase()}`,
+        details: `Tarea "${tarea.title}" marcada como ${estado}`,
       });
       await triggerWorkflow({
         type: "TASK_STATUS_CHANGED",
@@ -383,7 +388,7 @@ describe("7. La deduplicacion no se traga hechos legitimos", () => {
         taskId: tarea.id,
         taskStatus: estado,
         taskCategory: "OTROS",
-        eventKey: claveDeEvento.estadoTarea(tarea.id, actualizada.updatedAt),
+        eventKey: claveDeEvento.transicionAuditada(registro.id),
       });
     }
 

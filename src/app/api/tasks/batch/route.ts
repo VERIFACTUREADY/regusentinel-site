@@ -63,7 +63,16 @@ export async function PATCH(req: NextRequest) {
       : `${tasks.length} tareas desasignadas`;
 
   const caseIds = Array.from(new Set(tasks.map((t) => t.caseId)));
-  await Promise.all(caseIds.map((caseId) =>
+  /*
+   * Una fila de auditoría por expediente tocado. Su id es además la identidad
+   * de este lote: el disparo es uno por expediente y no lleva `taskId`, así que
+   * sin ella la clave sería `(org, regla, expediente, tipo, estado, ventana)` y
+   * dos lotes distintos sobre el mismo expediente con el mismo estado destino
+   * dentro de cinco minutos contarían como uno solo. Sale de una fila ya
+   * escrita, así que una reentrega del mismo lote da la misma clave —no repite
+   * el aviso— y el lote siguiente da otra.
+   */
+  const transiciones = await Promise.all(caseIds.map((caseId) =>
     logAudit({
       orgId,
       userId,
@@ -74,32 +83,10 @@ export async function PATCH(req: NextRequest) {
   ));
 
   if (status) {
-    /*
-     * La versión de las tareas DESPUÉS de escribirlas, releída de la base.
-     *
-     * El disparo es uno por expediente y no lleva `taskId`, así que su clave
-     * era `(org, regla, expediente, tipo, estado, ventana)`: dos lotes
-     * distintos sobre el mismo expediente y con el mismo estado destino dentro
-     * de cinco minutos contaban como uno solo. `updateMany` no devuelve las
-     * filas, de ahí la relectura: la identidad tiene que salir de lo
-     * persistido, no de un valor generado aquí —que cambiaría en cada
-     * reentrega del mismo lote y produciría avisos repetidos—.
-     */
-    const versiones = await prisma.task.findMany({
-      where: { id: { in: tasks.map((t) => t.id) } },
-      select: { caseId: true, updatedAt: true },
-    });
-    const versionPorExpediente = new Map<string, Date>();
-    for (const v of versiones) {
-      const previa = versionPorExpediente.get(v.caseId);
-      if (!previa || v.updatedAt > previa) versionPorExpediente.set(v.caseId, v.updatedAt);
-    }
-
     // Trigger once per unique case, not per task
     Promise.allSettled(
-      caseIds.map((caseId) => {
+      caseIds.map((caseId, i) => {
         const t = tasks.find((t) => t.caseId === caseId)!;
-        const version = versionPorExpediente.get(caseId);
         return triggerWorkflow({
           type: "TASK_STATUS_CHANGED",
           orgId,
@@ -107,7 +94,7 @@ export async function PATCH(req: NextRequest) {
           userId,
           taskStatus: status,
           taskCategory: t.category,
-          ...(version ? { eventKey: claveDeEvento.estadoTareasEnLote(caseId, version) } : {}),
+          eventKey: claveDeEvento.transicionAuditada(transiciones[i].id),
         });
       })
     ).catch(console.error);

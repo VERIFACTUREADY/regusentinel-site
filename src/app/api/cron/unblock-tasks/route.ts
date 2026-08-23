@@ -53,23 +53,25 @@ export async function GET(req: NextRequest) {
     });
     if (result.count === 0) continue;
 
-    // La versión de la tarea tras desbloquearla identifica ESTE desbloqueo.
-    // El cron puede reejecutarse; sin una identidad estable, dos pasadas que
-    // vieran la misma tarea generarían dos avisos, y sin una identidad
-    // distinta un desbloqueo posterior de la misma tarea se perdería.
-    const desbloqueada = await prisma.task.findUnique({
-      where: { id: task.id },
-      select: { updatedAt: true },
-    });
-
     unblocked++;
 
-    await logAudit({
+    /*
+     * La fila de auditoría de ESTE desbloqueo es también su identidad. El cron
+     * puede reejecutarse; sin una identidad estable, dos pasadas que vieran la
+     * misma tarea generarían dos avisos, y sin una identidad distinta un
+     * desbloqueo posterior de la misma tarea se perdería. Si la auditoría no
+     * llega a escribirse no hay identidad que dar, y se cae en la ventana
+     * temporal del motor —peor, pero declarado— en vez de inventar una.
+     */
+    const transicion = await logAudit({
       orgId: task.case.orgId,
       caseId: task.caseId,
       action: "task.unblocked",
       details: `Tarea "${task.title}" desbloqueada al vencer su fecha de espera`,
-    }).catch(console.error);
+    }).catch((err) => {
+      console.error(err);
+      return null;
+    });
 
     triggerWorkflow({
       type: "TASK_STATUS_CHANGED",
@@ -78,9 +80,7 @@ export async function GET(req: NextRequest) {
       taskId: task.id,
       taskStatus: "PENDING",
       taskCategory: task.category,
-      ...(desbloqueada
-        ? { eventKey: claveDeEvento.estadoTarea(task.id, desbloqueada.updatedAt) }
-        : {}),
+      ...(transicion ? { eventKey: claveDeEvento.transicionAuditada(transicion.id) } : {}),
     }).catch(console.error);
   }
 

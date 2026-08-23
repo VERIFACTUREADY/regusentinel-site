@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
@@ -106,13 +107,63 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return Number.isFinite(n) ? n : null;
   };
 
+  /*
+   * EL ESTADO SE ESCRIBE CON UN COMPARA-Y-INTERCAMBIA, Y SÓLO AHÍ.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Esto era un leer-comprobar-escribir sin atomicidad, igual que en las
+   * tareas: `c` se leía arriba, `case.update` escribía `status` sin condición
+   * ninguna, y más abajo se decidía si auditar comparando contra `c.status`,
+   * que a esas alturas ya podía ser falso. Dos PATCH simultáneos con destinos
+   * distintos respondían los dos 200 y **los dos afirmaban haber transicionado
+   * desde OPEN cuando sólo uno lo hizo**; el estado final era el del último en
+   * escribir, que no tiene por qué ser el que dejó la última auditoría.
+   *
+   * Ahora el `updateMany` condicionado al estado observado es la ÚNICA
+   * escritura del estado. Quien pierde la reclamación no escribe nada:
+   *
+   *   - si pedía el mismo estado que ya hay, su intención está cumplida y se
+   *     sigue con el resto de campos, pero sin auditar ni emitir por segunda
+   *     vez una transición que sólo ocurrió una;
+   *   - si pedía otro estado, se responde 409 con el estado real y no se
+   *     escribe ningún campo, porque todos vienen de la misma lectura caduca.
+   */
+  let ganaLaTransicion = false;
+  if (status) {
+    const reclamo = await prisma.case.updateMany({
+      where: { id: params.id, orgId: session.user.orgId, deletedAt: null, status: c.status },
+      data: { status, ...(status === "CLOSED" && { closedAt: new Date() }) },
+    });
+
+    if (reclamo.count === 0) {
+      const actual = await prisma.case.findFirst({
+        where: { id: params.id, orgId: session.user.orgId, deletedAt: null },
+        select: { status: true },
+      });
+      if (!actual) return NextResponse.json({ error: "Expediente no encontrado" }, { status: 404 });
+
+      if (actual.status !== status) {
+        return NextResponse.json(
+          {
+            error: `El expediente ya no está en ${c.status}: otra persona lo ha pasado a ${actual.status}. No se ha cambiado nada; revisa el estado actual antes de volver a intentarlo.`,
+            currentStatus: actual.status,
+          },
+          { status: 409 },
+        );
+      }
+    } else {
+      ganaLaTransicion = status !== c.status;
+    }
+  }
+
   const updated = await prisma.case.update({
     where: { id: params.id },
     data: {
-      ...(status && { status }),
+      // `status` y `closedAt` NO se escriben aquí: los escribe —y sólo él— el
+      // compara-y-intercambia de arriba.
       ...(notes !== undefined && { notes }),
       ...(isUrgent !== undefined && { isUrgent }),
-      ...(status === "CLOSED" && { closedAt: new Date() }),
       ...(legitimationNote !== undefined && { legitimationNote }),
       ...(consentAccepted !== undefined && {
         consentAccepted,
@@ -143,8 +194,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }),
       ...(appliedReductions !== undefined && {
         // Validamos en el detector con parseAppliedReductions; aquí
-        // sólo aseguramos que sea array o null para no romper la columna JSON.
-        appliedReductions: Array.isArray(appliedReductions) ? appliedReductions : null,
+        // sólo aseguramos que sea array o vacío para no romper la columna JSON.
+        // `Prisma.DbNull` es el NULL de la columna, que es lo que
+        // `parseAppliedReductions` espera cuando no hay reducciones.
+        appliedReductions: Array.isArray(appliedReductions)
+          ? appliedReductions
+          : Prisma.DbNull,
       }),
       ...(referenciaCatastral !== undefined && {
         // Sólo guardamos lo que parezca una RC plausible (20 caracteres
@@ -206,8 +261,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     });
   }
 
-  if (status && status !== c.status) {
-    await logAudit({
+  if (status && ganaLaTransicion) {
+    const transicion = await logAudit({
       orgId: session.user.orgId,
       userId: session.user.id,
       caseId: params.id,
@@ -223,12 +278,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       fromStatus: c.status,
       toStatus: status,
       /*
-       * La versión del expediente tras la escritura. Sin ella, volver a un
-       * estado anterior y repetir la misma transición dentro de cinco minutos
-       * daba la MISMA clave, y la segunda vez la automatización no se
-       * ejecutaba.
+       * La identidad del evento es la fila de auditoría de ESTA transición:
+       * existe porque la transición se ganó y se registró, y no existe si no.
        */
-      eventKey: claveDeEvento.estadoExpediente(params.id, updated.updatedAt),
+      eventKey: claveDeEvento.transicionAuditada(transicion.id),
     }).catch(console.error);
   }
 

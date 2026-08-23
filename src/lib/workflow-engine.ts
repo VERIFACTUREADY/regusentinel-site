@@ -129,36 +129,38 @@ export const ENTREGA_WORKFLOW_COLGADA_MS = 10 * 60 * 1000;
  *      ocurran. La ventana de cinco minutos sola no vale: colapsa hechos que
  *      de verdad son dos.
  *
- * Por eso todas salen de datos **ya persistidos**: el id de la fila creada, o
- * su `updatedAt` después de la escritura. Se leen, no se generan.
+ * Por eso todas salen de datos **ya persistidos**: el id de la fila creada. Se
+ * leen, no se generan.
  *
- * LÍMITE CONOCIDO
- * ---------------
- * Las claves de versión usan `updatedAt` con precisión de milisegundo. Dos
- * transiciones distintas de la misma tarea en el mismo milisegundo tendrían la
- * misma identidad. No es alcanzable desde la interfaz —hace falta una escritura
- * y una respuesta HTTP entre ambas— y, de darse, el error cae del lado
- * conservador: se ejecuta una vez, no dos.
+ * POR QUÉ EL ID DE LA AUDITORÍA Y NO `updatedAt`
+ * ----------------------------------------------
+ * Las claves de transición usaban antes `updatedAt` como número de versión de
+ * la fila. Funcionaba, pero tenía dos problemas y el segundo importa:
+ *
+ *   1. Precisión de milisegundo: dos transiciones distintas de la misma tarea
+ *      en el mismo milisegundo compartían identidad.
+ *   2. **Identificaba la ESCRITURA, no la TRANSICIÓN.** Cualquier otra
+ *      escritura sobre la misma fila —renombrar la tarea, reasignarla— movía
+ *      `updatedAt` sin que hubiera ninguna transición, así que la identidad de
+ *      un hecho de negocio dependía de hechos que no lo eran.
+ *
+ * Toda transición de estado escribe además su fila en `AuditLog`, y `logAudit`
+ * ya devuelve la fila creada. Ese id existe **si y sólo si** la transición se
+ * registró, es único por definición y no lo mueve nada más. Usarlo hace que
+ * **el cambio de estado, su registro en la auditoría y la identidad del evento
+ * se refieran a la misma transición de negocio ya confirmada**, sin outbox, sin
+ * tablas nuevas y sin cambiar el esquema: `logAudit` ya devolvía lo necesario.
  */
 export const claveDeEvento = {
   /** Un expediente se crea una vez: su id ES el hecho. */
   expedienteCreado: (caseId: string) => `case-created:${caseId}`,
 
-  /** La versión del expediente tras el cambio distingue una transición de otra. */
-  estadoExpediente: (caseId: string, version: Date) =>
-    `case-status:${caseId}:${version.toISOString()}`,
-
-  /** Ídem para la tarea: `updatedAt` es el número de versión de esa fila. */
-  estadoTarea: (taskId: string, version: Date) =>
-    `task-status:${taskId}:${version.toISOString()}`,
-
   /**
-   * Cambio en bloque: el hecho es «esta escritura sobre este expediente». La
-   * versión más alta de las tareas tocadas lo identifica, y cambia en el
-   * siguiente lote aunque sean las mismas tareas y el mismo estado.
+   * Una transición de estado ya auditada. El id de la fila de `AuditLog` es la
+   * identidad de esa transición concreta: existe porque la transición ocurrió,
+   * y no existe si no ocurrió.
    */
-  estadoTareasEnLote: (caseId: string, version: Date) =>
-    `task-batch:${caseId}:${version.toISOString()}`,
+  transicionAuditada: (auditLogId: string) => `audit:${auditLogId}`,
 
   /** Un documento se sube una vez: su id ES el hecho. */
   documentoSubido: (documentId: string) => `document:${documentId}`,

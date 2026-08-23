@@ -630,23 +630,57 @@ El equipo de gestión`;
       }
       return;
     }
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    fetchCase();
+    await guardarEstadoExpediente(status);
+  }
+
+  /**
+   * Cambia el estado del expediente y dice si ha ido bien.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * `updateStatus` y `confirmClose` hacían `await fetch(...)` sin mirar
+   * `res.ok` y a continuación `fetchCase()`. Cualquier rechazo del servidor
+   * —incluido el 409 con el que la ruta rechaza ahora un cambio que se apoya
+   * en una pantalla anterior a la decisión de otra persona— se traducía en que
+   * el desplegable volvía solo a su sitio SIN UNA PALABRA. Para quien lo mira
+   * eso es indistinguible de un fallo de la aplicación, y peor: se parece
+   * mucho a que sí se guardó y la pantalla va con retraso.
+   *
+   * La recarga sigue siendo la fuente de verdad, y ocurre en los dos caminos:
+   * tras un conflicto deja en pantalla el estado REAL, el que ganó, no el que
+   * se acaba de intentar. Lo que faltaba era contar lo ocurrido.
+   */
+  async function guardarEstadoExpediente(status: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+      }
+      return true;
+    } catch (e) {
+      showError(
+        `No se ha podido cambiar el estado del expediente: ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      );
+      return false;
+    } finally {
+      fetchCase();
+    }
   }
 
   async function confirmClose() {
     if (!pendingCloseStatus) return;
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: pendingCloseStatus }),
-    });
+    const estado = pendingCloseStatus;
     setClosureCheckOpen(false);
     setPendingCloseStatus(null);
     setClosureCheckResult(null);
-    fetchCase();
+    await guardarEstadoExpediente(estado);
   }
 
   /**

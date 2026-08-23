@@ -118,41 +118,85 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   /*
-   * LA TRANSICIÓN SE RECLAMA ANTES DE ESCRIBIR NADA MÁS.
+   * EL ESTADO SE ESCRIBE CON UN COMPARA-Y-INTERCAMBIA, Y SÓLO AHÍ.
    *
    * EL DEFECTO QUE CORRIGE
    * ----------------------
-   * La comprobación de «¿ha cambiado de verdad el estado?» era
-   * `status !== task.status`, con `task` leído ANTES de escribir. Eso es un
-   * leer-comprobar-escribir sin atomicidad: dos peticiones simultáneas con el
-   * mismo estado destino leían las dos el estado viejo, las dos pasaban la
-   * comprobación y las dos emitían el evento.
+   * Había ya una reclamación atómica (`updateMany` condicionado al estado
+   * leído) para decidir quién audita y quién emite el evento. Estaba bien,
+   * pero **no era el único que escribía el estado**: justo después, el
+   * `task.update` de abajo volvía a incluir `status`. Es decir, la petición
+   * que PERDÍA la reclamación —y que por tanto no auditaba ni emitía nada—
+   * escribía igualmente su estado encima del ganador.
    *
-   * Como cada escritura deja su propio `updatedAt`, los dos eventos tenían
-   * identidades distintas y el motor —con razón— los ejecutaba los dos: dos
-   * avisos al equipo, dos entradas en la auditoría y dos ejecuciones por UNA
-   * sola transición. La deduplicación del motor no puede arreglar esto,
-   * porque a él le llegan dos hechos que dicen ser distintos; hay que no
-   * inventárselos aquí.
+   * Reproducido contra la ruta real, con dos PATCH simultáneos sobre una tarea
+   * en PENDIENTE (A -> HECHA, B -> EN CURSO), el resultado era: las dos
+   * peticiones respondían 200, la base quedaba en EN CURSO y la auditoría
+   * contenía únicamente `task.done`. Es decir: **el estado cambió sin ninguna
+   * entrada de auditoría, sin evento y sin automatización**. Quien mira el
+   * historial ve una historia que no coincide con la fila. En un expediente de
+   * herencia eso es exactamente lo que no puede pasar: el histórico ES la
+   * prueba de lo que se hizo y cuándo.
    *
-   * `updateMany` condicionado al estado leído es atómico: sólo una de las dos
-   * peticiones obtiene `count === 1`, y sólo esa audita y emite. Es el mismo
-   * patrón que ya usaba el cron de desbloqueo.
+   * LA SEMÁNTICA ELEGIDA: RECHAZAR LO CADUCO, NO PISARLO
+   * ---------------------------------------------------
+   * `updateMany` condicionado al estado observado es atómico: sólo una de las
+   * dos peticiones obtiene `count === 1`, y esa reclamación es **la única
+   * escritura del estado**. La perdedora ya no escribe nada; se relee el
+   * estado real y se responde según lo que la petición pedía:
+   *
+   *   - Pedía **el mismo estado** que ya hay: su intención está cumplida. Se
+   *     responde 200 y se sigue con el resto de campos, pero NO se audita ni
+   *     se emite un segundo evento: hubo una sola transición de negocio y sólo
+   *     puede constar una vez.
+   *   - Pedía **otro estado**: la petición se apoya en una pantalla anterior a
+   *     la decisión de otra persona. Se responde **409** con el estado real y
+   *     **no se escribe absolutamente nada**, tampoco los demás campos, porque
+   *     todos salen de esa misma lectura caduca.
+   *
+   * Se descartó la alternativa (encadenar las dos como dos transiciones
+   * reales) porque deshace en silencio la decisión que un compañero acaba de
+   * tomar, basándose en una pantalla anterior a ella, y ninguno de los dos se
+   * entera. Rechazar y contar el estado real es el mismo patrón atómico que ya
+   * usan el cron de desbloqueo y las reclamaciones del motor.
    */
-  const transiciona = Boolean(status && status !== task.status);
-  let ganaLaTransicion = transiciona;
-  if (transiciona) {
+  let ganaLaTransicion = false;
+  if (status) {
     const reclamo = await prisma.task.updateMany({
       where: { id: task.id, status: task.status },
       data: { status },
     });
-    ganaLaTransicion = reclamo.count === 1;
+
+    if (reclamo.count === 0) {
+      // La fila se movió entre la lectura y la escritura.
+      const actual = await prisma.task.findFirst({
+        where: { id: task.id, case: { orgId: session.user.orgId } },
+        select: { status: true },
+      });
+      if (!actual) return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
+
+      if (actual.status !== status) {
+        return NextResponse.json(
+          {
+            error: `La tarea ya no está en ${task.status}: otra persona la ha marcado como ${actual.status}. No se ha cambiado nada; revisa el estado actual antes de volver a intentarlo.`,
+            currentStatus: actual.status,
+          },
+          { status: 409 },
+        );
+      }
+      // Mismo destino: alguien se nos adelantó con la MISMA transición. La
+      // intención está cumplida, así que esto es un éxito idempotente; lo que
+      // no puede es constar dos veces.
+    } else {
+      ganaLaTransicion = status !== task.status;
+    }
   }
 
   const updated = await prisma.task.update({
     where: { id: task.id },
     data: {
-      ...(status && { status }),
+      // `status` NO se escribe aquí: lo escribe —y sólo él— el
+      // compara-y-intercambia de arriba.
       ...(assigneeId !== undefined && { assigneeId: assigneeId ?? null }),
       ...(status === "BLOCKED" && {
         blockReason: blockReason ?? null,
@@ -170,8 +214,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     },
   });
 
-  if (status && transiciona && ganaLaTransicion) {
-    await logAudit({
+  if (status && ganaLaTransicion) {
+    const transicion = await logAudit({
       orgId: session.user.orgId,
       userId: session.user.id,
       caseId: params.id,
@@ -187,12 +231,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       taskStatus: status,
       taskCategory: task.category,
       /*
-       * La versión de la tarea tras la escritura. Sin ella la clave era
-       * `(tarea, estado, ventana)`: pasar a EN CURSO, volver a PENDIENTE y
-       * volver a EN CURSO dentro de cinco minutos se tragaba la tercera
-       * transición, y el aviso no salía la segunda vez.
+       * La identidad del evento es la fila de auditoría que acaba de
+       * registrar ESTA transición. Sólo existe si la transición se ganó y se
+       * registró, así que estado, historial y evento hablan del mismo hecho.
        */
-      eventKey: claveDeEvento.estadoTarea(taskId, updated.updatedAt),
+      eventKey: claveDeEvento.transicionAuditada(transicion.id),
     }).catch(console.error);
 
     // When a task is completed, notify assignees of tasks that were waiting on it
