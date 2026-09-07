@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { detectISDRisks, parseAppliedReductions } from "../src/lib/isd-risk-detector";
+import { addMonths } from "../src/lib/deadline-engine";
 
 function isoYearsAhead(years: number, extraDays = 0): string {
   const d = new Date();
@@ -21,6 +22,28 @@ function daysAgo(d: number): Date {
   return date;
 }
 
+/**
+ * Fecha de fallecimiento cuyo plazo de ISD cae DENTRO DE `dias` días.
+ *
+ * EL DEFECTO QUE CORRIGE
+ * ----------------------
+ * Estos casos usaban `daysAgo(176)` dando por supuesto que seis meses son 182
+ * días. No lo son: dependen de qué meses. Con la fecha de ejecución del
+ * 2026-09-07, un fallecimiento 176 días antes es el 2026-03-15 y su plazo
+ * vence el 2026-09-15, o sea a OCHO días vista; el umbral crítico es `≤ 7`, así
+ * que la alerta no saltaba y la prueba fallaba. El detector estaba bien: lo que
+ * estaba mal era el supuesto del fixture.
+ *
+ * Se invierte la regla de verdad —`addMonths(fallecimiento, 6)`, la misma que
+ * usa `isdDeadlineFor`— en lugar de contar días a ojo. Así el caso vale
+ * cualquier día del año.
+ */
+function muerteParaPlazoISDEn(dias: number): Date {
+  const limite = new Date();
+  limite.setDate(limite.getDate() + dias);
+  return addMonths(limite, -6);
+}
+
 describe("detectISDRisks", () => {
   it("returns no risks when deathDate is missing", () => {
     expect(detectISDRisks({ deathDate: null, province: "madrid" })).toEqual([]);
@@ -35,7 +58,7 @@ describe("detectISDRisks", () => {
   });
 
   it("flags ISD critical (≤7d)", () => {
-    const risks = detectISDRisks({ deathDate: daysAgo(176), province: "madrid" });
+    const risks = detectISDRisks({ deathDate: muerteParaPlazoISDEn(5), province: "madrid" });
     const critical = risks.find((r) => r.id === "isd_critical");
     expect(critical).toBeDefined();
     expect(critical!.severity).toBe("critical");
@@ -56,7 +79,7 @@ describe("detectISDRisks", () => {
   });
 
   it("does not flag extension when ISD is already in critical zone", () => {
-    const risks = detectISDRisks({ deathDate: daysAgo(176), province: "madrid" });
+    const risks = detectISDRisks({ deathDate: muerteParaPlazoISDEn(5), province: "madrid" });
     expect(risks.find((r) => r.id === "extension_window_closing")).toBeUndefined();
   });
 
@@ -228,7 +251,7 @@ describe("detectISDRisks — plusvalía municipal (IIVTNU)", () => {
 
   it("flagea plusvalía crítica (≤7 días) cuando hay inmueble urbano", () => {
     const risks = detectISDRisks({
-      deathDate: daysAgo(176),
+      deathDate: muerteParaPlazoISDEn(5),
       province: "madrid",
       hasUrbanProperty: true,
     });

@@ -99,20 +99,91 @@ const ACEPTADAS_EN_DESARROLLO = {
   },
 };
 
-function auditar(argumentos) {
+/**
+ * Fallo OPERATIVO de la auditoría: no hemos podido saber si hay
+ * vulnerabilidades. Es distinto de «hay vulnerabilidades», y se trata distinto.
+ */
+class ErrorDeAuditoria extends Error {
+  constructor(etapa, motivo) {
+    super(`${etapa}: ${motivo}`);
+    this.etapa = etapa;
+    this.motivo = motivo;
+  }
+}
+
+/**
+ * Ejecuta `npm audit --json` y devuelve un informe QUE DE VERDAD LO SEA.
+ *
+ * EL DEFECTO QUE CORRIGE — LA PUERTA SE ABRÍA SOLA
+ * ------------------------------------------------
+ * `npm audit` sale con código != 0 en dos situaciones que no se parecen en
+ * nada: cuando ENCUENTRA vulnerabilidades y cuando NO HA PODIDO MIRAR (registro
+ * caído, 401, sin red). Esta función trataba las dos igual: parseaba
+ * `err.stdout` y devolvía lo que saliera.
+ *
+ * El problema es que un fallo operativo también devuelve JSON válido, sólo que
+ * con esta forma:
+ *
+ *     { "error": { "code": "E401", "summary": "Unable to authenticate…" } }
+ *
+ * Eso no tiene `vulnerabilities`, así que aguas abajo `informe.vulnerabilities
+ * ?? {}` daba `{}` y la puerta anunciaba «0 vulnerabilidades criticas, 0
+ * altas» y salía con 0. Reproducido con un `npm` de prueba que responde
+ * exactamente eso: la puerta pasaba en verde sin haber auditado nada.
+ *
+ * Una puerta de seguridad que se abre sola cuando falla la red es peor que no
+ * tenerla: da una garantía que no está prestando, y nadie vuelve a mirarla.
+ *
+ * Ahora sólo se acepta un informe con la forma de un informe. Todo lo demás
+ * —error de npm, JSON inválido, estructura incompleta— aborta con un
+ * diagnóstico accionable. No se vuelca la salida cruda: un mensaje del registro
+ * puede arrastrar cabeceras o URLs con credenciales.
+ */
+function auditar(argumentos, etapa) {
+  let salida;
   try {
-    const salida = execFileSync("npm", ["audit", "--json", ...argumentos], {
+    salida = execFileSync("npm", ["audit", "--json", ...argumentos], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       maxBuffer: 32 * 1024 * 1024,
     });
-    return JSON.parse(salida);
   } catch (err) {
-    // `npm audit` sale con código != 0 cuando encuentra algo: eso no es un
-    // fallo de ejecución, es el resultado.
-    if (err.stdout) return JSON.parse(err.stdout);
-    throw err;
+    // Código != 0 con informe por stdout es el camino NORMAL cuando hay
+    // hallazgos. Sin stdout no hay nada que interpretar.
+    if (typeof err.stdout !== "string" || err.stdout.trim() === "") {
+      throw new ErrorDeAuditoria(
+        etapa,
+        `npm audit no ha devuelto ningun informe (${err.code ?? "fallo de ejecucion"})`,
+      );
+    }
+    salida = err.stdout;
   }
+
+  let informe;
+  try {
+    informe = JSON.parse(salida);
+  } catch {
+    throw new ErrorDeAuditoria(etapa, "la salida de npm audit no es JSON valido");
+  }
+
+  // Sólo el código del error: el resumen puede traer datos del registro.
+  if (informe && informe.error) {
+    const codigo =
+      typeof informe.error === "object" ? (informe.error.code ?? "sin codigo") : "sin codigo";
+    throw new ErrorDeAuditoria(etapa, `npm audit ha fallado con ${codigo}`);
+  }
+
+  // Un informe de verdad SIEMPRE trae estas dos claves, incluso cuando está
+  // limpio (`vulnerabilities: {}`). Su ausencia significa que esto no es un
+  // informe, no que no haya nada.
+  const tieneVulns = informe && typeof informe.vulnerabilities === "object" && informe.vulnerabilities !== null;
+  const tieneMeta =
+    informe && informe.metadata && typeof informe.metadata.vulnerabilities === "object";
+  if (!tieneVulns || !tieneMeta) {
+    throw new ErrorDeAuditoria(etapa, "el informe de npm audit no tiene la forma esperada");
+  }
+
+  return informe;
 }
 
 /** Avisos de la severidad pedida, con su identificador GHSA. */
@@ -131,9 +202,32 @@ function criticasDe(informe) {
   return porSeveridad(informe, ["critical"]);
 }
 
+/**
+ * Un fallo operativo aborta con un mensaje que dice qué hacer, no con una
+ * traza. Y NUNCA con código 0: si no hemos podido auditar, no hay garantía que
+ * dar.
+ */
+function abortarPorFalloOperativo(err) {
+  console.error(`::error::La auditoria de dependencias no ha podido ejecutarse (${err.etapa}).`);
+  console.error(`  Motivo: ${err.motivo}`);
+  console.error(
+    "\nEsto NO significa que no haya vulnerabilidades: significa que no se han\n" +
+      "podido comprobar. La puerta falla a proposito.\n" +
+      "\nComprueba el acceso al registro de npm y vuelve a ejecutar:\n" +
+      "  npm audit --json --omit=dev\n",
+  );
+  process.exit(1);
+}
+
 let fallo = false;
 
-const informeProduccion = auditar(["--omit=dev"]);
+let informeProduccion;
+try {
+  informeProduccion = auditar(["--omit=dev"], "produccion");
+} catch (err) {
+  if (err instanceof ErrorDeAuditoria) abortarPorFalloOperativo(err);
+  throw err;
+}
 
 // ── 1. Producción: tolerancia cero ──────────────────────────────────────────
 const produccion = criticasDe(informeProduccion);
@@ -208,7 +302,17 @@ if (altas.length === 0) {
 }
 
 // ── 3. Desarrollo: cada crítica debe estar aceptada por escrito ─────────────
-const todas = criticasDe(auditar([]));
+let informeCompleto;
+try {
+  informeCompleto = auditar([], "arbol completo (con desarrollo)");
+} catch (err) {
+  // La segunda auditoria tampoco puede fallar en silencio: si no se ejecuta,
+  // las criticas de herramientas de desarrollo dejan de vigilarse.
+  if (err instanceof ErrorDeAuditoria) abortarPorFalloOperativo(err);
+  throw err;
+}
+
+const todas = criticasDe(informeCompleto);
 const soloDesarrollo = todas.filter((v) => !produccion.some((p) => p.nombre === v.nombre));
 
 const noAceptadas = [];

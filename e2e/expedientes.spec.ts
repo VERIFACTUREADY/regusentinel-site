@@ -211,12 +211,36 @@ test.describe("Expedientes: listado, busqueda y filtros", () => {
   test("el filtro de provincia llega al servidor y reduce la lista", async ({ page }) => {
     const total = await totalAnunciado(page);
 
+    /*
+     * Se anotan TODAS las peticiones al listado y luego se exige que alguna
+     * lleve el filtro.
+     *
+     * Antes era un `waitForRequest` a la primera peticion que encajara con
+     * `/api/cases?`. La carga inicial de la pagina dispara su propia peticion,
+     * y si seguia en vuelo al tocar el filtro se capturaba ESA: la asercion
+     * leia entonces la URL de la carga inicial —`?page=1&limit=25`, sin
+     * filtros— y fallaba sin que el filtro tuviera nada malo. Ocurrio en una
+     * ejecucion completa; en aislamiento pasa 6 de 6, que es la firma de una
+     * carrera, no de un defecto del producto.
+     *
+     * La exigencia es la misma: seleccionar Madrid tiene que producir una
+     * peticion con `province=Madrid`. Si el filtro no llega al servidor, esto
+     * agota la espera y falla igual.
+     */
+    const peticiones: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/cases?")) peticiones.push(r.url());
+    });
+
     const selectProvincia = page.locator("select").nth(2);
-    const [peticion] = await Promise.all([
-      page.waitForRequest((r) => r.url().includes("/api/cases?"), { timeout: 20_000 }),
-      selectProvincia.selectOption("Madrid"),
-    ]);
-    expect(peticion.url()).toContain("province=Madrid");
+    await selectProvincia.selectOption("Madrid");
+
+    await expect
+      .poll(() => peticiones.some((u) => u.includes("province=Madrid")), {
+        message: "el filtro de provincia no ha llegado a la peticion del listado",
+        timeout: 20_000,
+      })
+      .toBe(true);
 
     await expect(async () => {
       const filtrado = await totalAnunciado(page);

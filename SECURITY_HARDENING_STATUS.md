@@ -1451,3 +1451,101 @@ Pruebas en `__tests__/vercel-crons.test.ts`, comprobadas una a una contra el
 comportamiento anterior: fallan si el workflow vuelve a ofrecer otros endpoints,
 si vuelve a guardar o imprimir el cuerpo de la respuesta, o si desaparece el
 respaldo diario de `vercel.json`.
+
+---
+
+## 2026-09-07 — Parche de seguridad de Next.js 15.5 y fail-open de la puerta
+
+Fase acotada de dependencias sobre `d2cdae635aab933e96ff79bd6a1a4f77da82b7ce`.
+No sustituye a lo anterior: lo de arriba sigue siendo el registro de sus fechas.
+
+### Next.js 15.5.21 → 15.5.25
+
+La versión que teníamos entraba en el rango afectado de dos avisos **críticos**
+publicados el 25 de agosto de 2026, ambos corregidos en **15.5.24**:
+
+| Aviso | CVSS | Rango afectado | Aplicabilidad en Heredia |
+|---|---|---|---|
+| [GHSA-2xp9-vwfh-vxw4](https://github.com/vercel/next.js/security/advisories/GHSA-2xp9-vwfh-vxw4) | 9,5 | 10.0.0 – 15.5.23 | **Superficie presente.** RCE en `libheif` al optimizar AVIF, por la vía de `sharp`. La aplicación no usa `next/image` en ningún componente, pero el endpoint `/_next/image` existe en el despliegue |
+| [GHSA-p293-qw3h-jr36](https://github.com/vercel/next.js/security/advisories/GHSA-p293-qw3h-jr36) | 9,0 | 13.4 – 15.5.23 | **No explotable aquí.** Path traversal → RCE que el propio aviso limita a servidores sobre sistema de ficheros **Windows**; Heredia se despliega en el runtime gestionado de Vercel (Linux) |
+
+Se elige **15.5.25**, cabeza actual de la línea mantenida (`dist-tag: backport`),
+no `latest` —que es 16.3.4— ni un salto de mayor. 15.5.25 no revierte la
+mitigación de 15.5.24: la hace condicional, reactivando AVIF **sólo si hay un
+`sharp` lo bastante nuevo**, y declara ese requisito como
+`sharp: "^0.34.3 || ^0.35.4"`.
+
+### sharp 0.35.3 → 0.35.4
+
+Consecuencia directa de lo anterior: con 0.35.3 no se cumplía el rango que
+15.5.25 exige. 0.35.4 trae `sharp-libvips` 1.3.3, y **comprobado en ejecución**:
+`libvips 8.18.6`, `libheif 1.23.2`.
+
+### qs 6.15.3 → 6.16.0
+
+Dos avisos moderados, ambos corregidos en 6.16.0:
+[GHSA-x5fp-wj9c-mxmx](https://github.com/advisories/GHSA-x5fp-wj9c-mxmx) (elusión
+de `arrayLimit` con claves entre corchetes y comas) y
+[GHSA-4mjr-xmp4-gh2g](https://github.com/advisories/GHSA-4mjr-xmp4-gh2g) (DoS en
+`qs.stringify` por `constructor.isBuffer` no invocable). `qs` entra sólo por
+`stripe` (`^6.11.0`), rango que 6.16.0 satisface; se sube el `override` que ya
+existía.
+
+### Discrepancia que conviene conocer
+
+`npm audit --omit=dev` **no informó de los dos avisos de Next.js**, ni antes ni
+después: sobre la versión vulnerable declaraba 0 altas y 0 críticas de
+producción, y su único hallazgo era `qs`. No se ha determinado la causa y no se
+infiere ninguna. La consecuencia práctica sí es clara: **`npm audit` no basta
+como fuente**, y esta fase se ha decidido leyendo los avisos oficiales.
+
+### Fail-open en `scripts/audit-gate.mjs` — reproducido y corregido
+
+`npm audit` sale con código != 0 en dos situaciones que no se parecen en nada:
+cuando **encuentra** vulnerabilidades y cuando **no ha podido mirar**. La puerta
+las trataba igual. Un fallo operativo devuelve JSON válido con esta forma:
+
+```json
+{ "error": { "code": "E401", "summary": "Unable to authenticate…" } }
+```
+
+Sin `vulnerabilities`, el recuento daba cero. Reproducido con un `npm` de prueba
+que responde exactamente eso: la puerta imprimía «0 vulnerabilidades criticas,
+0 altas» y **salía con 0**. Una caída del registro ponía en verde la puerta de
+seguridad. Se reprodujo además un segundo caso: el fallo de la **segunda**
+auditoría (árbol con desarrollo) también pasaba en silencio.
+
+Ahora sólo se acepta un informe con forma de informe —`vulnerabilities` y
+`metadata.vulnerabilities`—; error de npm, JSON inválido o estructura incompleta
+abortan con código 1 y un diagnóstico accionable. Del error sólo se imprime el
+**código**: el resumen del registro puede arrastrar cabeceras o URLs con
+credenciales. La política de severidades y las excepciones escritas **no
+cambian**, y no se ha añadido ninguna entrada nueva a las listas.
+
+Pruebas en `__tests__/audit-gate.test.ts` (8), que ejecutan el script real con un
+`npm` de prueba en el PATH: informe limpio, informe con hallazgos y código != 0,
+error operativo en JSON, salida no-JSON, estructura incompleta, npm sin salida,
+fallo en la segunda auditoría y no filtración del detalle del registro.
+
+### Defecto preexistente que bloqueaba la validación
+
+`__tests__/isd-risk-detector.test.ts` fijaba el fallecimiento con
+`daysAgo(176)`, dando por supuesto que seis meses son 182 días. Ejecutado el
+2026-09-07 el plazo caía a **ocho** días y el umbral crítico es `≤ 7`, así que
+dos casos fallaban. **El detector estaba bien; el supuesto del fixture, no.**
+Comprobado que fallaban igual sin los cambios de esta fase. Se invierte la regla
+real (`addMonths(fecha, 6)`, la misma de `isdDeadlineFor`) en lugar de contar
+días a ojo. Ninguna aserción se ha tocado.
+
+### Carrera latente en `expedientes.spec.ts`
+
+En la ejecución completa local falló «el filtro de provincia llega al servidor
+y reduce la lista». La URL recibida era literalmente la de la carga inicial
+—`/api/cases?page=1&limit=25`, sin filtros—: `waitForRequest` había capturado
+esa petición en vuelo en lugar de la del filtro. En aislamiento pasa **6 de 6**,
+y sobre el SHA base la suite completa pasó en verde en CI, así que es una
+carrera latente de la prueba, no una regresión de 15.5.25.
+
+Corregida con el mismo patrón ya aplicado en `tareas.responsive.spec.ts`: se
+anotan las peticiones al listado y se exige que alguna lleve `province=Madrid`.
+La exigencia no cambia; deja de depender de cuál llegue antes.
