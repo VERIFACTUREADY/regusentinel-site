@@ -1549,3 +1549,138 @@ carrera latente de la prueba, no una regresión de 15.5.25.
 Corregida con el mismo patrón ya aplicado en `tareas.responsive.spec.ts`: se
 anotan las peticiones al listado y se exige que alguna lleve `province=Madrid`.
 La exigencia no cambia; deja de depender de cuál llegue antes.
+
+## 2026-09-07 (2) — Corrección: `xlsx` NO es una dependencia de desarrollo
+
+### Se corrige una conclusión anterior, y era una conclusión de seguridad
+
+El informe de la fase anterior clasificó `xlsx` (SheetJS) como **dependencia
+sólo de desarrollo** y, sobre esa base, dio por no aplicables a producción sus
+dos avisos ALTOS. **Esa conclusión era falsa.** Se apoyaba en un único dato —que
+el paquete estaba en `devDependencies`— sin comprobar quién lo importa.
+
+Lo que dice el código, comprobado:
+
+- `src/app/api/cases/import/route.ts` es una ruta de la aplicación. Acepta
+  `body.xlsx` de cualquier usuario con permiso `cases.create` y se lo pasa a
+  `xlsxToRows`.
+- `src/lib/case-import.ts` hace `import * as XLSX from "xlsx"` y llama a
+  `XLSX.read(buffer, { type: "buffer", cellDates: false })` sobre ese contenido.
+- El build de producción lo compila dentro de la ruta:
+  `.next/server/app/api/cases/import/route.js` (324 KB) contiene la cadena
+  `version="0.18.5"` y el literal `SheetJS`.
+
+Es decir: **el parser vulnerable se despliega y es alcanzable por petición
+HTTP**. La clasificación en `devDependencies` no impedía nada; `next build`
+empaqueta lo que se importa, mire donde mire el `package.json`.
+
+### Por qué la auditoría decía cero
+
+`package-lock.json` marcaba `node_modules/xlsx` con `dev: true`, así que
+`npm audit --omit=dev` lo excluía y declaraba **0 vulnerabilidades en
+producción**. Ese verde no era un hecho sobre el código desplegado: era el
+reflejo de una clasificación equivocada.
+
+**No se debe usar `npm audit --omit=dev` como prueba de que el código alcanzable
+desde una ruta es seguro.** Es la segunda vez en este expediente que `npm audit`
+resulta insuficiente como fuente única (la primera fue con los avisos de Next.js,
+que nunca reportó).
+
+### Lo que se ha corregido y lo que NO
+
+Corregido: `xlsx` pasa a `dependencies`, fijado en `0.18.5`. Con ello la
+auditoría de producción **pasa a informar 1 ALTA** (dos avisos):
+
+- `GHSA-4r6h-8v6p-xvw6` — Prototype Pollution in SheetJS.
+- `GHSA-5pgg-2g8v-p4x9` — SheetJS Regular Expression Denial of Service (ReDoS).
+
+`npm audit` los resume como «No fix available», lo cual **no significa que
+upstream no tenga parche**: significa que el registro de npm no lo tiene.
+
+**NO corregido: la versión sigue siendo la vulnerable 0.18.5.** La versión
+corregida no se publica en npm —`dist-tags.latest` de `xlsx` es `0.18.5`,
+publicada por última vez en 2022— y se distribuye desde la CDN oficial de
+SheetJS. Ese origen está **bloqueado por la política de egreso** de este
+entorno:
+
+| Host | Resultado |
+|---|---|
+| `cdn.sheetjs.com` | 403 al CONNECT (denegación de política) |
+| `docs.sheetjs.com` | 403 al CONNECT |
+| `git.sheetjs.com` | 403 al CONNECT |
+| `sheetjs.com` / `www.sheetjs.com` | 403 al CONNECT |
+
+No se ha buscado ningún rodeo: un fork no oficial o un espejo no verificable no
+son sustitutos aceptables de la distribución firmada por upstream, y sin acceso
+a la documentación oficial tampoco hay hash publicado contra el que verificar
+nada. **La puerta de auditoría se deja en ROJO a propósito**: no se ha añadido
+ninguna exclusión ni se ha tocado ningún umbral. Un rojo honesto es preferible a
+un verde obtenido reclasificando el problema.
+
+Queda como requisito de release, con el trabajo ya preparado:
+`__tests__/case-import.test.ts` fija la línea base de compatibilidad —`.xls`
+antiguo (BIFF8), fechas, tildes y eñes, celdas vacías— con el parser real, para
+que la sustitución por 0.20.3 se pueda validar en cuanto el artefacto oficial
+sea accesible.
+
+**No se ha reproducido ninguna explotación.** Lo que aquí se acredita es
+alcanzabilidad y versión, no explotabilidad.
+
+## 2026-09-07 (3) — Next 15 truncaba el cuerpo: el máximo de 20 MB era mentira
+
+### El defecto
+
+Next 15 introduce un techo propio para el cuerpo de la petición,
+`DEFAULT_BODY_CLONE_SIZE_LIMIT` = **10 MB**
+(`next/dist/server/body-streams.js`), que Next 14 no tenía. Al superarlo **no
+responde un error: trunca el cuerpo** y sigue, avisando sólo por consola
+(«Request body exceeded 10MB. Only the first 10MB will be available»).
+`req.formData()` recibe entonces un multipart cortado y lanza
+«Failed to parse body as FormData».
+
+Medido contra las **rutas reales** con la aplicación construida, antes de la
+corrección:
+
+| Bytes de archivo | Antes | Debía ser |
+|---|---|---|
+| 20 866 662 (19,9 MiB) | 500 «Error al subir archivo» | aceptado |
+| **20 971 520 (20 MiB exactos)** | **413 «supera el máximo de 20 MB»** | **aceptado** |
+| 21 495 808 (20,5 MiB) | 413 | 413 |
+| 22 020 096 (21 MiB) | 413 | 413 |
+
+La aplicación prometía 20 MB y **no admitía nada por encima de 10 MB**. Entre 10
+y 20 MB mentía con un 500 genérico; en el límite exacto mentía con un 413.
+
+La prueba de 21 MB que ya existía seguía en verde porque sólo comprobaba que
+apareciera un aviso con «supera el máximo» y que el número de documentos no
+cambiara: el mensaje salía, pero **por el motivo equivocado**.
+
+### La corrección
+
+`next.config.js` fija `experimental.middlewareClientMaxBodySize` al máximo real
+de archivo **más 1 MiB** para el armazón del multipart (separadores, cabeceras y
+nombre del campo viajan con el archivo y no son archivo). Es el único punto
+donde se puede subir ese techo: el truncamiento ocurre antes de que exista el
+handler. El techo sigue acotado; no se pasa a aceptar peticiones sin límite.
+
+`__tests__/file-policy.test.ts` añade la costura entre `next.config.js` (que es
+CommonJS y no puede importar el módulo TypeScript) y `src/lib/file-policy.ts`:
+si alguien cambia uno y no el otro, falla ahí y no en producción.
+
+### La prueba que faltaba
+
+`e2e/subida-limites.spec.ts` ejercita los **cuatro tamaños en las dos rutas** —
+ficha del expediente y portal familiar— con peticiones HTTP reales contra la
+aplicación construida, PostgreSQL real y MinIO real:
+
+- Aceptados: 201, fila con la organización correcta, `fileSize` exacto, objeto
+  presente en el bucket, bytes recuperados idénticos, y la lista y la descarga
+  ya existentes siguen valiendo.
+- Rechazados: **413** y el texto literal «El archivo supera el máximo de 20 MB.»,
+  sin fila y **sin objeto nuevo**. La ausencia del objeto se demuestra
+  comparando el listado de claves del prefijo antes y después: un listado que
+  falla no se acepta como prueba de que algo no existe.
+
+El consentimiento del portal se acepta por el camino real, con sus controles: la
+subida está detrás de esa puerta y saltársela probaría una ruta que en
+producción nadie puede alcanzar.

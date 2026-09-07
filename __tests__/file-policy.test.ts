@@ -188,3 +188,45 @@ describe("Cabeceras de descarga", () => {
     expect(h["Content-Disposition"]).not.toMatch(/[^\\]";.*"/);
   });
 });
+
+/**
+ * EL TECHO DEL CUERPO DE LA PETICION TIENE QUE DEJAR PASAR EL MAXIMO DE ARCHIVO.
+ *
+ * Next 15 trunca el cuerpo a 10 MB por defecto y no avisa con un error: el
+ * multipart llega cortado y `req.formData()` lanza. Con eso, la promesa de
+ * «maximo 20 MB» era falsa por encima de 10 MB, y un archivo de exactamente el
+ * maximo se rechazaba con un 413 que no le correspondia.
+ *
+ * `next.config.js` sube ese techo, pero su aritmetica esta escrita aparte
+ * porque es CommonJS y no puede importar este modulo de TypeScript. Esta prueba
+ * es la costura: si alguien cambia MAX_UPLOAD_MB, el margen o el techo y los
+ * dos dejan de estar de acuerdo, falla aqui en vez de fallar en produccion con
+ * una subida perdida.
+ */
+describe("Techo del cuerpo de la peticion (next.config.js)", () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const nextConfig = require("../next.config.js") as {
+    experimental?: { middlewareClientMaxBodySize?: number };
+  };
+  const techo = nextConfig.experimental?.middlewareClientMaxBodySize;
+
+  it("esta configurado de forma explicita", () => {
+    // Sin esto vuelve el defecto de 10 MB de Next y la politica deja de ser real.
+    expect(typeof techo, "next.config.js debe fijar middlewareClientMaxBodySize").toBe("number");
+  });
+
+  it("deja sitio al archivo maximo MAS el armazon del multipart", () => {
+    /*
+     * Estrictamente mayor, no «mayor o igual»: un archivo de exactamente
+     * MAX_FILE_BYTES viaja con separadores y cabeceras encima, asi que el
+     * cuerpo pesa mas que el archivo. Si el techo fuera igual al maximo, el
+     * archivo que la politica permite no cabria.
+     */
+    expect(techo!).toBeGreaterThan(MAX_FILE_BYTES);
+  });
+
+  it("sigue acotado: no se aceptan peticiones sin limite", () => {
+    // El margen es para el sobre del multipart, no una puerta abierta.
+    expect(techo!).toBeLessThanOrEqual(MAX_FILE_BYTES + 1024 * 1024);
+  });
+});

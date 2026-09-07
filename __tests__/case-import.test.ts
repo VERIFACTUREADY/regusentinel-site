@@ -221,6 +221,103 @@ describe("parseSpreadsheet", () => {
   });
 });
 
+/**
+ * LINEA BASE DEL PARSEADOR DE HOJAS DE CALCULO, ANTES DE CAMBIARLO.
+ *
+ * POR QUE ESTAN ESTAS PRUEBAS
+ * ---------------------------
+ * `xlsx` (SheetJS) 0.18.5 arrastra dos vulnerabilidades ALTAS —GHSA-4r6h-8v6p-xvw6
+ * y GHSA-5pgg-2g8v-p4x9— y la version corregida NO esta en el registro de npm:
+ * hay que traerla de la distribucion oficial. Ese cambio esta pendiente.
+ *
+ * Cuando se haga, hara falta saber QUE comportamiento habia que conservar. La
+ * pantalla de importacion anuncia `.xlsx,.xls,.csv,.txt`, pero de esos formatos
+ * el `.xls` antiguo (BIFF8) no estaba cubierto por ninguna prueba, ni tampoco
+ * las fechas. Se fija aqui, con el parseador REAL, para que una sustitucion que
+ * lo rompa se vea al momento en vez de descubrirse con la hoja de un cliente.
+ *
+ * No comprueban seguridad: comprueban compatibilidad.
+ */
+describe("Compatibilidad del parseador (linea base para sustituir SheetJS)", () => {
+  /** Igual que `buildXlsxBase64`, pero en el formato `.xls` antiguo. */
+  function buildXlsLegacyBase64(aoa: (string | number | null)[][]): string {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb, ws, "Expedientes");
+    const buffer = XLSX.write(wb, { type: "buffer", bookType: "biff8" }) as Buffer;
+    return buffer.toString("base64");
+  }
+
+  it("lee un .xls antiguo (BIFF8), que es un formato anunciado en la pantalla", () => {
+    const base64 = buildXlsLegacyBase64([
+      HEADER_ROW,
+      [
+        "Muñoz Ñáñez, José",
+        "Íñigo Aróstegui",
+        "inigo@example.com",
+        "",
+        "A Coruña",
+        "BANCOS",
+        "2026-03-14",
+        "",
+        "",
+        "",
+        "",
+      ],
+    ]);
+    const result = parseSpreadsheet(xlsxToRows(base64));
+    expect(result.errors).toEqual([]);
+    expect(result.parsed).toHaveLength(1);
+    expect(result.parsed[0].deceasedName).toBe("Muñoz Ñáñez, José");
+    expect(result.parsed[0].province).toBe("A Coruña");
+  });
+
+  it("conserva tildes, eñes y comas en los nombres", () => {
+    const rows = xlsxToRows(
+      buildXlsxBase64([
+        ["fallecido", "contacto"],
+        ["Peláez Muñoz, Ángel", "Núñez Ibáñez, Begoña"],
+      ]),
+    );
+    expect(rows[1]).toEqual(["Peláez Muñoz, Ángel", "Núñez Ibáñez, Begoña"]);
+  });
+
+  it("una fecha se lee como texto interpretable, no como numero de serie", () => {
+    /*
+     * `xlsxToRows` lee con `cellDates: false` y `raw: false`: la celda debe
+     * llegar formateada. Si volviera el numero de serie de Excel (45730 y
+     * similares), `Date.parse` lo rechazaria y la fila se perderia con un
+     * "Formato de fecha inválido" que el usuario no puede entender.
+     */
+    const rows = xlsxToRows(
+      buildXlsxBase64([
+        ["fallecido", "contacto", "email_contacto", "fecha_fallecimiento"],
+        ["María", "Antonio", "antonio@example.com", "2026-03-14"],
+      ]),
+    );
+    expect(rows[1][3]).toBe("2026-03-14");
+    const result = parseSpreadsheet(rows);
+    expect(result.errors).toEqual([]);
+    expect(result.parsed[0].deathDate).toBe("2026-03-14");
+  });
+
+  it("una celda vacia en medio no desplaza las columnas siguientes", () => {
+    // `defval: ""` es lo que lo sostiene: sin el, la fila llega corta y el
+    // telefono acabaria leyendose como provincia.
+    const rows = xlsxToRows(
+      buildXlsxBase64([
+        HEADER_ROW,
+        ["María", "Antonio", "", "600111222", "Madrid", "", "", "", "", "", ""],
+      ]),
+    );
+    const result = parseSpreadsheet(rows);
+    expect(result.errors).toEqual([]);
+    expect(result.parsed[0].contactEmail).toBe("");
+    expect(result.parsed[0].contactPhone).toBe("600111222");
+    expect(result.parsed[0].province).toBe("Madrid");
+  });
+});
+
 describe("EXPECTED_HEADERS", () => {
   it("incluye las 11 cabeceras documentadas", () => {
     expect(EXPECTED_HEADERS).toHaveLength(11);
