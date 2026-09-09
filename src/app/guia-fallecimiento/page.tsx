@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { GuiaClient } from "./guia-client";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Qué hacer tras un fallecimiento: guía de trámites paso a paso",
@@ -14,7 +16,7 @@ export const metadata: Metadata = {
     "que hacer tras un fallecimiento",
     "tramites herencia paso a paso",
   ],
-  alternates: { canonical: "https://bariturpro.com/guia-fallecimiento" },
+  alternates: { canonical: "https://heredia.app/guia-fallecimiento" },
   openGraph: {
     title: "Guía de trámites tras un fallecimiento",
     description: "Plan personalizado de trámites con plazos tras la muerte de un familiar.",
@@ -43,20 +45,14 @@ export default function GuiaFallecimientoPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/calculadora-isd" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/glosario" className="text-gray-700 hover:text-primary hidden sm:inline">Glosario</Link>
-              <Link href="/blog" className="text-gray-700 hover:text-primary hidden sm:inline">Blog</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         {/* Hero */}
-        <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
-          <div className="max-w-3xl mx-auto px-4 py-12 sm:py-14">
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-blue-900 text-white">
+          <div className="absolute inset-0 dot-grid-light opacity-30" />
+          <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl animate-float-slow" />
+          <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
+          <div className="relative max-w-3xl mx-auto px-4 py-12 sm:py-14">
             <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-400/30 rounded-full px-3 py-1 text-xs text-emerald-300 mb-4">
               <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
               Gratis · Sin registro · Plan personalizado
@@ -133,14 +129,14 @@ export default function GuiaFallecimientoPage() {
           <div className="bg-gradient-to-br from-slate-900 to-blue-900 rounded-2xl p-8 text-white text-center">
             <h2 className="text-xl font-bold mb-2">¿Eres gestoría o funeraria?</h2>
             <p className="text-blue-200 text-sm mb-5">
-              BARITUR PRO automatiza todos estos trámites para tu cartera de expedientes: plazos,
+              Heredia automatiza todos estos trámites para tu cartera de expedientes: plazos,
               documentación, portal familia y borradores del Modelo 650.
             </p>
             <Link
               href="/#demo"
               className="inline-block px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-lg text-sm transition"
             >
-              Ver BARITUR PRO →
+              Ver Heredia →
             </Link>
           </div>
         </div>
@@ -154,6 +150,7 @@ export default function GuiaFallecimientoPage() {
             profesional colegiado.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

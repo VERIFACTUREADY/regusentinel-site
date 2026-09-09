@@ -1,3 +1,4 @@
+import { isdDeadlineFor, isdExtensionRequestDeadlineFor } from "./deadline-engine";
 export interface DigestCase {
   id: string;
   ref: string;
@@ -84,7 +85,7 @@ export function buildHtmlDigest(cases: DigestCase[], now: Date, orgName?: string
   ${section("Próximos — 61 a 90 días", "#166534", upcoming)}
 
   <p style="margin-top:32px;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:16px">
-    Generado automáticamente por BARITUR PRO · ${dateStr}
+    Generado automáticamente por Heredia · ${dateStr}
   </p>
 </body>
 </html>`;
@@ -98,7 +99,8 @@ export function classifyCases(
   const result: DigestCase[] = [];
   for (const c of cases) {
     if (!c.deceased?.deathDate) continue;
-    const isdDeadline = new Date(c.deceased.deathDate.getTime() + 180 * 24 * 60 * 60 * 1000);
+    // 180 dias fijos no son seis meses: dependia del mes de fallecimiento.
+    const isdDeadline = isdDeadlineFor(c.deceased.deathDate);
     const daysRemaining = Math.ceil((isdDeadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     if (daysRemaining < 0 || daysRemaining > upcomingDays) continue;
     const urgency: DigestCase["urgency"] = daysRemaining <= 30 ? "critical" : daysRemaining <= 60 ? "warning" : "upcoming";

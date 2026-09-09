@@ -192,8 +192,9 @@ export default function ProfilePage() {
           <h2 className="font-semibold text-gray-800 mb-4">Cambiar contraseña</h2>
           <form onSubmit={handlePasswordSave} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña actual</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="perfilActual">Contraseña actual</label>
               <input
+                    id="perfilActual"
                 type="password"
                 value={currentPassword}
                 onChange={(e) => { setCurrentPassword(e.target.value); setPwError(null); }}
@@ -202,8 +203,9 @@ export default function ProfilePage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="perfilNueva">Nueva contraseña</label>
               <input
+                    id="perfilNueva"
                 type="password"
                 value={newPassword}
                 onChange={(e) => { setNewPassword(e.target.value); setPwError(null); }}
@@ -213,8 +215,9 @@ export default function ProfilePage() {
               <p className="text-xs text-gray-400 mt-1">Mínimo 8 caracteres.</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar nueva contraseña</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="perfilConfirmar">Confirmar nueva contraseña</label>
               <input
+                    id="perfilConfirmar"
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => { setConfirmPassword(e.target.value); setPwError(null); }}

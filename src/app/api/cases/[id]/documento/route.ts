@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { getTemplateBySlug, renderTemplate, DOCUMENT_TEMPLATES } from "@/lib/document-templates";
 import { generateTemplatePDF } from "@/lib/template-pdf";
@@ -13,14 +11,11 @@ export const dynamic = "force-dynamic";
 /**
  * GET: lista las plantillas disponibles con su pre-relleno desde el expediente.
  */
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "cases.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const auth = await requireOrgPermission("cases.read");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const c = await prisma.case.findFirst({
     where: { id: params.id, orgId: session.user.orgId, deletedAt: null },
@@ -65,14 +60,11 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 /**
  * POST: genera el PDF de una plantilla concreta con los valores finales.
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "cases.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const auth = await requireOrgPermission("cases.read");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const c = await prisma.case.findFirst({
     where: { id: params.id, orgId: session.user.orgId, deletedAt: null },
@@ -121,7 +113,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     remitentePhone: values.remitentePhone || "",
     recipientLabel: template.destinatario,
     place: typeof body.place === "string" ? body.place.slice(0, 80) : undefined,
-    generatedBy: org?.name ?? "BARITUR PRO",
+    generatedBy: org?.name ?? "Heredia",
     generatedAt: new Date(),
   });
 

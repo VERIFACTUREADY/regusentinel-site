@@ -29,13 +29,31 @@ export async function POST(req: NextRequest) {
 
     const passwordHash = await bcrypt.hash(password, 12);
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        passwordHash,
-        magicToken: null,
-        magicTokenExp: null,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          // El token se anula al usarlo: un enlace de invitacion o de
+          // recuperacion no puede servir dos veces.
+          magicToken: null,
+          magicTokenExp: null,
+        },
+      });
+
+      /*
+       * Si este enlace venia de una invitacion, queda aceptada.
+       *
+       * Se marcan TODAS las invitaciones pendientes de ese correo: una misma
+       * persona puede haber sido invitada por varias organizaciones, y el token
+       * es unico por usuario, asi que al fijar la contrasena entra en todas.
+       * Dejar alguna en "pendiente" haria que la pantalla ofreciera reenviar
+       * una invitacion a quien ya esta dentro.
+       */
+      await tx.invitation.updateMany({
+        where: { email: user.email, status: "PENDING" },
+        data: { status: "ACCEPTED", acceptedAt: new Date() },
+      });
     });
 
     return NextResponse.json({ message: "Contrasena actualizada correctamente." });

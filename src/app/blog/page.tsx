@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { BLOG_POSTS } from "@/lib/blog-posts";
 
 export const metadata: Metadata = {
-  title: "Blog BARITUR PRO — Guías sobre el Impuesto de Sucesiones y trámites de herencia",
+  title: "Blog Heredia — Guías sobre el Impuesto de Sucesiones y trámites de herencia",
   description:
     "Artículos sobre plazos del Modelo 650, certificados, valor de referencia del catastro, comparativas entre CCAA y trámites tras una defunción en España.",
-  alternates: { canonical: "https://bariturpro.com/blog" },
+  alternates: { canonical: "https://heredia.app/blog" },
   openGraph: {
-    title: "Blog BARITUR PRO",
+    title: "Blog Heredia",
     description: "Guías prácticas sobre ISD, Modelo 650 y trámites de herencia",
     type: "website",
   },
@@ -36,14 +38,14 @@ export default function BlogIndexPage() {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Blog",
-    name: "Blog BARITUR PRO",
+    name: "Blog Heredia",
     description: "Guías prácticas sobre ISD, Modelo 650 y trámites de herencia en España",
     blogPost: sorted.map((p) => ({
       "@type": "BlogPosting",
       headline: p.title,
       description: p.description,
       datePublished: p.publishedAt,
-      url: `https://bariturpro.com/blog/${p.slug}`,
+      url: `https://heredia.app/blog/${p.slug}`,
     })),
   };
 
@@ -52,22 +54,15 @@ export default function BlogIndexPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/calculadora-isd" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/comparador-isd" className="text-gray-700 hover:text-primary">Comparador</Link>
-              <Link href="/borrador-modelo650" className="text-gray-700 hover:text-primary hidden sm:inline">Borrador 650</Link>
-              <Link href="/blog" className="text-primary font-semibold">Blog</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         {/* Hero */}
-        <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
-          <div className="max-w-5xl mx-auto px-4 py-12 sm:py-16">
-            <h1 className="text-3xl sm:text-4xl font-bold mb-3">Blog BARITUR PRO</h1>
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-blue-900 text-white">
+          <div className="absolute inset-0 dot-grid-light opacity-30" />
+          <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl animate-float-slow" />
+          <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
+          <div className="relative max-w-5xl mx-auto px-4 py-12 sm:py-16">
+            <h1 className="text-3xl sm:text-4xl font-bold mb-3">Blog Heredia</h1>
             <p className="text-base sm:text-lg text-blue-100 max-w-2xl">
               Guías prácticas sobre el Impuesto de Sucesiones, Modelo 650, plazos legales,
               valor de referencia del Catastro y trámites tras una defunción en España.
@@ -123,6 +118,7 @@ export default function BlogIndexPage() {
             ))}
           </div>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

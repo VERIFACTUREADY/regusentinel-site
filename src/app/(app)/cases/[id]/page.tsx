@@ -1,9 +1,38 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { generateBankPack } from "@/lib/bank-pack";
 import { CASE_STATUS_COLORS, TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/constants";
+import { buildWhatsAppUrl } from "@/lib/whatsapp";
+import { buildGoogleCalendarUrl, buildIcsDataUrl } from "@/lib/calendar-export";
+import { buildCatastroConsultaUrl, buildCatastroMapaUrl } from "@/lib/catastro";
+import { useRolConocido } from "@/components/layout/rol-context";
+import { hasPermission } from "@/lib/rbac";
+import { subirAlAlmacen } from "@/lib/subida-navegador";
+
+type AppliedReductionUi = {
+  type: "VIVIENDA_HABITUAL" | "EMPRESA_FAMILIAR" | "EXPLOTACION_AGRARIA" | "DISCAPACIDAD" | "OTRA";
+  appliedDate: string;
+  maintenanceYears: number;
+  note?: string;
+};
+
+const REDUCTION_LABELS_UI: Record<AppliedReductionUi["type"], string> = {
+  VIVIENDA_HABITUAL: "Vivienda habitual",
+  EMPRESA_FAMILIAR: "Empresa familiar",
+  EXPLOTACION_AGRARIA: "Explotación agraria",
+  DISCAPACIDAD: "Discapacidad",
+  OTRA: "Otra",
+};
+
+const DEFAULT_MAINTENANCE_YEARS: Record<AppliedReductionUi["type"], number> = {
+  VIVIENDA_HABITUAL: 5,
+  EMPRESA_FAMILIAR: 10,
+  EXPLOTACION_AGRARIA: 5,
+  DISCAPACIDAD: 5,
+  OTRA: 5,
+};
 import { IsdRisksBanner } from "@/components/isd-risks-banner";
 import { CaseHealthCard } from "@/components/case-health-card";
 import { CaseDocumentGenerator } from "@/components/case-document-generator";
@@ -16,6 +45,14 @@ interface CaseDetail {
   categories: string[]; province: string | null; notes: string | null;
   portalToken: string; portalEnabled: boolean;
   consentAccepted: boolean; consentDate: string | null; legitimationNote: string | null;
+  hasUrbanProperty: boolean;
+  referenciaCatastral: string | null;
+  propertyAcquisitionValue: number | null;
+  propertyTransmissionValue: number | null;
+  preexistingPatrimony: number | null;
+  recentResidenceChange: boolean;
+  previousResidenceProvince: string | null;
+  appliedReductions: AppliedReductionUi[] | null;
   deceased: { fullName: string; deathDate: string | null; dni: string | null } | null;
   contact: { fullName: string; phone: string | null; email: string | null; relationship: string | null } | null;
   tasks: any[]; documents: any[]; approvals: any[]; auditLogs: any[];
@@ -27,9 +64,22 @@ export default function CaseDetailPage() {
   const params = useParams();
   const router = useRouter();
   const caseId = params.id as string;
+  /*
+   * Cortesia con el usuario, no control de acceso: quien decide sigue siendo
+   * el servidor. Un VIEWER no debe ver un boton que solo le lleva a un 403.
+   */
+  const rol = useRolConocido();
+  const puedeBorrar = Boolean(rol && hasPermission(rol, "cases.delete"));
+  // Documentos tienen su propio permiso: un VIEWER solo tiene los `.read`, y
+  // ofrecerle "Subir documento" o la papelera era enseñarle botones que el
+  // servidor rechaza con 403. La autorizacion del backend sigue siendo la que
+  // manda y se prueba por separado.
+  const puedeSubirDocs = Boolean(rol && hasPermission(rol, "documents.create"));
+  const puedeBorrarDocs = Boolean(rol && hasPermission(rol, "documents.delete"));
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
+  const [errorAnalisis, setErrorAnalisis] = useState<string | null>(null);
   const [templates, setTemplates] = useState<any[]>([]);
   const [caseTemplates, setCaseTemplates] = useState<any[]>([]);
   const [applyTplOpen, setApplyTplOpen] = useState(false);
@@ -89,10 +139,34 @@ export default function CaseDetailPage() {
   const [deceasedEditOpen, setDeceasedEditOpen] = useState(false);
   const [contactEditOpen, setContactEditOpen] = useState(false);
   const [detailsEditOpen, setDetailsEditOpen] = useState(false);
+  const [fiscalEditOpen, setFiscalEditOpen] = useState(false);
   const [deceasedForm, setDeceasedForm] = useState({ fullName: "", deathDate: "", dni: "" });
   const [contactForm, setContactForm] = useState({ fullName: "", phone: "", email: "", relationship: "" });
   const [detailsForm, setDetailsForm] = useState({ province: "", categories: [] as string[], hasDeceasedInsurance: false });
+  const [fiscalForm, setFiscalForm] = useState({
+    hasUrbanProperty: false,
+    referenciaCatastral: "",
+    propertyAcquisitionValue: "",
+    propertyTransmissionValue: "",
+    preexistingPatrimony: "",
+    recentResidenceChange: false,
+    previousResidenceProvince: "",
+    appliedReductions: [] as AppliedReductionUi[],
+  });
   const [infoSaving, setInfoSaving] = useState(false);
+  /*
+   * Borrado individual del expediente.
+   *
+   * `DELETE /api/cases/[id]` existia y estaba autorizado, pero no habia forma
+   * de llegar a el desde la interfaz: solo se podia borrar en lote desde el
+   * listado, marcando la casilla del expediente. Desde la ficha, que es donde
+   * uno decide que ya no quiere ese expediente, no habia boton.
+   *
+   * La confirmacion se pinta en el DOM en vez de usar `window.confirm` para
+   * que se pueda leer, navegar con teclado y comprobar.
+   */
+  const [confirmarBorrado, setConfirmarBorrado] = useState(false);
+  const [borrando, setBorrando] = useState(false);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [addTaskForm, setAddTaskForm] = useState({ title: "", category: "OTROS", description: "", deadline: "", assigneeId: "" });
   const [addTaskSaving, setAddTaskSaving] = useState(false);
@@ -200,11 +274,21 @@ El equipo de gestión`;
   async function fetchAnalysis() {
     try {
       const res = await fetch(`/api/cases/${caseId}/analyze`);
-      if (res.ok) {
-        const data = await res.json();
-        setAnalysis(data.analysis);
+      if (!res.ok) {
+        throw new Error(
+          res.status === 401
+            ? "Tu sesion ha caducado. Vuelve a entrar."
+            : `El servidor ha respondido ${res.status}.`,
+        );
       }
-    } catch {}
+      const data = await res.json();
+      setErrorAnalisis(null);
+      setAnalysis(data.analysis);
+    } catch (e) {
+      // Antes: `catch {}`. El analisis simplemente no aparecia y el usuario no
+      // sabia si es que no habia ninguno o si habia fallado.
+      setErrorAnalisis(e instanceof Error ? e.message : "Error de red. Comprueba tu conexion.");
+    }
   }
 
   async function openChat() {
@@ -479,12 +563,17 @@ El equipo de gestión`;
     if (res.ok) setCaseTemplates(await res.json());
   }
 
-  async function fetchPortalMessages() {
+  async function fetchPortalMessages(markRead = false) {
     const res = await fetch(`/api/cases/${caseId}/portal-messages`);
     if (res.ok) {
       const data = await res.json();
       setPortalMessages(data);
       setPortalUnread(data.filter((m: any) => m.fromFamily && !m.readAt).length);
+      // Marcar como leido es una escritura explicita (PUT); el GET ya no muta.
+      if (markRead && data.some((m: any) => m.fromFamily && !m.readAt)) {
+        await fetch(`/api/cases/${caseId}/portal-messages`, { method: "PUT" }).catch(() => {});
+        setPortalUnread(0);
+      }
     }
   }
 
@@ -542,23 +631,100 @@ El equipo de gestión`;
       }
       return;
     }
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    fetchCase();
+    await guardarEstadoExpediente(status);
+  }
+
+  /**
+   * Cambia el estado del expediente y dice si ha ido bien.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * `updateStatus` y `confirmClose` hacían `await fetch(...)` sin mirar
+   * `res.ok` y a continuación `fetchCase()`. Cualquier rechazo del servidor
+   * —incluido el 409 con el que la ruta rechaza ahora un cambio que se apoya
+   * en una pantalla anterior a la decisión de otra persona— se traducía en que
+   * el desplegable volvía solo a su sitio SIN UNA PALABRA. Para quien lo mira
+   * eso es indistinguible de un fallo de la aplicación, y peor: se parece
+   * mucho a que sí se guardó y la pantalla va con retraso.
+   *
+   * La recarga sigue siendo la fuente de verdad, y ocurre en los dos caminos:
+   * tras un conflicto deja en pantalla el estado REAL, el que ganó, no el que
+   * se acaba de intentar. Lo que faltaba era contar lo ocurrido.
+   */
+  async function guardarEstadoExpediente(status: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+      }
+      return true;
+    } catch (e) {
+      showError(
+        `No se ha podido cambiar el estado del expediente: ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      );
+      return false;
+    } finally {
+      fetchCase();
+    }
   }
 
   async function confirmClose() {
     if (!pendingCloseStatus) return;
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: pendingCloseStatus }),
-    });
+    const estado = pendingCloseStatus;
     setClosureCheckOpen(false);
     setPendingCloseStatus(null);
     setClosureCheckResult(null);
-    fetchCase();
+    await guardarEstadoExpediente(estado);
+  }
+
+  /**
+   * Cambia algo de una tarea y dice si ha ido bien.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Cinco funciones —cambiar estado, asignar, poner dependencia, poner plazo y
+   * renombrar— hacian `await fetch(...)` y a continuacion `fetchCase()`, sin
+   * mirar `res.ok` ni capturar nada. Cuando el servidor rechazaba (un asignado
+   * de otra organizacion, una dependencia ciclica, un 500), la recarga
+   * devolvia el valor ANTIGUO y el desplegable volvia solo a su sitio: el
+   * usuario veia su cambio deshacerse sin una palabra. Con la red caida era
+   * peor, porque `fetch` lanzaba y la promesa quedaba rechazada sin capturar.
+   *
+   * La recarga sigue siendo la fuente de verdad; lo que faltaba era contar el
+   * resultado.
+   */
+  async function guardarTarea(cuerpo: Record<string, unknown>, queEs: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/cases/${caseId}/tasks`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cuerpo),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+      }
+      showSuccess(`${queEs} guardado.`);
+      fetchCase();
+      return true;
+    } catch (e) {
+      showError(
+        `No se ha podido guardar ${queEs.toLowerCase()}: ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      );
+      // Se recarga igualmente para que la pantalla vuelva a lo que hay en la
+      // base y no se quede enseñando el valor que el usuario acaba de elegir.
+      fetchCase();
+      return false;
+    }
   }
 
   async function updateTaskStatus(taskId: string, status: string, reason?: string, until?: string) {
@@ -569,136 +735,285 @@ El equipo de gestión`;
       setBlockModal({ taskId, title: task?.title || "" });
       return;
     }
-    await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    await guardarTarea(
+      {
         taskId,
         status,
         ...(status === "BLOCKED" && { blockReason: reason || null, blockedUntil: until || null }),
-      }),
-    });
-    fetchCase();
+      },
+      "El estado de la tarea",
+    );
   }
 
   async function assignTask(taskId: string, assigneeId: string | null) {
-    await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, assigneeId }),
-    });
-    fetchCase();
+    await guardarTarea({ taskId, assigneeId }, "El responsable de la tarea");
   }
 
   async function setTaskDependency(taskId: string, dependsOnId: string | null) {
-    await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, dependsOnId }),
-    });
-    fetchCase();
+    await guardarTarea({ taskId, dependsOnId }, "La dependencia de la tarea");
   }
 
   async function updateTaskDeadline(taskId: string, deadline: string | null) {
-    await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, deadline: deadline || null }),
-    });
-    fetchCase();
+    await guardarTarea({ taskId, deadline: deadline || null }, "El plazo de la tarea");
+  }
+
+  /**
+   * Guarda un bloque del expediente y dice si ha ido bien.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Estas seis funciones hacian `await fetch(...)` sin mirar `res.ok`: con un
+   * 400, un 422 o un 500 cerraban el panel de edicion, recargaban el
+   * expediente y dejaban en pantalla los datos ANTIGUOS sin decir nada. El
+   * usuario veia su cambio desaparecer y no sabia si se habia guardado.
+   *
+   * Y con la red caida era peor: `fetch` lanzaba, `setInfoSaving(false)` no
+   * llegaba a ejecutarse y el boton se quedaba en "Guardando…" para siempre.
+   *
+   * Ahora: en el camino bueno se cierra el panel, se confirma y se recarga; en
+   * el malo el panel sigue abierto CON LO QUE EL USUARIO ESCRIBIO, se explica
+   * el fallo y el formulario sigue siendo utilizable.
+   */
+  async function guardarBloque(
+    cuerpo: unknown,
+    cerrar: () => void,
+    queEs: string,
+  ): Promise<boolean> {
+    setInfoSaving(true);
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cuerpo),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        const detalle =
+          (Array.isArray(data?.details) && data.details[0]?.message) ||
+          data?.error ||
+          `El servidor ha respondido ${res.status}.`;
+        throw new Error(detalle);
+      }
+      cerrar();
+      showSuccess(`${queEs}: cambios guardados.`);
+      fetchCase();
+      return true;
+    } catch (e) {
+      showError(
+        `No se han podido guardar los cambios (${queEs.toLowerCase()}): ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      );
+      return false;
+    } finally {
+      // En `finally`: si no, un fallo de red deja el boton en "Guardando…".
+      setInfoSaving(false);
+    }
+  }
+
+  /**
+   * Elimina el expediente y solo entonces sale de la ficha.
+   *
+   * Si el servidor rechaza o la red falla, NO se navega y NO se anuncia exito:
+   * anunciar un borrado que no ha ocurrido es peor que no ofrecer el boton,
+   * porque el usuario deja de buscar un expediente que sigue ahi.
+   */
+  async function eliminarExpediente() {
+    setBorrando(true);
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+      }
+      setConfirmarBorrado(false);
+      // La lista se vuelve a pedir al entrar, asi que el expediente borrado ya
+      // no aparece. `replace` evita que "atras" devuelva a una ficha muerta.
+      router.replace("/cases?borrado=1");
+    } catch (e) {
+      showError(
+        `No se ha podido eliminar el expediente: ${e instanceof Error ? e.message : "error de red"}`,
+      );
+    } finally {
+      setBorrando(false);
+    }
   }
 
   async function saveDeceasedInfo() {
-    setInfoSaving(true);
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deceased: deceasedForm }),
-    });
-    setDeceasedEditOpen(false);
-    setInfoSaving(false);
-    fetchCase();
+    await guardarBloque({ deceased: deceasedForm }, () => setDeceasedEditOpen(false), "Fallecido");
   }
 
   async function saveContactInfo() {
-    setInfoSaving(true);
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contact: contactForm }),
-    });
-    setContactEditOpen(false);
-    setInfoSaving(false);
-    fetchCase();
+    await guardarBloque({ contact: contactForm }, () => setContactEditOpen(false), "Solicitante");
   }
 
   async function updateTaskTitle(taskId: string, title: string) {
     if (!title.trim()) return;
-    await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, title: title.trim() }),
-    });
-    fetchCase();
+    await guardarTarea({ taskId, title: title.trim() }, "El titulo de la tarea");
   }
 
   async function deleteTask(taskId: string, title: string) {
     if (!confirm(`¿Eliminar la tarea "${title}"? Esta acción no se puede deshacer.`)) return;
-    const res = await fetch(`/api/cases/${caseId}/tasks?taskId=${encodeURIComponent(taskId)}`, { method: "DELETE" });
-    if (res.ok) fetchCase();
-    else showError("Error al eliminar la tarea");
+    try {
+      const res = await fetch(`/api/cases/${caseId}/tasks?taskId=${encodeURIComponent(taskId)}`, { method: "DELETE" });
+      // El camino del servidor ya se contaba; faltaba el de la red, que
+      // lanzaba y dejaba la promesa rechazada sin capturar: la tarea seguia en
+      // la lista y el usuario no sabia si se habia borrado o no.
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Error al eliminar la tarea");
+      }
+      showSuccess("Tarea eliminada.");
+      fetchCase();
+    } catch (e) {
+      showError(
+        `No se ha podido eliminar la tarea: ${e instanceof Error ? e.message : "error de red"}`,
+      );
+    }
   }
 
+  /**
+   * Elimina un documento del expediente.
+   *
+   * El `else` existía, pero decía siempre "Error al eliminar el documento" y se
+   * comía el motivo real que manda el servidor —403 sin permiso, 404 si ya no
+   * está, 502 cuando el archivo sigue en el almacenamiento y la referencia NO
+   * se ha borrado—. Y sin `try`, un fallo de red no mostraba nada en absoluto.
+   */
   async function deleteDocument(docId: string, fileName: string) {
     if (!confirm(`¿Eliminar "${fileName}"? Esta acción no se puede deshacer.`)) return;
-    const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
-    if (res.ok) fetchCase();
-    else showError("Error al eliminar el documento");
-  }
-
-  async function createTask() {
-    if (!addTaskForm.title.trim()) return;
-    setAddTaskSaving(true);
-    const res = await fetch(`/api/cases/${caseId}/tasks`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: addTaskForm.title.trim(),
-        category: addTaskForm.category,
-        description: addTaskForm.description.trim() || null,
-        dueDate: addTaskForm.deadline || null,
-        assigneeId: addTaskForm.assigneeId || null,
-        sortOrder: (caseData?.tasks?.length ?? 0) + 1,
-      }),
-    });
-    setAddTaskSaving(false);
-    if (res.ok) {
-      setAddTaskOpen(false);
-      setAddTaskForm({ title: "", category: "OTROS", description: "", deadline: "", assigneeId: "" });
+    try {
+      const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${res.status}.`);
+      }
+      showSuccess(`"${fileName}" se ha eliminado.`);
+    } catch (err) {
+      showError(
+        `No se ha podido eliminar "${fileName}": ${
+          err instanceof Error ? err.message : "error de red"
+        }`,
+      );
+    } finally {
+      // Pase lo que pase, la lista vuelve a reflejar lo que hay en la base: un
+      // borrado fallido no puede dejar la fila desaparecida de la pantalla.
       fetchCase();
     }
   }
 
+  /**
+   * Crea la tarea y solo cierra el formulario si el servidor la ha guardado.
+   *
+   * Antes era `if (res.ok) { cerrar; limpiar; recargar }` sin `else`: un
+   * rechazo del servidor —titulo vacio tras recortar, categoria invalida,
+   * asignado de otra organizacion, 500— dejaba el formulario abierto, con los
+   * datos dentro y sin una sola palabra. El usuario volvia a pulsar "Crear
+   * tarea" pensando que no habia llegado a hacerlo.
+   */
+  async function createTask() {
+    if (!addTaskForm.title.trim()) return;
+    setAddTaskSaving(true);
+    try {
+      const res = await fetch(`/api/cases/${caseId}/tasks`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: addTaskForm.title.trim(),
+          category: addTaskForm.category,
+          description: addTaskForm.description.trim() || null,
+          dueDate: addTaskForm.deadline || null,
+          assigneeId: addTaskForm.assigneeId || null,
+          sortOrder: (caseData?.tasks?.length ?? 0) + 1,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+      }
+      setAddTaskOpen(false);
+      setAddTaskForm({ title: "", category: "OTROS", description: "", deadline: "", assigneeId: "" });
+      showSuccess("Tarea creada.");
+      fetchCase();
+    } catch (e) {
+      // El formulario sigue abierto y con lo escrito: es lo unico que el
+      // usuario no puede recuperar si se borra.
+      showError(
+        `No se ha podido crear la tarea: ${e instanceof Error ? e.message : "error de red"}`,
+      );
+    } finally {
+      // En `finally`: si no, un fallo de red deja el boton en "Guardando…".
+      setAddTaskSaving(false);
+    }
+  }
+
   async function saveDetailsInfo() {
-    setInfoSaving(true);
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ province: detailsForm.province, categories: detailsForm.categories, hasDeceasedInsurance: detailsForm.hasDeceasedInsurance }),
-    });
-    setDetailsEditOpen(false);
-    setInfoSaving(false);
-    fetchCase();
+    await guardarBloque(
+      {
+        province: detailsForm.province,
+        categories: detailsForm.categories,
+        hasDeceasedInsurance: detailsForm.hasDeceasedInsurance,
+      },
+      () => setDetailsEditOpen(false),
+      "Detalles",
+    );
+  }
+
+  async function saveFiscalInfo() {
+    const numericOrNull = (v: string) => {
+      const t = v.trim();
+      if (!t) return null;
+      const n = Number(t.replace(/\./g, "").replace(",", "."));
+      return Number.isFinite(n) ? n : null;
+    };
+    await guardarBloque(
+      {
+        hasUrbanProperty: fiscalForm.hasUrbanProperty,
+        referenciaCatastral: fiscalForm.referenciaCatastral.trim() || null,
+        propertyAcquisitionValue: numericOrNull(fiscalForm.propertyAcquisitionValue),
+        propertyTransmissionValue: numericOrNull(fiscalForm.propertyTransmissionValue),
+        preexistingPatrimony: numericOrNull(fiscalForm.preexistingPatrimony),
+        recentResidenceChange: fiscalForm.recentResidenceChange,
+        previousResidenceProvince: fiscalForm.previousResidenceProvince.trim() || null,
+        appliedReductions: fiscalForm.appliedReductions.filter(
+          (r) => r.type && r.appliedDate && r.maintenanceYears > 0,
+        ),
+      },
+      () => setFiscalEditOpen(false),
+      "Datos fiscales",
+    );
   }
 
   async function saveNotes() {
     setNotesSaving(true);
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ notes: notesInput }),
-    });
-    setNotesSaving(false);
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: notesInput }),
+      });
+      if (!res.ok) throw new Error(`El servidor ha respondido ${res.status}.`);
+      showSuccess("Notas guardadas.");
+    } catch (e) {
+      showError(`No se han podido guardar las notas: ${e instanceof Error ? e.message : "error de red"}`);
+    } finally {
+      setNotesSaving(false);
+    }
   }
 
   async function saveLegitimation() {
     setLegitimationSaving(true);
-    await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ legitimationNote: legitimationInput }),
-    });
-    setLegitimationSaving(false);
-    fetchCase();
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ legitimationNote: legitimationInput }),
+      });
+      if (!res.ok) throw new Error(`El servidor ha respondido ${res.status}.`);
+      showSuccess("Nota de legitimacion guardada.");
+      fetchCase();
+    } catch (e) {
+      showError(`No se ha podido guardar la nota: ${e instanceof Error ? e.message : "error de red"}`);
+    } finally {
+      setLegitimationSaving(false);
+    }
   }
 
   async function toggleConsent() {
@@ -739,28 +1054,56 @@ El equipo de gestión`;
     setTaskNoteOpenId(taskId);
     if (!taskNotesCache[taskId]) {
       setTaskNotesLoading(true);
-      const res = await fetch(`/api/tasks/${taskId}/notes`);
-      const data = res.ok ? await res.json() : [];
-      setTaskNotesCache((c) => ({ ...c, [taskId]: data }));
-      setTaskNotesLoading(false);
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/notes`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+        }
+        const data = await res.json();
+        setTaskNotesCache((c) => ({ ...c, [taskId]: Array.isArray(data) ? data : [] }));
+      } catch (e) {
+        /*
+         * Era `res.ok ? await res.json() : []`: un fallo se guardaba en la
+         * cache como "no hay notas" y ademas quedaba cacheado, asi que volver a
+         * abrir el panel ya ni lo reintentaba. Las notas son el registro de lo
+         * hablado con la familia; ensenar cero cuando no se sabe es mentir.
+         */
+        showError(
+          `No se han podido cargar las notas: ${e instanceof Error ? e.message : "error de red"}`,
+        );
+        setTaskNoteOpenId(null);
+      } finally {
+        setTaskNotesLoading(false);
+      }
     }
   }
 
   async function saveTaskNote(taskId: string) {
     if (!taskNoteInput.trim()) return;
     setTaskNoteSaving(true);
-    const res = await fetch(`/api/tasks/${taskId}/notes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: taskNoteInput.trim() }),
-    });
-    if (res.ok) {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: taskNoteInput.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `El servidor ha respondido ${res.status}.`);
+      }
       const note = await res.json();
       setTaskNotesCache((c) => ({ ...c, [taskId]: [...(c[taskId] ?? []), note] }));
       setTaskNoteInput("");
       fetchCase();
+    } catch (e) {
+      // Sin borrar lo escrito.
+      showError(
+        `No se ha podido guardar la nota: ${e instanceof Error ? e.message : "error de red"}`,
+      );
+    } finally {
+      setTaskNoteSaving(false);
     }
-    setTaskNoteSaving(false);
   }
 
   async function generateChecklist() {
@@ -785,23 +1128,104 @@ El equipo de gestión`;
   }
 
   const [uploadHint, setUploadHint] = useState<{ fileName: string; suggestions: string[] } | null>(null);
+  const [subiendo, setSubiendo] = useState(false);
+  /*
+   * Cerrojo SINCRONO contra el doble envio.
+   *
+   * `subiendo` sirve para pintar el boton, pero no vale como guardia: `useState`
+   * es asincrono, asi que dos `change` seguidos —el doble clic del usuario
+   * impaciente— leen ambos `subiendo === false` antes de que React vuelva a
+   * pintar, y salian DOS subidas del mismo archivo. Un `ref` se actualiza en el
+   * acto y corta la segunda en seco.
+   */
+  const subiendoRef = useRef(false);
+  /** Porcentaje real de la subida al almacenamiento; `null` si no hay ninguna. */
+  const [progresoSubida, setProgresoSubida] = useState<number | null>(null);
 
+  /**
+   * Sube un documento al expediente, EN TRES PASOS.
+   *
+   * POR QUÉ TRES Y NO UNO
+   * ---------------------
+   * Antes se mandaba el archivo entero a `/api/cases/{id}/documents` en un
+   * multipart. En producción eso no podía funcionar: una función de Vercel
+   * admite 4,5 MB de cuerpo de petición y aquí el máximo son 20 MiB. El archivo
+   * lo cortaba la entrada de la plataforma antes de llegar al código.
+   *
+   * Ahora: se pide permiso (JSON pequeño), el archivo va DIRECTO al
+   * almacenamiento, y luego se confirma (JSON pequeño). Por la función sólo
+   * pasan metadatos.
+   *
+   * QUÉ SE MANTIENE
+   * ---------------
+   * El éxito no se anuncia hasta que el servidor CONFIRMA: mientras el archivo
+   * está en el bucket pero sin verificar, no existe como documento y no se dice
+   * que exista. Todos los rechazos —formato, contenido, tamaño, permisos— se
+   * siguen mostrando con su mensaje real, y el cerrojo síncrono contra el doble
+   * envío sigue en su sitio.
+   */
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    const res = await fetch(`/api/cases/${caseId}/documents`, { method: "POST", body: formData });
-    if (res.ok) {
-      const data = await res.json();
+    // El input se limpia ya: así el mismo archivo se puede reintentar y un
+    // segundo `change` no reaprovecha el anterior.
+    e.target.value = "";
+    if (subiendoRef.current) return;
+
+    subiendoRef.current = true;
+    setSubiendo(true);
+    setProgresoSubida(0);
+    try {
+      // 1. Permiso. Aquí se rechazan formato y tamaño sin mover un solo byte.
+      const auth = await fetch(`/api/cases/${caseId}/documents/upload-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, size: file.size }),
+      });
+      if (!auth.ok) {
+        const cuerpo = await auth.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${auth.status}.`);
+      }
+      const { uploadId, uploadUrl } = await auth.json();
+
+      // 2. El archivo, directo al almacenamiento.
+      await subirAlAlmacen(uploadUrl, file, { onProgreso: setProgresoSubida });
+
+      // 3. Confirmación. Sólo aquí el documento pasa a existir.
+      const fin = await fetch(`/api/cases/${caseId}/documents/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uploadId }),
+      });
+      if (!fin.ok) {
+        const cuerpo = await fin.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${fin.status}.`);
+      }
+      const data = await fin.json();
       if (!data.taskId && data.suggestions) {
         setUploadHint({ fileName: file.name, suggestions: data.suggestions });
       } else {
         setUploadHint(null);
       }
+      showSuccess(`"${data.fileName ?? file.name}" se ha subido.`);
+      fetchCase();
+    } catch (err) {
+      setUploadHint(null);
+      showError(
+        `No se ha podido subir "${file.name}": ${
+          err instanceof Error ? err.message : "error de red"
+        }`,
+      );
+      // Se recarga igualmente para que la lista refleje lo que hay de verdad y
+      // no un documento que en realidad no llegó a guardarse.
+      fetchCase();
+    } finally {
+      // Pase lo que pase se sale del estado de subida: ningún camino puede
+      // dejar la pantalla en «Subiendo…» para siempre.
+      subiendoRef.current = false;
+      setSubiendo(false);
+      setProgresoSubida(null);
     }
-    fetchCase();
-    e.target.value = "";
   }
 
   async function handleApproval(approvalId: string, status: string) {
@@ -938,6 +1362,15 @@ El equipo de gestión`;
             >
               Duplicar
             </button>
+            {puedeBorrar && (
+              <button
+                onClick={() => setConfirmarBorrado(true)}
+                className="px-3 py-1 border border-red-200 rounded-md text-sm text-red-600 hover:bg-red-50"
+                title="Eliminar expediente"
+              >
+                Eliminar expediente
+              </button>
+            )}
             <select value={caseData.status} onChange={(e) => updateStatus(e.target.value)}
               className="px-3 py-1 border rounded-md text-sm">
               {statuses.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
@@ -1049,11 +1482,49 @@ El equipo de gestión`;
         </div>
       )}
 
+      {/* Confirmacion de borrado del expediente */}
+      {confirmarBorrado && (
+        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tituloBorrado"
+            data-testid="confirmar-borrado"
+            className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+          >
+            <h2 id="tituloBorrado" className="text-lg font-semibold mb-2">
+              Eliminar expediente {caseData.ref}
+            </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              El expediente dejara de aparecer en el listado y en el tablero. Sus datos se
+              conservan en la base para auditoria, pero la gestoria pierde acceso desde la
+              aplicacion.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmarBorrado(false)}
+                disabled={borrando}
+                className="px-4 py-2 border rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={eliminarExpediente}
+                disabled={borrando}
+                className="px-4 py-2 bg-red-600 text-white rounded-md text-sm hover:bg-red-700 disabled:opacity-50"
+              >
+                {borrando ? "Eliminando…" : "Si, eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast notifications */}
       {(toastError || toastSuccess) && (
         <div className="fixed bottom-6 right-6 z-[60] flex flex-col gap-2 pointer-events-none">
           {toastError && (
-            <div className="flex items-center gap-3 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium pointer-events-auto max-w-sm">
+            <div data-testid="toast-error" className="flex items-center gap-3 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium pointer-events-auto max-w-sm">
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
@@ -1062,7 +1533,7 @@ El equipo de gestión`;
             </div>
           )}
           {toastSuccess && (
-            <div className="flex items-center gap-3 bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium pointer-events-auto max-w-sm">
+            <div data-testid="toast-exito" className="flex items-center gap-3 bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium pointer-events-auto max-w-sm">
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
@@ -1075,7 +1546,12 @@ El equipo de gestión`;
 
       <div className="flex border-b mb-6 gap-1">
         {tabs.map((t) => (
-          <button key={t} onClick={() => setTab(t)}
+          <button key={t} onClick={() => {
+              setTab(t);
+              // Abrir la pestana del portal es la accion explicita que marca
+              // los mensajes de la familia como leidos (antes lo hacia el GET).
+              if (t === "portal") fetchPortalMessages(true);
+            }}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
               tab === t ? "border-primary text-primary" : "border-transparent text-gray-500 hover:text-gray-700"
             }`}>
@@ -1168,6 +1644,7 @@ El equipo de gestión`;
                     });
                     setDeceasedEditOpen(true);
                   }}
+                  aria-label="Editar datos del fallecido"
                   className="text-xs text-gray-400 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50"
                 >
                   Editar
@@ -1176,17 +1653,24 @@ El equipo de gestión`;
             </div>
             {deceasedEditOpen ? (
               <div className="space-y-2">
+                {/*
+                  Como en el asistente de alta: estos `<label>` no estaban
+                  asociados a su campo, asi que un lector de pantalla anunciaba
+                  "cuadro de edicion" sin decir de que.
+                */}
                 <div>
-                  <label className="text-xs text-gray-500">Nombre completo</label>
+                  <label htmlFor="edFallecidoNombre" className="text-xs text-gray-500">Nombre del fallecido</label>
                   <input
+                    id="edFallecidoNombre"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={deceasedForm.fullName}
                     onChange={(e) => setDeceasedForm((f) => ({ ...f, fullName: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Fecha de fallecimiento</label>
+                  <label htmlFor="edFallecidoFecha" className="text-xs text-gray-500">Fecha de fallecimiento</label>
                   <input
+                    id="edFallecidoFecha"
                     type="date"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={deceasedForm.deathDate}
@@ -1194,8 +1678,9 @@ El equipo de gestión`;
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">DNI/NIE</label>
+                  <label htmlFor="edFallecidoDni" className="text-xs text-gray-500">DNI/NIE del fallecido</label>
                   <input
+                    id="edFallecidoDni"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={deceasedForm.dni}
                     onChange={(e) => setDeceasedForm((f) => ({ ...f, dni: e.target.value }))}
@@ -1232,6 +1717,7 @@ El equipo de gestión`;
                     });
                     setContactEditOpen(true);
                   }}
+                  aria-label="Editar datos del solicitante"
                   className="text-xs text-gray-400 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50"
                 >
                   Editar
@@ -1241,24 +1727,27 @@ El equipo de gestión`;
             {contactEditOpen ? (
               <div className="space-y-2">
                 <div>
-                  <label className="text-xs text-gray-500">Nombre completo</label>
+                  <label htmlFor="edSolicitanteNombre" className="text-xs text-gray-500">Nombre del solicitante</label>
                   <input
+                    id="edSolicitanteNombre"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={contactForm.fullName}
                     onChange={(e) => setContactForm((f) => ({ ...f, fullName: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Telefono</label>
+                  <label htmlFor="edSolicitanteTelefono" className="text-xs text-gray-500">Telefono del solicitante</label>
                   <input
+                    id="edSolicitanteTelefono"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={contactForm.phone}
                     onChange={(e) => setContactForm((f) => ({ ...f, phone: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Email</label>
+                  <label htmlFor="edSolicitanteEmail" className="text-xs text-gray-500">Email del solicitante</label>
                   <input
+                    id="edSolicitanteEmail"
                     type="email"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={contactForm.email}
@@ -1266,8 +1755,9 @@ El equipo de gestión`;
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Relacion con el fallecido</label>
+                  <label htmlFor="edSolicitanteRelacion" className="text-xs text-gray-500">Relacion con el fallecido</label>
                   <input
+                    id="edSolicitanteRelacion"
                     className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={contactForm.relationship}
                     onChange={(e) => setContactForm((f) => ({ ...f, relationship: e.target.value }))}
@@ -1285,9 +1775,31 @@ El equipo de gestión`;
             ) : (
               <>
                 <p><strong>Nombre:</strong> {caseData.contact?.fullName}</p>
-                {caseData.contact?.phone && <p><strong>Telefono:</strong> {caseData.contact.phone}</p>}
+                {caseData.contact?.phone && (
+                  <p className="flex items-center gap-2">
+                    <span><strong>Teléfono:</strong> {caseData.contact.phone}</span>
+                    {(() => {
+                      const waText = `Hola ${caseData.contact?.fullName?.split(",")[1]?.trim() ?? caseData.contact?.fullName ?? ""}, te escribo del expediente ${caseData.ref}${caseData.deceased?.fullName ? ` (${caseData.deceased.fullName})` : ""}.`;
+                      const waUrl = buildWhatsAppUrl({ phone: caseData.contact.phone, text: waText });
+                      return waUrl ? (
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Abrir WhatsApp con el contacto"
+                          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        >
+                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M20.52 3.48A11.94 11.94 0 0012.04 0C5.5 0 .2 5.3.2 11.84c0 2.09.55 4.13 1.6 5.93L0 24l6.4-1.68a11.84 11.84 0 005.64 1.44h.01c6.54 0 11.84-5.3 11.84-11.84a11.78 11.78 0 00-3.37-8.44zM12.04 21.5h-.01a9.66 9.66 0 01-4.93-1.35l-.36-.21-3.8 1 1.02-3.7-.23-.38a9.6 9.6 0 01-1.46-5.02c0-5.31 4.32-9.62 9.62-9.62 2.57 0 4.99 1 6.81 2.82a9.55 9.55 0 012.81 6.8c0 5.32-4.32 9.66-9.47 9.66zm5.27-7.21c-.29-.14-1.71-.84-1.97-.94-.26-.1-.46-.14-.65.15-.19.29-.74.94-.91 1.13-.17.19-.34.22-.62.07-1.71-.86-2.83-1.53-3.96-3.45-.3-.52.3-.49.85-1.6.09-.19.04-.36-.02-.5-.06-.14-.65-1.57-.9-2.15-.23-.55-.47-.48-.65-.49h-.55c-.19 0-.5.07-.76.36-.26.29-1 1-1 2.43s1.02 2.82 1.17 3.01c.14.19 2.01 3.07 4.87 4.31.68.29 1.21.47 1.62.6.68.22 1.3.19 1.79.12.55-.08 1.71-.7 1.95-1.37.24-.67.24-1.25.17-1.37-.07-.12-.27-.2-.55-.34z" />
+                          </svg>
+                          WhatsApp
+                        </a>
+                      ) : null;
+                    })()}
+                  </p>
+                )}
                 {caseData.contact?.email && <p><strong>Email:</strong> {caseData.contact.email}</p>}
-                {caseData.contact?.relationship && <p><strong>Relacion:</strong> {caseData.contact.relationship}</p>}
+                {caseData.contact?.relationship && <p><strong>Relación:</strong> {caseData.contact.relationship}</p>}
               </>
             )}
           </div>
@@ -1370,6 +1882,332 @@ El equipo de gestión`;
           </div>
           <div className="bg-white p-6 rounded-lg border space-y-3">
             <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Datos fiscales</h3>
+              {!fiscalEditOpen && (
+                <button
+                  onClick={() => {
+                    setFiscalForm({
+                      hasUrbanProperty: caseData.hasUrbanProperty,
+                      referenciaCatastral: caseData.referenciaCatastral ?? "",
+                      propertyAcquisitionValue:
+                        caseData.propertyAcquisitionValue != null ? String(caseData.propertyAcquisitionValue) : "",
+                      propertyTransmissionValue:
+                        caseData.propertyTransmissionValue != null ? String(caseData.propertyTransmissionValue) : "",
+                      preexistingPatrimony:
+                        caseData.preexistingPatrimony != null ? String(caseData.preexistingPatrimony) : "",
+                      recentResidenceChange: caseData.recentResidenceChange,
+                      previousResidenceProvince: caseData.previousResidenceProvince ?? "",
+                      appliedReductions: Array.isArray(caseData.appliedReductions) ? caseData.appliedReductions : [],
+                    });
+                    setFiscalEditOpen(true);
+                  }}
+                  className="text-xs text-gray-400 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50"
+                >
+                  Editar
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Estos datos alimentan el Radar ISD: tramos del coeficiente multiplicador,
+              plazo y no-sujeción de la plusvalía municipal (IIVTNU).
+            </p>
+            {fiscalEditOpen ? (
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={fiscalForm.hasUrbanProperty}
+                    onChange={(e) => setFiscalForm((f) => ({ ...f, hasUrbanProperty: e.target.checked }))}
+                  />
+                  Inmueble urbano en el caudal
+                </label>
+                {fiscalForm.hasUrbanProperty && (
+                  <div className="space-y-2 pl-6">
+                    <div>
+                      <label className="text-xs text-gray-500">Referencia catastral (20 dígitos)</label>
+                      <input
+                        className="mt-0.5 w-full px-2 py-1 text-sm border rounded font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        placeholder="9872023VH5797S0001WX"
+                        value={fiscalForm.referenciaCatastral}
+                        onChange={(e) =>
+                          setFiscalForm((f) => ({ ...f, referenciaCatastral: e.target.value.toUpperCase() }))
+                        }
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-gray-500">Valor adquisición (€)</label>
+                        <input
+                          className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          inputMode="decimal"
+                          placeholder="180000"
+                          value={fiscalForm.propertyAcquisitionValue}
+                          onChange={(e) =>
+                            setFiscalForm((f) => ({ ...f, propertyAcquisitionValue: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Valor transmisión (€)</label>
+                        <input
+                          className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          inputMode="decimal"
+                          placeholder="240000"
+                          value={fiscalForm.propertyTransmissionValue}
+                          onChange={(e) =>
+                            setFiscalForm((f) => ({ ...f, propertyTransmissionValue: e.target.value }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <label className="text-xs text-gray-500">Patrimonio preexistente del heredero (€)</label>
+                  <input
+                    className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    inputMode="decimal"
+                    placeholder="402678"
+                    value={fiscalForm.preexistingPatrimony}
+                    onChange={(e) => setFiscalForm((f) => ({ ...f, preexistingPatrimony: e.target.value }))}
+                  />
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    Tramos del art. 22 Ley 29/1987: 402.678 €, 2.007.380 € y 4.020.770 €.
+                  </p>
+                </div>
+                <div className="border-t pt-3">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={fiscalForm.recentResidenceChange}
+                      onChange={(e) =>
+                        setFiscalForm((f) => ({ ...f, recentResidenceChange: e.target.checked }))
+                      }
+                    />
+                    Cambio de residencia en los 5 años previos
+                  </label>
+                  {fiscalForm.recentResidenceChange && (
+                    <div className="mt-2 pl-6">
+                      <label className="text-xs text-gray-500">Provincia / CCAA previa (opcional)</label>
+                      <input
+                        className="mt-0.5 w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        placeholder="Barcelona"
+                        value={fiscalForm.previousResidenceProvince}
+                        onChange={(e) =>
+                          setFiscalForm((f) => ({ ...f, previousResidenceProvince: e.target.value }))
+                        }
+                      />
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        Activa la alerta del art. 28 Ley 22/2009 cuando la CCAA actual bonifica
+                        sensiblemente más que la previa.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-gray-700">Reducciones aplicadas (art. 20)</p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFiscalForm((f) => ({
+                          ...f,
+                          appliedReductions: [
+                            ...f.appliedReductions,
+                            {
+                              type: "VIVIENDA_HABITUAL",
+                              appliedDate: new Date().toISOString().slice(0, 10),
+                              maintenanceYears: DEFAULT_MAINTENANCE_YEARS.VIVIENDA_HABITUAL,
+                            },
+                          ],
+                        }))
+                      }
+                      className="text-xs px-2 py-0.5 rounded border border-blue-200 text-blue-700 hover:bg-blue-50"
+                    >
+                      + Añadir
+                    </button>
+                  </div>
+                  {fiscalForm.appliedReductions.length === 0 ? (
+                    <p className="text-[11px] text-gray-400 italic">
+                      Declara aquí las reducciones con periodo de mantenimiento (vivienda habitual,
+                      empresa familiar...). El Radar avisará antes del aniversario.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {fiscalForm.appliedReductions.map((r, idx) => (
+                        <div key={idx} className="grid grid-cols-[1fr_auto_60px_auto] gap-1.5 items-center">
+                          <select
+                            value={r.type}
+                            onChange={(e) => {
+                              const newType = e.target.value as AppliedReductionUi["type"];
+                              setFiscalForm((f) => ({
+                                ...f,
+                                appliedReductions: f.appliedReductions.map((x, i) =>
+                                  i === idx
+                                    ? { ...x, type: newType, maintenanceYears: DEFAULT_MAINTENANCE_YEARS[newType] }
+                                    : x,
+                                ),
+                              }));
+                            }}
+                            className="px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          >
+                            {(Object.keys(REDUCTION_LABELS_UI) as AppliedReductionUi["type"][]).map((t) => (
+                              <option key={t} value={t}>
+                                {REDUCTION_LABELS_UI[t]}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="date"
+                            value={r.appliedDate}
+                            onChange={(e) =>
+                              setFiscalForm((f) => ({
+                                ...f,
+                                appliedReductions: f.appliedReductions.map((x, i) =>
+                                  i === idx ? { ...x, appliedDate: e.target.value } : x,
+                                ),
+                              }))
+                            }
+                            className="px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={r.maintenanceYears}
+                            onChange={(e) =>
+                              setFiscalForm((f) => ({
+                                ...f,
+                                appliedReductions: f.appliedReductions.map((x, i) =>
+                                  i === idx ? { ...x, maintenanceYears: Number(e.target.value) || 5 } : x,
+                                ),
+                              }))
+                            }
+                            className="px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            title="Años de mantenimiento"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFiscalForm((f) => ({
+                                ...f,
+                                appliedReductions: f.appliedReductions.filter((_, i) => i !== idx),
+                              }))
+                            }
+                            className="text-xs text-gray-400 hover:text-red-600 px-1.5"
+                            title="Quitar"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={saveFiscalInfo}
+                    disabled={infoSaving}
+                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {infoSaving ? "Guardando…" : "Guardar"}
+                  </button>
+                  <button
+                    onClick={() => setFiscalEditOpen(false)}
+                    className="px-3 py-1 text-xs border rounded hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p>
+                  <strong>Inmueble urbano:</strong> {caseData.hasUrbanProperty ? "Sí" : "No declarado"}
+                </p>
+                {caseData.hasUrbanProperty && (
+                  <>
+                    {caseData.referenciaCatastral && (() => {
+                      const consultaUrl = buildCatastroConsultaUrl(caseData.referenciaCatastral);
+                      const mapaUrl = buildCatastroMapaUrl(caseData.referenciaCatastral);
+                      return (
+                        <p className="flex flex-wrap items-center gap-2">
+                          <span>
+                            <strong>Referencia catastral:</strong>{" "}
+                            <span className="font-mono text-xs">{caseData.referenciaCatastral}</span>
+                          </span>
+                          {consultaUrl && (
+                            <a
+                              href={consultaUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] px-1.5 py-0.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50"
+                              title="Abrir ficha en la Sede del Catastro"
+                            >
+                              Ficha Catastro ↗
+                            </a>
+                          )}
+                          {mapaUrl && (
+                            <a
+                              href={mapaUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                              title="Abrir visor cartográfico"
+                            >
+                              Mapa ↗
+                            </a>
+                          )}
+                        </p>
+                      );
+                    })()}
+                    <p>
+                      <strong>Valor adquisición:</strong>{" "}
+                      {caseData.propertyAcquisitionValue != null
+                        ? `${caseData.propertyAcquisitionValue.toLocaleString("es-ES")} €`
+                        : "—"}
+                    </p>
+                    <p>
+                      <strong>Valor transmisión:</strong>{" "}
+                      {caseData.propertyTransmissionValue != null
+                        ? `${caseData.propertyTransmissionValue.toLocaleString("es-ES")} €`
+                        : "—"}
+                    </p>
+                  </>
+                )}
+                <p>
+                  <strong>Patrimonio preexistente:</strong>{" "}
+                  {caseData.preexistingPatrimony != null
+                    ? `${caseData.preexistingPatrimony.toLocaleString("es-ES")} €`
+                    : "—"}
+                </p>
+                <p>
+                  <strong>Cambio residencia &lt;5 años:</strong>{" "}
+                  {caseData.recentResidenceChange ? "Sí" : "No"}
+                  {caseData.recentResidenceChange && caseData.previousResidenceProvince
+                    ? ` (previa: ${caseData.previousResidenceProvince})`
+                    : ""}
+                </p>
+                {Array.isArray(caseData.appliedReductions) && caseData.appliedReductions.length > 0 && (
+                  <div>
+                    <p className="font-medium text-sm text-gray-700 mt-2 mb-1">Reducciones aplicadas:</p>
+                    <ul className="text-xs text-gray-600 space-y-0.5 pl-3">
+                      {caseData.appliedReductions.map((r, i) => (
+                        <li key={i}>
+                          {REDUCTION_LABELS_UI[r.type] ?? r.type} ·{" "}
+                          aplicada el {new Date(r.appliedDate).toLocaleDateString("es-ES")} ·{" "}
+                          mantener {r.maintenanceYears} año{r.maintenanceYears !== 1 ? "s" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <div className="bg-white p-6 rounded-lg border space-y-3">
+            <div className="flex items-center justify-between">
               <h3 className="font-semibold">Portal familia</h3>
               <div className="flex items-center gap-2">
                 {!caseData.portalEnabled && (
@@ -1412,9 +2250,18 @@ El equipo de gestión`;
                   { label: "Solicitud prorroga ISD", date: caseData.caseDeadlines.isdExtensionRequestDeadline, desc: "Limite para solicitar prorroga del Modelo 650" },
                   { label: "Plazo ISD (Modelo 650)", date: caseData.caseDeadlines.isdDeadline, desc: "6 meses desde fallecimiento" },
                 ].map((d) => {
-                  const days = Math.ceil((new Date(d.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                  const eventDate = new Date(d.date);
+                  const days = Math.ceil((eventDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
                   const expired = days <= 0;
                   const urgent = days > 0 && days <= 14;
+                  const calEvent = {
+                    title: `${d.label} — ${caseData.ref}`,
+                    description: `${d.desc}\n\nExpediente: ${caseData.ref}${caseData.deceased?.fullName ? `\nCausante: ${caseData.deceased.fullName}` : ""}`,
+                    date: eventDate,
+                  };
+                  const googleUrl = buildGoogleCalendarUrl(calEvent);
+                  const icsUrl = buildIcsDataUrl(calEvent, `${caseData.id}-${d.label.replace(/\s+/g, "-")}@heredia.app`);
+                  const icsFilename = `${caseData.ref}-${d.label.replace(/\s+/g, "-").toLowerCase()}.ics`;
                   return (
                     <div key={d.label} className={`p-3 rounded-lg border ${expired ? "bg-red-50 border-red-200" : urgent ? "bg-orange-50 border-orange-200" : "bg-gray-50 border-gray-200"}`}>
                       <p className="text-xs text-gray-500">{d.label}</p>
@@ -1422,9 +2269,28 @@ El equipo de gestión`;
                         {new Date(d.date).toLocaleDateString("es-ES")}
                       </p>
                       <p className={`text-xs mt-1 ${expired ? "text-red-500 font-medium" : urgent ? "text-orange-500" : "text-gray-400"}`}>
-                        {expired ? "VENCIDO" : `${days} dias restantes`}
+                        {expired ? "VENCIDO" : `${days} días restantes`}
                       </p>
                       <p className="text-xs text-gray-400 mt-1">{d.desc}</p>
+                      <div className="mt-2 flex gap-1.5">
+                        <a
+                          href={googleUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Añadir a Google Calendar"
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50"
+                        >
+                          + Google
+                        </a>
+                        <a
+                          href={icsUrl}
+                          download={icsFilename}
+                          title="Descargar .ics (Outlook, Apple Calendar, iCal)"
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                        >
+                          + Outlook / .ics
+                        </a>
+                      </div>
                     </div>
                   );
                 })}
@@ -1686,9 +2552,17 @@ El equipo de gestión`;
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
+                          {/*
+                            El titulo editable es un `<button>`, no un `<p>` con
+                            `onClick`. Un parrafo con manejador de raton no
+                            recibe foco, no se activa con Enter y un lector de
+                            pantalla lo lee como texto: quien no usa raton no
+                            podia renombrar una tarea.
+                          */}
                           {titleEditId === task.id ? (
                             <input
                               autoFocus
+                              aria-label="Titulo de la tarea"
                               defaultValue={task.title}
                               className="font-medium text-sm border-b border-blue-400 bg-transparent focus:outline-none px-0.5"
                               onBlur={(e) => {
@@ -1703,13 +2577,15 @@ El equipo de gestión`;
                               }}
                             />
                           ) : (
-                            <p
-                              className="font-medium cursor-text hover:text-blue-600"
-                              title="Haz clic para editar el titulo"
+                            <button
+                              type="button"
+                              data-testid="titulo-tarea-ficha"
+                              className="font-medium cursor-text hover:text-blue-600 text-left"
+                              aria-label={`Editar titulo: ${task.title}`}
                               onClick={() => setTitleEditId(task.id)}
                             >
                               {task.title}
-                            </p>
+                            </button>
                           )}
                           {task.documents && task.documents.length > 0 && (
                             <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded" title={`${task.documents.length} doc(s) vinculado(s)`}>
@@ -1740,19 +2616,22 @@ El equipo de gestión`;
                             <input
                               type="date"
                               autoFocus
+                              aria-label={`Plazo de ${task.title}`}
                               defaultValue={(task.deadline ?? task.dueDate) ? new Date((task.deadline ?? task.dueDate)!).toISOString().slice(0, 10) : ""}
                               className="text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
                               onBlur={(e) => {
                                 setDeadlineEditId(null);
-                                // tasks with no system deadline use dueDate; ISD tasks update deadline
+                                // Las tareas sin plazo de sistema guardan en `dueDate`; las de
+                                // ISD, en `deadline`. Las dos ramas pasan ahora por
+                                // `guardarTarea`: la de `dueDate` era un `fetch(...).then()`
+                                // suelto, sin mirar `res.ok` ni capturar el fallo de red, asi
+                                // que un 400 o un 500 recargaba el expediente con la fecha
+                                // vieja y el usuario veia su cambio desaparecer en silencio.
                                 const val = e.target.value || null;
                                 if (task.deadline !== null && task.deadline !== undefined) {
                                   updateTaskDeadline(task.id, val);
                                 } else {
-                                  fetch(`/api/cases/${caseId}/tasks`, {
-                                    method: "PATCH", headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ taskId: task.id, dueDate: val }),
-                                  }).then(() => fetchCase());
+                                  guardarTarea({ taskId: task.id, dueDate: val }, "El plazo de la tarea");
                                 }
                               }}
                               onKeyDown={(e) => {
@@ -1770,6 +2649,7 @@ El equipo de gestión`;
                               <button
                                 onClick={() => setDeadlineEditId(task.id)}
                                 title="Editar plazo"
+                                aria-label={`Editar plazo de ${task.title}`}
                                 className={`text-xs px-2 py-0.5 rounded cursor-pointer hover:ring-1 hover:ring-blue-300 ${expired ? "bg-red-100 text-red-700 font-medium" : urgent ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600"}`}
                               >
                                 {expired ? "VENCIDO" : `${isSystemDeadline ? "Plazo" : "Vence"}: ${days}d`} - {new Date(effectiveDate!).toLocaleDateString("es-ES")}
@@ -1779,6 +2659,7 @@ El equipo de gestión`;
                             <button
                               onClick={() => setDeadlineEditId(task.id)}
                               title="Añadir plazo"
+                              aria-label={`Añadir plazo a ${task.title}`}
                               className="text-xs px-1.5 py-0.5 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50"
                             >
                               <svg className="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -1795,6 +2676,8 @@ El equipo de gestión`;
                       <div className="flex items-center gap-2 ml-4 shrink-0">
                         <button
                           onClick={() => { toggleTaskNotes(task.id); setTaskNoteInput(""); }}
+                          aria-label={`Notas de gestion de ${task.title}`}
+                          aria-expanded={taskNoteOpenId === task.id}
                           title="Notas de gestión"
                           className={`p-1.5 rounded transition relative ${taskNoteOpenId === task.id ? "text-amber-600 bg-amber-50" : "text-gray-400 hover:text-amber-600 hover:bg-amber-50"}`}
                         >
@@ -1807,6 +2690,7 @@ El equipo de gestión`;
                           value={task.assigneeId || ""}
                           onChange={(e) => assignTask(task.id, e.target.value || null)}
                           className="text-xs px-2 py-1 border rounded max-w-[120px]"
+                          aria-label={`Responsable de ${task.title}`}
                           title="Asignar a"
                         >
                           <option value="">Sin asignar</option>
@@ -1818,6 +2702,7 @@ El equipo de gestión`;
                           value={task.dependsOnId || ""}
                           onChange={(e) => setTaskDependency(task.id, e.target.value || null)}
                           className="text-xs px-2 py-1 border rounded max-w-[110px]"
+                          aria-label={`Dependencia de ${task.title}`}
                           title="Depende de"
                         >
                           <option value="">Sin dependencia</option>
@@ -1826,6 +2711,7 @@ El equipo de gestión`;
                           ))}
                         </select>
                         <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)}
+                          aria-label={`Estado de ${task.title}`}
                           className="text-xs px-2 py-1 border rounded">
                           {taskStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
@@ -1834,6 +2720,7 @@ El equipo de gestión`;
                         </span>
                         <button
                           onClick={() => deleteTask(task.id, task.title)}
+                          aria-label={`Eliminar tarea: ${task.title}`}
                           title="Eliminar tarea"
                           className="p-1.5 text-gray-300 hover:text-red-500 rounded transition-colors"
                         >
@@ -1866,8 +2753,19 @@ El equipo de gestión`;
                               </div>
                             )}
                             <div className="flex gap-2">
+                              {/*
+                                El `placeholder` no es una etiqueta: desaparece al
+                                escribir y un lector de pantalla anuncia "cuadro de
+                                edicion" sin decir de que tarea. La etiqueta va oculta
+                                a la vista pero presente en el arbol de accesibilidad,
+                                igual que en la bandeja /tasks.
+                              */}
+                              <label htmlFor={`nota-ficha-${task.id}`} className="sr-only">
+                                Nueva nota para {task.title}
+                              </label>
                               <input
                                 type="text"
+                                id={`nota-ficha-${task.id}`}
                                 value={taskNoteInput}
                                 onChange={(e) => setTaskNoteInput(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveTaskNote(task.id); } }}
@@ -1877,6 +2775,7 @@ El equipo de gestión`;
                               <button
                                 onClick={() => saveTaskNote(task.id)}
                                 disabled={taskNoteSaving || !taskNoteInput.trim()}
+                                aria-label={`Guardar nota de ${task.title}`}
                                 className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 disabled:opacity-50"
                               >
                                 Guardar
@@ -1896,9 +2795,19 @@ El equipo de gestión`;
           {addTaskOpen ? (
             <div className="bg-white p-4 rounded-lg border border-blue-200 space-y-3 mb-4">
               <h4 className="text-sm font-semibold text-gray-700">Nueva tarea</h4>
+              {/*
+                Cada campo con su `<label htmlFor>`. Antes solo tenian
+                `placeholder`, que no es una etiqueta: desaparece al escribir y
+                un lector de pantalla anuncia "cuadro de edicion" sin decir de
+                que. Es el mismo defecto que se corrigio en el asistente de alta.
+              */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
+                  <label htmlFor="tareaTitulo" className="block text-xs font-medium text-gray-500 mb-1">
+                    Titulo de la tarea *
+                  </label>
                   <input
+                    id="tareaTitulo"
                     autoFocus
                     placeholder="Titulo de la tarea *"
                     className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
@@ -1908,7 +2817,11 @@ El equipo de gestión`;
                   />
                 </div>
                 <div>
+                  <label htmlFor="tareaCategoria" className="block text-xs font-medium text-gray-500 mb-1">
+                    Categoria de la tarea
+                  </label>
                   <select
+                    id="tareaCategoria"
                     className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={addTaskForm.category}
                     onChange={(e) => setAddTaskForm((f) => ({ ...f, category: e.target.value }))}
@@ -1919,16 +2832,23 @@ El equipo de gestión`;
                   </select>
                 </div>
                 <div>
+                  <label htmlFor="tareaFecha" className="block text-xs font-medium text-gray-500 mb-1">
+                    Fecha limite (opcional)
+                  </label>
                   <input
+                    id="tareaFecha"
                     type="date"
                     className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={addTaskForm.deadline}
                     onChange={(e) => setAddTaskForm((f) => ({ ...f, deadline: e.target.value }))}
-                    placeholder="Fecha limite (opcional)"
                   />
                 </div>
                 <div>
+                  <label htmlFor="tareaResponsable" className="block text-xs font-medium text-gray-500 mb-1">
+                    Responsable de la tarea
+                  </label>
                   <select
+                    id="tareaResponsable"
                     className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={addTaskForm.assigneeId}
                     onChange={(e) => setAddTaskForm((f) => ({ ...f, assigneeId: e.target.value }))}
@@ -1940,9 +2860,12 @@ El equipo de gestión`;
                   </select>
                 </div>
                 <div className="col-span-2">
+                  <label htmlFor="tareaDescripcion" className="block text-xs font-medium text-gray-500 mb-1">
+                    Descripcion de la tarea (opcional)
+                  </label>
                   <textarea
+                    id="tareaDescripcion"
                     rows={2}
-                    placeholder="Descripcion (opcional)"
                     className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
                     value={addTaskForm.description}
                     onChange={(e) => setAddTaskForm((f) => ({ ...f, description: e.target.value }))}
@@ -2024,10 +2947,40 @@ El equipo de gestión`;
       {tab === "documents" && (
         <div>
           <div className="mb-4 flex items-center gap-4">
-            <label className="inline-block px-4 py-2 bg-primary text-white rounded-md text-sm cursor-pointer hover:bg-primary/90">
-              Subir documento
-              <input type="file" className="hidden" onChange={handleFileUpload} />
-            </label>
+            {puedeSubirDocs && (
+              <label
+                className={`inline-block px-4 py-2 rounded-md text-sm ${
+                  subiendo
+                    ? "bg-gray-200 text-gray-500 cursor-wait"
+                    : "bg-primary text-white cursor-pointer hover:bg-primary/90"
+                }`}
+              >
+                {/*
+                  Con progreso REAL cuando lo hay. Un archivo de 20 MiB en una
+                  conexion lenta tarda minutos: sin porcentaje no se distingue
+                  "va" de "se ha colgado". Cuando el navegador no puede calcular
+                  el total, se dice «Subiendo…» y no se inventa una cifra.
+                */}
+                {subiendo
+                  ? progresoSubida === null
+                    ? "Subiendo…"
+                    : progresoSubida < 100
+                      ? `Subiendo… ${progresoSubida}%`
+                      : "Comprobando…"
+                  : "Subir documento"}
+                {/*
+                  El `<label>` envolvente da nombre accesible al input, que va
+                  oculto a la vista porque el control nativo no se puede
+                  maquetar. `getByLabel("Subir documento")` lo encuentra.
+                */}
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={subiendo}
+                />
+              </label>
+            )}
             <p className="text-xs text-gray-500">
               Los documentos se vinculan automaticamente a tareas por nombre de archivo
             </p>
@@ -2059,7 +3012,7 @@ El equipo de gestión`;
             {caseData.documents.map((doc: any) => (
               <div key={doc.id} className="px-6 py-3 flex items-center justify-between">
                 <div className="flex-1">
-                  <p className="font-medium text-sm">{doc.fileName}</p>
+                  <p data-testid="doc-ficha-nombre" className="font-medium text-sm">{doc.fileName}</p>
                   <div className="flex items-center gap-2 mt-1">
                     <p className="text-xs text-gray-400">
                       {new Date(doc.createdAt).toLocaleString("es-ES")}
@@ -2080,16 +3033,25 @@ El equipo de gestión`;
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   {doc.downloadUrl && (
-                    <a href={doc.downloadUrl} target="_blank" rel="noreferrer"
-                      className="text-sm text-primary hover:underline">Descargar</a>
+                    <a
+                      href={doc.downloadUrl}
+                      rel="noreferrer"
+                      aria-label={`Descargar ${doc.fileName}`}
+                      className="text-sm text-primary hover:underline"
+                    >
+                      Descargar
+                    </a>
                   )}
-                  <button
-                    onClick={() => deleteDocument(doc.id, doc.fileName)}
-                    title="Eliminar documento"
-                    className="text-gray-300 hover:text-red-500 transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                  </button>
+                  {puedeBorrarDocs && (
+                    <button
+                      onClick={() => deleteDocument(doc.id, doc.fileName)}
+                      aria-label={`Eliminar documento: ${doc.fileName}`}
+                      title="Eliminar documento"
+                      className="text-gray-300 hover:text-red-500 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

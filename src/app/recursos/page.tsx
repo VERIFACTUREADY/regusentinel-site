@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { BLOG_POSTS } from "@/lib/blog-posts";
 import { Reveal } from "@/components/reveal";
 import { ProUpsell } from "@/components/pro-upsell";
 
 export const metadata: Metadata = {
-  title: "Recursos gratuitos sobre el Impuesto de Sucesiones — BARITUR PRO",
+  title: "Recursos gratuitos sobre el Impuesto de Sucesiones — Heredia",
   description:
     "Calculadora ISD, generador de borrador del Modelo 650, comparador entre CCAA, widget para tu web, API pública y guías. Todo gratuito y sin registro.",
-  alternates: { canonical: "https://bariturpro.com/recursos" },
+  alternates: { canonical: "https://heredia.app/recursos" },
 };
 
 interface Resource {
@@ -83,24 +85,7 @@ export default function RecursosPage() {
   return (
     <div className="min-h-screen bg-white text-slate-700 antialiased">
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/80 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-indigo-500 flex items-center justify-center shadow-lg shadow-primary/25">
-              <span className="text-white font-bold text-lg">B</span>
-            </span>
-            <span className="text-lg font-bold text-slate-900 tracking-tight">BARITUR PRO</span>
-          </Link>
-          <nav className="flex gap-1 sm:gap-2 items-center text-sm">
-            <Link href="/recursos" className="px-3 py-2 font-semibold text-primary">Recursos</Link>
-            <Link href="/blog" className="px-3 py-2 font-medium text-slate-600 hover:text-primary transition">Blog</Link>
-            <Link href="/precios" className="hidden sm:inline px-3 py-2 font-medium text-slate-600 hover:text-primary transition">Precios</Link>
-            <Link href="/#demo" className="px-4 py-2 font-semibold bg-primary text-white rounded-lg shadow-lg shadow-primary/25 hover:-translate-y-0.5 transition-all">
-              Probar gratis
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* Hero */}
       <section className="relative overflow-hidden">
@@ -241,6 +226,7 @@ export default function RecursosPage() {
         freeToolName="Estos recursos gratuitos"
         freeToolDesc="resuelven consultas puntuales; no gestionan tu cartera de expedientes."
       />
+      <SiteFooter />
     </div>
   );
 }

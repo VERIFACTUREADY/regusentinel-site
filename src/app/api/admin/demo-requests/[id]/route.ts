@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { isSuperAdmin } from "@/lib/admin";
 import { z } from "zod";
 
 const VALID_STATUSES = ["NEW", "CONTACTED", "MEETING", "PILOT", "CUSTOMER", "LOST"] as const;
@@ -11,12 +11,13 @@ const patchSchema = z.object({
   internalNotes: z.string().max(2000).optional(),
 });
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const session = await getServerSession(authOptions);
-  if (session?.user?.role !== "OWNER") {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const verified = await getVerifiedUser();
+  const session = verified ? { user: verified } : null;
+  // Solo equipo Heredia: demoRequests son leads B2B globales (pre-onboarding,
+  // sin orgId). Antes cualquier OWNER de cualquier despacho podia editarlos.
+  if (!session?.user?.email || !isSuperAdmin(session.user.email)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 

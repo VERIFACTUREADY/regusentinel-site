@@ -125,7 +125,7 @@ describe("generateFamilySummaryPDF", () => {
     const bytes = await generateFamilySummaryPDF({
       summary,
       caseRef: "EXP-MIN",
-      orgName: "BARITUR PRO",
+      orgName: "Heredia",
       generatedAt: new Date(),
     });
     expect(bytes.length).toBeGreaterThan(1000);

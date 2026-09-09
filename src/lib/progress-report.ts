@@ -1,5 +1,7 @@
 import { prisma } from "./prisma";
 
+import { contextHash } from "./ai-privacy";
+import { llamarModelo } from "./ai-gateway";
 const HAS_AI = !!process.env.ANTHROPIC_API_KEY;
 const MODEL = "claude-sonnet-4-6";
 
@@ -182,10 +184,7 @@ export async function generateProgressReport(caseId: string, userId: string): Pr
 
   if (HAS_AI) {
     try {
-      const Anthropic = (await import("@anthropic-ai/sdk")).default;
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-      const msg = await client.messages.create({
+      const respuesta = await llamarModelo({
         model: MODEL,
         max_tokens: 2000,
         system: SYSTEM_PROMPT,
@@ -195,10 +194,10 @@ export async function generateProgressReport(caseId: string, userId: string): Pr
             content: `Genera una carta de actualización de estado para la familia basándote en estos datos del expediente:\n\n${ctx.text}\n\nEl contacto principal es: ${ctx.contactName || "la familia"}`,
           },
         ],
-      });
+        caseId,
+    });
 
-      const block = msg.content[0];
-      const rawText = block.type === "text" ? block.text.trim() : "{}";
+      const rawText = respuesta.texto || "{}";
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
@@ -226,7 +225,7 @@ export async function generateProgressReport(caseId: string, userId: string): Pr
       caseId,
       userId,
       action: "progress_report",
-      prompt: ctx.text,
+      contextHash: contextHash(ctx.text),
       response: JSON.stringify({ subject, body, completedItems, pendingItems, nextSteps }),
       model: modelUsed,
       tokens: null,

@@ -1,13 +1,29 @@
 "use client";
 
 import { useState } from "react";
+import { RolProvider } from "./rol-context";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { SearchModal } from "./search-modal";
 import { NotificationBell } from "./notification-bell";
 import { hasPermission } from "@/lib/rbac";
-import type { Session } from "next-auth";
+import type { Role } from "@prisma/client";
+/**
+ * El shell sólo necesita estos cuatro campos de identidad. Tiparlo así (en vez
+ * de con `Session` de next-auth, que exige `expires`) permite alimentarlo tanto
+ * con la sesión verificada contra base de datos como con la identidad mínima
+ * del usuario que aún no tiene organización.
+ */
+export interface ShellSession {
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    orgId: string | null;
+    role: Role | null;
+  };
+}
 
 const navItems: { href: string; label: string; icon: string; permission?: string }[] = [
   { href: "/dashboard", label: "Dashboard", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4" },
@@ -43,32 +59,40 @@ export interface BadgeCounts {
 export function AppShell({
   session,
   isDemoOrg = false,
+  isSuperAdmin = false,
   trialInfo,
   badgeCounts,
   children,
 }: {
-  session: Session;
+  session: ShellSession;
   isDemoOrg?: boolean;
+  isSuperAdmin?: boolean;
   trialInfo?: TrialInfo | null;
   badgeCounts?: BadgeCounts | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isOwner = session.user.role === "OWNER";
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const role = session.user.role;
-  const visibleNavItems = navItems.filter(
-    (item) => !item.permission || (role && hasPermission(role, item.permission))
-  );
+  // Sin organización todavía: la única pantalla útil es el dashboard
+  // (que ofrece crearla). El resto de secciones necesitan orgId y solo
+  // generarían redirecciones de vuelta que parecen enlaces rotos.
+  const hasOrg = Boolean(session.user.orgId);
+  const visibleNavItems = hasOrg
+    ? navItems.filter(
+        (item) => !item.permission || (role && hasPermission(role, item.permission))
+      )
+    : navItems.filter((item) => item.href === "/dashboard");
 
   const sidebarContent = (
     <>
       <div className="p-4 border-b flex items-center justify-between">
         <Link href="/dashboard" className="text-xl font-bold text-primary" onClick={() => setSidebarOpen(false)}>
-          BARITUR PRO
+          Heredia
         </Link>
         <button
           onClick={() => setSidebarOpen(false)}
+          aria-label="Cerrar navegacion"
           className="lg:hidden p-1 text-gray-400 hover:text-gray-600"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -102,7 +126,7 @@ export function AppShell({
             </Link>
           );
         })}
-        {isOwner && (
+        {isSuperAdmin && (
           <>
             <div className="pt-3 pb-1 px-3">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Admin</p>
@@ -147,12 +171,16 @@ export function AppShell({
         )}
       </nav>
       <div className="p-4 border-t text-xs text-gray-400">
-        <p>BARITUR no presta asesoramiento juridico ni fiscal individual.</p>
+        <p>Heredia no presta asesoramiento juridico ni fiscal individual.</p>
       </div>
     </>
   );
 
   return (
+    // El rol baja por contexto para que las pantallas de cliente puedan dejar
+    // de ofrecer lo que el usuario no puede hacer. No es control de acceso:
+    // quien decide sigue siendo el servidor.
+    <RolProvider rol={role ?? null}>
     <div className="min-h-screen flex flex-col bg-gray-50">
       <SearchModal />
       {isDemoOrg && <DemoBanner />}
@@ -167,12 +195,30 @@ export function AppShell({
         )}
 
         {/* Sidebar — mobile: slide-over, desktop: static */}
-        <aside className={`
+        {/*
+          Cerrado, el panel tiene que ser INERTE, no solo estar fuera de vista.
+          Antes solo se apartaba con `-translate-x-full`: seguia en el arbol de
+          accesibilidad y en el orden de tabulacion, asi que con el menu
+          "cerrado" un usuario de teclado tabulaba por todos los enlaces de
+          navegacion sin verlos, y un lector de pantalla los anunciaba.
+
+          `invisible` (visibility: hidden) lo saca de ambos, y
+          `pointer-events-none` evita que intercepte clics en la zona izquierda
+          de la pantalla. En `lg` se revierten los dos, porque ahi el panel es
+          fijo y siempre esta a la vista.
+
+          La visibilidad entra en la transicion para que el cierre siga
+          animandose en vez de desaparecer de golpe.
+        */}
+        <aside
+          aria-label="Navegacion principal"
+          className={`
           fixed inset-y-0 left-0 z-50 w-64 bg-white border-r flex flex-col shrink-0
-          transform transition-transform duration-200 ease-in-out
-          lg:static lg:translate-x-0
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-        `}>
+          transform transition-[transform,visibility] duration-200 ease-in-out
+          lg:static lg:translate-x-0 lg:visible lg:pointer-events-auto
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full invisible pointer-events-none"}
+        `}
+        >
           {sidebarContent}
         </aside>
 
@@ -182,6 +228,13 @@ export function AppShell({
           <header className="bg-white border-b px-4 sm:px-6 py-3 flex items-center justify-between shrink-0">
             <button
               onClick={() => setSidebarOpen(true)}
+              /*
+               * Sin `aria-label` este boton no tenia NINGUN nombre accesible:
+               * solo contiene un SVG. Un lector de pantalla anunciaba "boton" a
+               * secas, y en movil es el unico acceso a toda la navegacion.
+               */
+              aria-label="Abrir navegacion"
+              aria-expanded={sidebarOpen}
               className="lg:hidden p-1 -ml-1 text-gray-500 hover:text-gray-700"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -190,28 +243,32 @@ export function AppShell({
             </button>
             <div className="hidden lg:block" />
             <div className="flex items-center gap-2 sm:gap-4">
-              <button
-                onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
-                className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 border rounded-md hover:border-gray-400 hover:text-gray-600 transition"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                Buscar...
-                <kbd className="text-xs border rounded px-1 py-0.5 ml-1">⌘K</kbd>
-              </button>
-              <Link
-                href="/cases/new"
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-sm font-medium rounded-md hover:bg-primary/90 transition"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Nuevo
-              </Link>
-              <NotificationBell />
+              {hasOrg && (
+                <>
+                  <button
+                    onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+                    className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 border rounded-md hover:border-gray-400 hover:text-gray-600 transition"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    Buscar...
+                    <kbd className="text-xs border rounded px-1 py-0.5 ml-1">⌘K</kbd>
+                  </button>
+                  <Link
+                    href="/cases/new"
+                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-sm font-medium rounded-md hover:bg-primary/90 transition"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Nuevo
+                  </Link>
+                  <NotificationBell />
+                </>
+              )}
               <Link href="/profile" className="text-sm text-gray-600 hidden sm:inline hover:text-primary transition">{session.user.name || session.user.email}</Link>
-              <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-500">{session.user.role}</span>
+              {role && <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-500">{role}</span>}
               <button onClick={() => signOut({ callbackUrl: "/login" })}
                 className="text-sm text-gray-500 hover:text-red-600">
                 Salir
@@ -226,6 +283,7 @@ export function AppShell({
         </div>
       </div>
     </div>
+    </RolProvider>
   );
 }
 
@@ -255,7 +313,7 @@ function TrialBanner({ plan, daysLeft }: { plan: string; daysLeft: number }) {
 function DemoBanner() {
   return (
     <div className="bg-amber-500 text-amber-950 px-4 py-2 text-sm flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-      <span className="font-semibold">Estas en la demo de BARITUR PRO.</span>
+      <span className="font-semibold">Estas en la demo de Heredia.</span>
       <span className="text-amber-900/80 hidden sm:inline">Datos ficticios. Se reinician cada noche.</span>
       <Link
         href="/?source=demo_banner#demo"

@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "tasks.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const auth = await requireOrgPermission("tasks.read");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const task = await prisma.task.findFirst({
     where: { id: params.id, case: { orgId: session.user.orgId, deletedAt: null } },
@@ -28,14 +23,20 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json(notes);
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "tasks.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+/**
+ * Escribir una nota es escribir.
+ *
+ * Este POST pedia `tasks.read`. Un VIEWER —que por definicion tiene solo los
+ * permisos terminados en `.read`— podia dejar notas de gestion en cualquier
+ * tarea de la organizacion: una escritura permanente, firmada con su nombre y
+ * visible para todos, colada bajo un permiso de lectura. Pide `tasks.update`,
+ * que es lo que corresponde a modificar una tarea.
+ */
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const auth = await requireOrgPermission("tasks.update");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const task = await prisma.task.findFirst({
     where: { id: params.id, case: { orgId: session.user.orgId, deletedAt: null } },

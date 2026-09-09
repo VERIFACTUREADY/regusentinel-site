@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
+import { findApprovalInOrg, findTaskInCase } from "@/lib/tenancy";
 import { logAudit } from "@/lib/audit";
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "autopilot.approve")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const auth = await requireOrgPermission("autopilot.approve");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const body = await req.json();
   const { status } = body;
@@ -20,22 +16,42 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Estado invalido" }, { status: 400 });
   }
 
-  const approval = await prisma.approval.findFirst({
-    where: { id: params.id, case: { orgId: session.user.orgId } },
-  });
+  const approval = await findApprovalInOrg(params.id, session.user.orgId);
   if (!approval) return NextResponse.json({ error: "Aprobacion no encontrada" }, { status: 404 });
 
-  const updated = await prisma.approval.update({
-    where: { id: params.id },
-    data: { status, reviewerId: session.user.id, reviewedAt: new Date() },
-  });
-
+  // La tarea asociada debe pertenecer al mismo expediente que la aprobación.
+  // Antes se actualizaba con `where: { id: approval.taskId }` sin más: si una
+  // aprobación quedaba apuntando a una tarea de otro expediente, la escritura
+  // salía del tenant.
   if (approval.taskId) {
-    await prisma.task.update({
-      where: { id: approval.taskId },
-      data: { status: status === "APPROVED" ? "APPROVED" : "PENDING" },
-    });
+    const linkedTask = await findTaskInCase(
+      approval.taskId, approval.caseId, session.user.orgId,
+    );
+    if (!linkedTask) {
+      return NextResponse.json(
+        { error: "La tarea asociada no pertenece a este expediente" },
+        { status: 409 },
+      );
+    }
   }
+
+  // Aprobación y tarea se actualizan juntas: si la segunda falla, la primera
+  // no debe quedar marcada como revisada.
+  const updated = await prisma.$transaction(async (tx) => {
+    const approvalRow = await tx.approval.update({
+      where: { id: approval.id },
+      data: { status, reviewerId: session.user.id, reviewedAt: new Date() },
+    });
+
+    if (approval.taskId) {
+      await tx.task.update({
+        where: { id: approval.taskId },
+        data: { status: status === "APPROVED" ? "APPROVED" : "PENDING" },
+      });
+    }
+
+    return approvalRow;
+  });
 
   await logAudit({
     orgId: session.user.orgId,

@@ -171,7 +171,7 @@ export function PricingTable() {
       <div className="mt-8 border-2 border-gray-800 rounded-xl p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <p className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-1">Servicio gestionado</p>
-          <h4 className="text-lg font-bold text-gray-900 mb-2">BARITUR MANAGED</h4>
+          <h4 className="text-lg font-bold text-gray-900 mb-2">Heredia Managed</h4>
           <p className="text-sm text-gray-600 max-w-xl">
             Operación administrativa coordinada por expediente: intake, documentación, pack banco,
             plazos y comunicación con familia. Sin asesoría legal/fiscal.

@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
-export const alt = "BARITUR PRO — Gestion post-mortem profesional";
+export const alt = "Heredia — Gestion post-mortem profesional";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -16,7 +16,7 @@ export default function OGImage() {
           justifyContent: "center",
           width: "100%",
           height: "100%",
-          background: "linear-gradient(135deg, #1e40af 0%, #1e3a8a 50%, #172554 100%)",
+          background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
           color: "white",
           fontFamily: "Inter, system-ui, sans-serif",
           padding: "60px",
@@ -33,22 +33,46 @@ export default function OGImage() {
         >
           <div
             style={{
-              fontSize: 56,
-              fontWeight: 800,
-              letterSpacing: "-0.02em",
-              marginBottom: 16,
+              display: "flex",
+              alignItems: "center",
+              gap: 20,
+              marginBottom: 24,
             }}
           >
-            BARITUR PRO
+            <div
+              style={{
+                width: 88,
+                height: 88,
+                borderRadius: 20,
+                background: "linear-gradient(135deg, #2563eb 0%, #6366f1 100%)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 56,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+              }}
+            >
+              H
+            </div>
+            <div
+              style={{
+                fontSize: 64,
+                fontWeight: 600,
+                letterSpacing: "-0.03em",
+              }}
+            >
+              Heredia
+            </div>
           </div>
           <div
             style={{
-              fontSize: 28,
+              fontSize: 30,
               fontWeight: 500,
               opacity: 0.9,
               marginBottom: 40,
-              maxWidth: 700,
-              lineHeight: 1.4,
+              maxWidth: 800,
+              lineHeight: 1.35,
             }}
           >
             Software de gestion post-mortem para gestorias y funerarias
@@ -61,7 +85,7 @@ export default function OGImage() {
               opacity: 0.75,
             }}
           >
-            <span>Motor de plazos ISD</span>
+            <span>Radar ISD</span>
             <span>·</span>
             <span>Portal familia</span>
             <span>·</span>
@@ -79,7 +103,7 @@ export default function OGImage() {
               fontWeight: 600,
             }}
           >
-            baritur.pro — Desde 149 EUR/mes
+            heredia.app — Desde 149 EUR/mes
           </div>
         </div>
       </div>

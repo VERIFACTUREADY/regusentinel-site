@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
     estimatedInheritanceValue: estimatedValue,
     hasDeceasedInsurance: Boolean(body.hasInsurance),
     categories: [],
-    orgName: "BARITUR PRO — Borrador gratuito",
+    orgName: "Heredia — Borrador gratuito",
     generatedAt: new Date(),
   });
 

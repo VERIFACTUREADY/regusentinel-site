@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { notFound } from "next/navigation";
 import {
   GLOSSARY,
@@ -11,11 +13,12 @@ export async function generateStaticParams() {
   return GLOSSARY.map((t) => ({ term: t.slug }));
 }
 
-export async function generateMetadata({ params }: { params: { term: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ term: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const t = getTermBySlug(params.term);
   if (!t) return {};
   return {
-    title: `${t.term} — Glosario ISD | BARITUR PRO`,
+    title: `${t.term} — Glosario ISD | Heredia`,
     description: t.definition,
     keywords: [
       t.term.toLowerCase(),
@@ -24,7 +27,7 @@ export async function generateMetadata({ params }: { params: { term: string } })
       `${t.term.toLowerCase()} modelo 650`,
       ...(t.synonyms ?? []),
     ],
-    alternates: { canonical: `https://bariturpro.com/glosario/${t.slug}` },
+    alternates: { canonical: `https://heredia.app/glosario/${t.slug}` },
     openGraph: {
       title: `${t.term} - Glosario ISD`,
       description: t.definition,
@@ -43,7 +46,8 @@ const CATEGORY_COLORS: Record<string, string> = {
   Documentacion: "bg-gray-100 text-gray-700",
 };
 
-export default function GlossaryTermPage({ params }: { params: { term: string } }) {
+export default async function GlossaryTermPage(props: { params: Promise<{ term: string }> }) {
+  const params = await props.params;
   const t = getTermBySlug(params.term);
   if (!t) return notFound();
 
@@ -54,8 +58,8 @@ export default function GlossaryTermPage({ params }: { params: { term: string } 
     "@type": "DefinedTerm",
     name: t.term,
     description: t.definition,
-    inDefinedTermSet: "https://bariturpro.com/glosario",
-    url: `https://bariturpro.com/glosario/${t.slug}`,
+    inDefinedTermSet: "https://heredia.app/glosario",
+    url: `https://heredia.app/glosario/${t.slug}`,
   };
 
   return (
@@ -63,17 +67,7 @@ export default function GlossaryTermPage({ params }: { params: { term: string } 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/glosario" className="text-gray-700 hover:text-primary">Glosario</Link>
-              <Link href="/calculadora-isd" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/blog" className="text-gray-700 hover:text-primary hidden sm:inline">Blog</Link>
-              <Link href="/#demo" className="text-primary font-semibold hidden sm:inline">Probar gratis</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         <nav className="max-w-3xl mx-auto px-4 py-3 text-xs text-gray-500">
           <Link href="/" className="hover:text-primary">Inicio</Link>
@@ -179,7 +173,7 @@ export default function GlossaryTermPage({ params }: { params: { term: string } 
                 href="/#demo"
                 className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition"
               >
-                Probar BARITUR PRO
+                Probar Heredia
               </Link>
             </div>
           </section>
@@ -193,6 +187,7 @@ export default function GlossaryTermPage({ params }: { params: { term: string } 
             </p>
           </section>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Casos de uso reales — Cómo gestorías y funerarias usan BARITUR PRO",
+  title: "Casos de uso ilustrativos — Cómo gestorías y funerarias usan Heredia",
   description:
-    "6 escenarios concretos con cifras: cómo despachos pasaron de 60 a 150 expedientes/año, cómo evitaron recargos del Modelo 650 y cómo cobran servicios post-mortem.",
-  alternates: { canonical: "https://bariturpro.com/casos-de-uso" },
+    "6 escenarios ilustrativos con cifras hipotéticas, no medidas en clientes reales: cómo un despacho podría ampliar capacidad, reducir el riesgo de recargos del Modelo 650 y monetizar servicios post-mortem.",
+  alternates: { canonical: "https://heredia.app/casos-de-uso" },
 };
 
 interface UseCase {
@@ -15,7 +17,6 @@ interface UseCase {
   before: string[];
   after: string[];
   metrics: { label: string; value: string; tone: "positive" | "neutral" }[];
-  quote: string;
 }
 
 const CASES: UseCase[] = [
@@ -41,7 +42,6 @@ const CASES: UseCase[] = [
       { label: "Plazos perdidos", value: "0", tone: "positive" },
       { label: "Plan", value: "Despacho", tone: "neutral" },
     ],
-    quote: "Pasamos de tramitar 60 herencias al año a 150 con el mismo equipo. La automatización del Modelo 650 y el portal familia son los dos ejes que cambiaron todo.",
   },
 
   {
@@ -66,7 +66,6 @@ const CASES: UseCase[] = [
       { label: "Tiempo dedicado", value: "Constante", tone: "neutral" },
       { label: "Plan", value: "Despacho", tone: "neutral" },
     ],
-    quote: "Pasamos de ser la funeraria que organiza el sepelio a ser el referente que la familia recomienda durante años. El servicio post-mortem ha sido nuestra mejor inversión.",
   },
 
   {
@@ -88,10 +87,9 @@ const CASES: UseCase[] = [
     metrics: [
       { label: "Recargos evitados", value: "12.400 €", tone: "positive" },
       { label: "Plazos perdidos", value: "0", tone: "positive" },
-      { label: "Coste BARITUR/año", value: "4.188 €", tone: "neutral" },
+      { label: "Coste Heredia/año", value: "4.188 €", tone: "neutral" },
       { label: "Plan", value: "Despacho", tone: "neutral" },
     ],
-    quote: "Lo que costaba el plan se cubrió con un solo recargo evitado. El año entero ha sido beneficio puro.",
   },
 
   {
@@ -116,7 +114,6 @@ const CASES: UseCase[] = [
       { label: "Honorarios facturados", value: "+ 1.800 €", tone: "positive" },
       { label: "Plan", value: "Firma", tone: "neutral" },
     ],
-    quote: "El audit trail nos sacó de un proceso disciplinario. Pudimos demostrar al colegio que cada paso del expediente estaba registrado.",
   },
 
   {
@@ -141,7 +138,6 @@ const CASES: UseCase[] = [
       { label: "Tiempo/donación", value: "2,5 h", tone: "neutral" },
       { label: "Plan", value: "Despacho", tone: "neutral" },
     ],
-    quote: "Antes derivábamos las donaciones; con BARITUR PRO ya no hay diferencia entre 650 y 651. Es el mismo flujo y abrimos un vertical entero.",
   },
 
   {
@@ -155,7 +151,7 @@ const CASES: UseCase[] = [
       "Reseñas y referencias dependen de la memoria del cliente",
     ],
     after: [
-      "Portal con dominio propio (heredamos.funerariaXY.com) y colores de la marca",
+      "Portal personalizado con el logo, los colores y el email de soporte de la funeraria",
       "Cada familia recibe URL única durante 6-12 meses con seguimiento de su expediente",
       "Reviews/recomendaciones triplican gracias al recordatorio constante",
       "Equipo comercial puede demostrar el portal en cada nuevo servicio",
@@ -166,7 +162,6 @@ const CASES: UseCase[] = [
       { label: "Inversión inicial", value: "0 €", tone: "neutral" },
       { label: "Plan", value: "Firma", tone: "neutral" },
     ],
-    quote: "El portal con nuestro dominio es la mejor herramienta de marca que hemos tenido. La familia ve nuestro logo durante meses, no el del software.",
   },
 ];
 
@@ -184,27 +179,21 @@ const VERTICAL_COLORS: Record<UseCase["vertical"], string> = {
 export default function CasosDeUsoPage() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-          <nav className="flex gap-3 sm:gap-4 text-sm">
-            <Link href="/casos-de-uso" className="text-primary font-semibold">Casos</Link>
-            <Link href="/calculadora-roi" className="text-gray-700 hover:text-primary">ROI</Link>
-            <Link href="/precios" className="text-gray-700 hover:text-primary">Precios</Link>
-            <Link href="/#demo" className="text-primary font-semibold hidden sm:inline">Probar gratis</Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
-      <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
-        <div className="max-w-4xl mx-auto px-4 py-14 sm:py-16">
-          <h1 className="text-3xl sm:text-4xl font-bold mb-3">Casos de uso reales con cifras</h1>
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-blue-900 text-white">
+        <div className="absolute inset-0 dot-grid-light opacity-30" />
+        <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl animate-float-slow" />
+        <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
+        <div className="relative max-w-4xl mx-auto px-4 py-14 sm:py-16">
+          <h1 className="text-3xl sm:text-4xl font-bold mb-3">Casos de uso ilustrativos</h1>
           <p className="text-base sm:text-lg text-blue-100 max-w-2xl mb-2">
-            Cómo gestorías, funerarias y despachos de derecho sucesorio usan BARITUR PRO para multiplicar
-            su capacidad, evitar recargos y monetizar servicios post-mortem.
+            Cómo gestorías, funerarias y despachos de derecho sucesorio pueden usar Heredia para
+            multiplicar su capacidad, evitar recargos y monetizar servicios post-mortem.
           </p>
           <p className="text-sm text-blue-300">
-            Casos sintéticos basados en patrones reales de despachos en periodo de prueba o producción.
+            Casos modelo basados en supuestos del sector. Las cifras ilustran el potencial; el ROI
+            real depende del despacho, su volumen y su madurez operativa.
           </p>
         </div>
       </div>
@@ -243,7 +232,7 @@ export default function CasosDeUsoPage() {
                 </ul>
               </div>
               <div className="p-6 bg-emerald-50/40">
-                <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-3">Con BARITUR PRO</p>
+                <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-3">Con Heredia</p>
                 <ul className="space-y-2 text-sm text-gray-700">
                   {c.after.map((a, i) => (
                     <li key={i} className="flex gap-2">
@@ -255,10 +244,6 @@ export default function CasosDeUsoPage() {
               </div>
             </div>
 
-            {/* Quote */}
-            <div className="p-6 bg-gray-50 border-t">
-              <p className="text-sm text-gray-700 italic">"{c.quote}"</p>
-            </div>
           </article>
         ))}
       </div>
@@ -297,6 +282,7 @@ export default function CasosDeUsoPage() {
           Tu caso real puede variar según madurez de procesos previos y adopción del equipo.
         </p>
       </div>
+      <SiteFooter />
     </div>
   );
 }

@@ -1,8 +1,35 @@
 "use client";
 
+import { AvisoError, mensajeDeError } from "@/components/ui/carga-remota";
+import { fechaHoraCortaES, fechaHoraLargaES } from "@/lib/fecha-es";
+import type { CaseStatus } from "@prisma/client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 
+// ─── Ayudantes de error ───────────────────────────────────
+
+/**
+ * Lee el cuerpo de una respuesta sin que un cuerpo que no sea JSON tape el
+ * problema real. Un 502 del proxy devuelve HTML: `res.json()` a secas lanzaba
+ * «Unexpected token '<'» y eso era lo que acababa leyendo el usuario en vez
+ * del error de verdad.
+ */
+async function leerCuerpo(res: Response): Promise<{ error?: string } | null> {
+  try {
+    return (await res.json()) as { error?: string };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mensaje legible a partir de un `unknown`, sin recurrir a `any`.
+ *
+ * Un `fetch` que no llega a completarse lanza `TypeError: Failed to fetch` —o
+ * «NetworkError...» segun el navegador—: mensajes internos, en ingles, que no
+ * significan nada para quien usa la aplicacion. En ese caso se usa el texto
+ * propio en vez de dejar que se cuele el del navegador.
+ */
 // ─── Types ────────────────────────────────────────────────
 
 interface WorkflowLog {
@@ -44,15 +71,44 @@ const ACTION_LABELS: Record<string, string> = {
   CHANGE_CASE_STATUS: "Cambiar estado del expediente",
 };
 
-const CASE_STATUS_OPTIONS = [
-  { value: "OPEN", label: "Abierto" },
-  { value: "PENDING_DOCS", label: "Pendiente documentación" },
-  { value: "IN_PROGRESS", label: "En tramitación" },
-  { value: "PENDING_SIGNATURE", label: "Pendiente firma" },
-  { value: "FILED", label: "Presentado" },
-  { value: "CLOSED", label: "Cerrado" },
-  { value: "ARCHIVED", label: "Archivado" },
-];
+/**
+ * Estados de expediente que ofrece el formulario.
+ *
+ * EL DEFECTO QUE CORRIGE
+ * ----------------------
+ * Esta lista estaba inventada. Ofrecia `OPEN`, `PENDING_SIGNATURE` y `FILED`,
+ * que NO existen en el enum `CaseStatus`, y se dejaba fuera cinco que si:
+ * `INTAKE`, `VALIDATION`, `READY_TO_SEND`, `SENT` y `FOLLOW_UP`.
+ *
+ * Las consecuencias eran de las que no se ven venir:
+ *
+ *   - elegir «Presentado» como nuevo estado hacia que el servidor rechazara la
+ *     regla con un 400 —`z.nativeEnum(CaseStatus)`—, es decir, el producto
+ *     ofrecia una opcion que el propio producto no acepta;
+ *   - y peor: poner «Abierto» como condicion creaba una regla que se guardaba
+ *     tan tranquila y **no se disparaba nunca**, porque ningun expediente
+ *     puede estar en un estado que no existe. Una automatizacion muda, sin un
+ *     solo error en ninguna parte.
+ *
+ * Ahora la lista sale del enum real, asi que no puede volver a separarse de
+ * el: si manana se anade un estado al esquema, aparece aqui solo.
+ */
+const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
+  INTAKE: "Alta",
+  VALIDATION: "Validación",
+  IN_PROGRESS: "En tramitación",
+  PENDING_DOCS: "Pendiente documentación",
+  READY_TO_SEND: "Listo para enviar",
+  SENT: "Enviado",
+  FOLLOW_UP: "Seguimiento",
+  CLOSED: "Cerrado",
+  ARCHIVED: "Archivado",
+};
+
+const CASE_STATUS_OPTIONS = (Object.keys(CASE_STATUS_LABELS) as CaseStatus[]).map((value) => ({
+  value,
+  label: CASE_STATUS_LABELS[value],
+}));
 
 const LOG_STATUS_COLORS: Record<string, string> = {
   SUCCESS: "bg-green-100 text-green-700",
@@ -89,9 +145,10 @@ function ConditionsEditor({
     return (
       <div className="space-y-2">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Desde estado (opcional)</label>
+          <label htmlFor="reglaDesdeEstado" className="block text-xs font-medium text-gray-600 mb-1">Desde estado (opcional)</label>
           <select
-            value={conditions.fromStatus ?? ""}
+            id="reglaDesdeEstado"
+              value={conditions.fromStatus ?? ""}
             onChange={(e) => onChange({ ...conditions, fromStatus: e.target.value })}
             className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
           >
@@ -100,8 +157,9 @@ function ConditionsEditor({
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Hacia estado (opcional)</label>
+          <label htmlFor="reglaHaciaEstado" className="block text-xs font-medium text-gray-600 mb-1">Hacia estado (opcional)</label>
           <select
+            id="reglaHaciaEstado"
             value={conditions.toStatus ?? ""}
             onChange={(e) => onChange({ ...conditions, toStatus: e.target.value })}
             className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
@@ -116,10 +174,28 @@ function ConditionsEditor({
   if (trigger === "TASK_STATUS_CHANGED") {
     return (
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Hacia estado de tarea (opcional)</label>
+        {/*
+          `taskStatus`, NO `toStatus`.
+
+          EL DEFECTO QUE CORRIGE
+          ----------------------
+          Este selector escribía en `conditions.toStatus`, que en el motor es
+          un **estado de EXPEDIENTE** (`CaseStatus`). Elegir aquí «DONE» —que
+          es un estado de TAREA— producía una condición que el esquema no
+          admite, así que el servidor rechazaba la regla con un 400 y el
+          formulario se quedaba abierto sin forma de salir adelante: la
+          condición «Hacia estado de tarea» era **imposible de usar**.
+
+          Y si alguna hubiera llegado a guardarse, tampoco habría servido:
+          `evaluateConditions` compara `conditions.taskStatus` con el estado de
+          la tarea del evento, y nunca habría mirado `toStatus`. Una regla
+          guardada que no se dispara jamás, sin un solo error.
+        */}
+        <label htmlFor="reglaEstadoTarea" className="block text-xs font-medium text-gray-600 mb-1">Hacia estado de tarea (opcional)</label>
         <select
-          value={conditions.toStatus ?? ""}
-          onChange={(e) => onChange({ ...conditions, toStatus: e.target.value })}
+          id="reglaEstadoTarea"
+          value={conditions.taskStatus ?? ""}
+          onChange={(e) => onChange({ ...conditions, taskStatus: e.target.value })}
           className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
         >
           <option value="">Cualquier estado</option>
@@ -146,19 +222,21 @@ function ActionConfigEditor({
     return (
       <div className="space-y-2">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Asunto del email</label>
+          <label htmlFor="reglaAsunto" className="block text-xs font-medium text-gray-600 mb-1">Asunto del email</label>
           <input
             type="text"
-            value={config.subject ?? ""}
+            id="reglaAsunto"
+              value={config.subject ?? ""}
             onChange={(e) => onChange({ ...config, subject: e.target.value })}
             placeholder="Actualización de su expediente"
             className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Cuerpo del mensaje</label>
+          <label htmlFor="reglaCuerpo" className="block text-xs font-medium text-gray-600 mb-1">Cuerpo del mensaje</label>
           <textarea
-            value={config.body ?? ""}
+            id="reglaCuerpo"
+              value={config.body ?? ""}
             onChange={(e) => onChange({ ...config, body: e.target.value })}
             rows={3}
             placeholder="Estimado/a, le informamos que su expediente ha sido actualizado..."
@@ -172,9 +250,10 @@ function ActionConfigEditor({
   if (action === "ADD_CASE_COMMENT") {
     return (
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Texto del comentario</label>
+        <label htmlFor="reglaComentario" className="block text-xs font-medium text-gray-600 mb-1">Texto del comentario</label>
         <textarea
-          value={config.comment ?? ""}
+          id="reglaComentario"
+              value={config.comment ?? ""}
           onChange={(e) => onChange({ ...config, comment: e.target.value })}
           rows={2}
           placeholder="El expediente ha cambiado de estado automáticamente."
@@ -187,9 +266,10 @@ function ActionConfigEditor({
   if (action === "CHANGE_CASE_STATUS") {
     return (
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Nuevo estado del expediente</label>
+        <label htmlFor="reglaNuevoEstado" className="block text-xs font-medium text-gray-600 mb-1">Nuevo estado del expediente</label>
         <select
-          value={config.newStatus ?? ""}
+          id="reglaNuevoEstado"
+              value={config.newStatus ?? ""}
           onChange={(e) => onChange({ ...config, newStatus: e.target.value })}
           className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
         >
@@ -226,14 +306,27 @@ function RuleModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-semibold mb-5">{initial.name ? "Editar regla" : "Nueva regla"}</h2>
+      {/*
+        `role="dialog"` + `aria-modal` + `aria-labelledby`: los tres modales
+        eran `<div>` sueltos. Un lector de pantalla no anunciaba que se hubiera
+        abierto nada, ni con que titulo, y `getByRole("dialog")` no encontraba
+        nada que localizar.
+      */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tituloModalRegla"
+        data-testid="modal-regla"
+        className="relative bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto"
+      >
+        <h2 id="tituloModalRegla" className="text-lg font-semibold mb-5">{initial.name ? "Editar regla" : "Nueva regla"}</h2>
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nombre <span className="text-red-500">*</span></label>
+            <label htmlFor="reglaNombre" className="block text-sm font-medium text-gray-700 mb-1">Nombre <span className="text-red-500">*</span></label>
             <input
               type="text"
+              id="reglaNombre"
               value={form.name}
               onChange={(e) => set("name", e.target.value)}
               maxLength={120}
@@ -243,9 +336,10 @@ function RuleModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+            <label htmlFor="reglaDescripcion" className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
             <input
               type="text"
+              id="reglaDescripcion"
               value={form.description}
               onChange={(e) => set("description", e.target.value)}
               maxLength={240}
@@ -269,8 +363,9 @@ function RuleModal({
           <hr />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Disparador (cuando…)</label>
+            <label htmlFor="reglaDisparador" className="block text-sm font-medium text-gray-700 mb-1">Disparador (cuando…)</label>
             <select
+              id="reglaDisparador"
               value={form.trigger}
               onChange={(e) => {
                 set("trigger", e.target.value);
@@ -284,8 +379,14 @@ function RuleModal({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Condiciones</label>
+          {/*
+            `fieldset` + `legend`, no `<label>`: esto no rotula UN control, sino
+            el grupo de campos que el disparador despliega. Asi el lector de
+            pantalla anuncia «Condiciones» al entrar en el grupo, que es la
+            asociacion semanticamente correcta.
+          */}
+          <fieldset>
+            <legend className="block text-sm font-medium text-gray-700 mb-1">Condiciones</legend>
             <div className="border border-gray-200 rounded-md p-3 bg-gray-50">
               <ConditionsEditor
                 trigger={form.trigger}
@@ -293,13 +394,14 @@ function RuleModal({
                 onChange={(c) => set("conditions", c)}
               />
             </div>
-          </div>
+          </fieldset>
 
           <hr />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Acción (entonces…)</label>
+            <label htmlFor="reglaAccion" className="block text-sm font-medium text-gray-700 mb-1">Acción (entonces…)</label>
             <select
+              id="reglaAccion"
               value={form.action}
               onChange={(e) => {
                 set("action", e.target.value);
@@ -313,8 +415,8 @@ function RuleModal({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Configuración de acción</label>
+          <fieldset>
+            <legend className="block text-sm font-medium text-gray-700 mb-1">Configuración de acción</legend>
             <div className="border border-gray-200 rounded-md p-3 bg-gray-50">
               <ActionConfigEditor
                 action={form.action}
@@ -322,10 +424,14 @@ function RuleModal({
                 onChange={(c) => set("actionConfig", c)}
               />
             </div>
-          </div>
+          </fieldset>
         </div>
 
-        {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+        {error && (
+          <p role="alert" data-testid="error-guardar-regla" className="mt-4 text-sm text-red-600">
+            {error}
+          </p>
+        )}
 
         <div className="flex justify-end gap-3 mt-6">
           <button
@@ -339,6 +445,7 @@ function RuleModal({
             type="button"
             onClick={() => onSave(form)}
             disabled={saving || !form.name.trim()}
+            data-testid="guardar-regla"
             className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
           >
             {saving ? "Guardando..." : "Guardar regla"}
@@ -356,20 +463,63 @@ function TestRuleModal({ rule, onClose }: { rule: WorkflowRule; onClose: () => v
   const [results, setResults] = useState<{ id: string; title: string }[]>([]);
   const [searching, setSearching] = useState(false);
   const [selectedCase, setSelectedCase] = useState<{ id: string; title: string } | null>(null);
+  const [errorBusqueda, setErrorBusqueda] = useState<string | null>(null);
+  /** Ultima consulta que el servidor respondio bien; distingue vacio de fallo. */
+  const [busqueda, setBusqueda] = useState("");
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Busca expedientes distinguiendo «no hay coincidencias» de «no he podido
+   * buscar».
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * El `catch {}` convertia cualquier fallo —401, 403, 500, red caida— en una
+   * lista vacia, y la pantalla se quedaba sin resultados y sin explicacion: el
+   * usuario concluia que su expediente no existia y se iba. Con el buscador
+   * mudo, «Probar regla» era inutilizable sin que nadie supiera por que.
+   */
   useEffect(() => {
-    if (!query.trim() || query.length < 2) { setResults([]); return; }
+    if (!query.trim() || query.length < 2) {
+      setResults([]);
+      setErrorBusqueda(null);
+      setSearching(false);
+      return;
+    }
     setSearching(true);
+    setErrorBusqueda(null);
     const t = setTimeout(async () => {
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-        const data = await res.json();
-        setResults((data.results ?? []).filter((r: any) => r.type === "case").map((r: any) => ({ id: r.id, title: r.title })));
-      } catch {}
-      finally { setSearching(false); }
+        if (!res.ok) {
+          throw new Error(
+            res.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : res.status === 403
+                ? "No tienes permiso para buscar expedientes."
+                : `El buscador ha respondido ${res.status}.`,
+          );
+        }
+        const data: unknown = await res.json();
+        const cuerpo = data as { results?: unknown };
+        if (!cuerpo || !Array.isArray(cuerpo.results)) {
+          throw new Error("La respuesta del buscador no tiene el formato esperado.");
+        }
+        setResults(
+          (cuerpo.results as { type?: string; id?: string; title?: string }[])
+            .filter((r) => r.type === "case" && typeof r.id === "string")
+            .map((r) => ({ id: r.id as string, title: r.title ?? r.id as string })),
+        );
+        setBusqueda(query);
+      } catch (e: unknown) {
+        // Sin resultados NO se pinta «sin coincidencias»: se pinta el fallo.
+        setResults([]);
+        setErrorBusqueda(mensajeDeError(e, "Error de red al buscar."));
+      } finally {
+        setSearching(false);
+      }
     }, 300);
     return () => clearTimeout(t);
   }, [query]);
@@ -385,11 +535,35 @@ function TestRuleModal({ rule, onClose }: { rule: WorkflowRule; onClose: () => v
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ caseId: selectedCase.id }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error al ejecutar");
-      setResult({ success: true, message: data.message || "Regla ejecutada correctamente." });
-    } catch (err: any) {
-      setError(err.message);
+      const data = (await leerCuerpo(res)) as
+        | { error?: string; message?: string; success?: boolean; status?: string }
+        | null;
+      if (!res.ok) {
+        throw new Error(
+          data?.error ??
+            (res.status === 403
+              ? "No tienes permiso para ejecutar reglas."
+              : res.status === 404
+                ? "La regla o el expediente ya no existen."
+                : `El servidor ha respondido ${res.status}.`),
+        );
+      }
+      /*
+       * Un 200 NO significa que la regla se haya ejecutado bien.
+       *
+       * El servidor ahora dice lo que de verdad pasó: si las condiciones no
+       * encajaban con el expediente, si el envío falló o si la acción se
+       * omitió, `success` es `false` y viene el motivo. Antes esta pantalla
+       * pintaba «Ejecutado correctamente» en cuanto la petición no daba error
+       * de transporte, así que una prueba que no había hecho nada se
+       * anunciaba como una prueba superada.
+       */
+      if (data?.success === false) {
+        throw new Error(data.message ?? "La regla no se ha ejecutado.");
+      }
+      setResult({ success: true, message: data?.message || "Regla ejecutada correctamente." });
+    } catch (err: unknown) {
+      setError(mensajeDeError(err, "Error de red. La regla no se ha ejecutado."));
     } finally {
       setRunning(false);
     }
@@ -398,24 +572,45 @@ function TestRuleModal({ rule, onClose }: { rule: WorkflowRule; onClose: () => v
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
-        <h2 className="text-lg font-semibold mb-1">Probar regla</h2>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tituloModalProbar"
+        data-testid="modal-probar-regla"
+        className="relative bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6"
+      >
+        <h2 id="tituloModalProbar" className="text-lg font-semibold mb-1">Probar regla</h2>
         <p className="text-sm text-gray-500 mb-4">
           Ejecuta <strong>{rule.name}</strong> contra un expediente real. La acción se ejecutará de verdad.
         </p>
 
         <div className="space-y-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Buscar expediente</label>
+            <label htmlFor="reglaBuscarExpediente" className="block text-xs font-medium text-gray-600 mb-1">Buscar expediente</label>
             <input
               type="text"
+              id="reglaBuscarExpediente"
               value={query}
               onChange={(e) => { setQuery(e.target.value); setSelectedCase(null); setResult(null); }}
               placeholder="Ref. o nombre del fallecido…"
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
               autoFocus
             />
-            {searching && <p className="text-xs text-gray-400 mt-1">Buscando…</p>}
+            {searching && <p className="text-xs text-gray-400 mt-1" data-testid="buscando-expediente">Buscando…</p>}
+            {errorBusqueda && (
+              <p role="alert" data-testid="error-buscar-expediente" className="text-xs text-red-600 mt-1">
+                {errorBusqueda}
+              </p>
+            )}
+            {/*
+              «Sin coincidencias» SOLO cuando el servidor ha respondido bien y
+              no habia ninguna. Antes, con el buscador caido, se veia lo mismo.
+            */}
+            {!searching && !errorBusqueda && !selectedCase && results.length === 0 && busqueda.length >= 2 && (
+              <p data-testid="sin-coincidencias" className="text-xs text-gray-400 mt-1">
+                Sin expedientes que coincidan.
+              </p>
+            )}
             {results.length > 0 && !selectedCase && (
               <div className="mt-1 border rounded-md divide-y max-h-40 overflow-y-auto">
                 {results.map((r) => (
@@ -438,7 +633,12 @@ function TestRuleModal({ rule, onClose }: { rule: WorkflowRule; onClose: () => v
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span className="text-sm text-indigo-800 font-medium truncate">{selectedCase.title}</span>
-              <button type="button" onClick={() => { setSelectedCase(null); setQuery(""); }} className="ml-auto text-indigo-400 hover:text-indigo-700 shrink-0">
+              <button
+                type="button"
+                onClick={() => { setSelectedCase(null); setQuery(""); }}
+                aria-label={`Quitar el expediente seleccionado ${selectedCase.title}`}
+                className="ml-auto text-indigo-400 hover:text-indigo-700 shrink-0"
+              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -447,13 +647,17 @@ function TestRuleModal({ rule, onClose }: { rule: WorkflowRule; onClose: () => v
           )}
 
           {result && (
-            <div className="p-3 bg-green-50 border border-green-100 rounded-md">
+            <div role="status" data-testid="exito-ejecutar-regla" className="p-3 bg-green-50 border border-green-100 rounded-md">
               <p className="text-sm text-green-800 font-medium">Ejecutado correctamente</p>
               <p className="text-xs text-green-700 mt-0.5">{result.message}</p>
             </div>
           )}
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && (
+            <p role="alert" data-testid="error-ejecutar-regla" className="text-sm text-red-600">
+              {error}
+            </p>
+          )}
         </div>
 
         <div className="flex justify-end gap-3 mt-5">
@@ -479,6 +683,7 @@ function TestRuleModal({ rule, onClose }: { rule: WorkflowRule; onClose: () => v
 function RuleCard({
   rule,
   canManage,
+  ocupado,
   onEdit,
   onDelete,
   onToggle,
@@ -486,6 +691,8 @@ function RuleCard({
 }: {
   rule: WorkflowRule;
   canManage: boolean;
+  /** Hay una escritura en vuelo sobre esta regla: no se admite otra. */
+  ocupado: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onToggle: () => void;
@@ -517,10 +724,18 @@ function RuleCard({
         <div className="flex items-center gap-2 shrink-0">
           {canManage && (
             <>
+              {/*
+                Los cuatro botones de la tarjeta eran iconos sueltos: dos con
+                `title` —una ayuda emergente, no un nombre— y dos, editar y
+                eliminar, SIN nada. Con varias reglas en pantalla, un lector de
+                pantalla anunciaba «boton» ocho veces seguidas sin decir cual ni
+                sobre que regla. El nombre lleva ahora la regla dentro.
+              */}
               <button
                 onClick={onToggle}
-                title={rule.isActive ? "Desactivar" : "Activar"}
-                className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"
+                disabled={ocupado}
+                aria-label={`${rule.isActive ? "Desactivar" : "Activar"} regla ${rule.name}`}
+                className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 disabled:opacity-50"
               >
                 {rule.isActive ? (
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -533,18 +748,31 @@ function RuleCard({
                   </svg>
                 )}
               </button>
-              <button onClick={onTest} title="Probar regla" className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500">
+              <button
+                onClick={onTest}
+                aria-label={`Probar regla ${rule.name}`}
+                className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"
+              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </button>
-              <button onClick={onEdit} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500">
+              <button
+                onClick={onEdit}
+                aria-label={`Editar regla ${rule.name}`}
+                className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"
+              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
               </button>
-              <button onClick={onDelete} className="p-1.5 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-500">
+              <button
+                onClick={onDelete}
+                disabled={ocupado}
+                aria-label={`Eliminar regla ${rule.name}`}
+                className="p-1.5 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-500 disabled:opacity-50"
+              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
@@ -557,7 +785,7 @@ function RuleCard({
       <div className="flex items-center justify-between mt-3 pt-3 border-t text-xs text-gray-500">
         <span>{rule.execCount} ejecuciones</span>
         {rule.lastRunAt && (
-          <span>Última vez: {new Date(rule.lastRunAt).toLocaleDateString("es-ES")}</span>
+          <span>Última vez: {fechaHoraCortaES(rule.lastRunAt)}</span>
         )}
         {rule.logs.length > 0 && (
           <button onClick={() => setShowLogs((v) => !v)} className="text-indigo-600 hover:underline">
@@ -573,7 +801,7 @@ function RuleCard({
               <span className={`px-1.5 py-0.5 rounded font-medium ${LOG_STATUS_COLORS[log.status]}`}>
                 {log.status}
               </span>
-              <span className="text-gray-500">{new Date(log.createdAt).toLocaleString("es-ES")}</span>
+              <span className="text-gray-500">{fechaHoraLargaES(log.createdAt)}</span>
               {log.error && <span className="text-red-500 truncate max-w-xs">{log.error}</span>}
             </div>
           ))}
@@ -588,6 +816,11 @@ function RuleCard({
 export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
   const [rules, setRules] = useState<WorkflowRule[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
+  const [errorAccion, setErrorAccion] = useState<string | null>(null);
+  const [exito, setExito] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editingRule, setEditingRule] = useState<WorkflowRule | null>(null);
   const [saving, setSaving] = useState(false);
@@ -595,16 +828,52 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [testRule, setTestRule] = useState<WorkflowRule | null>(null);
 
+  /**
+   * Carga las reglas distinguiendo carga, lista, vacio real y fallo.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Antes era:
+   *
+   *     try { if (res.ok) setRules(await res.json()); } catch {}
+   *
+   * Con un 401, un 403, un 500 o la red caida, `rules` se quedaba en `[]` y la
+   * pantalla pintaba su estado vacio: **«Sin reglas de automatizacion»**. El
+   * gestor concluia que su despacho no tenia ninguna automatizacion montada
+   * cuando podia tenerlas todas, y ademas seguia viendo «Nueva regla» como si
+   * todo estuviera bien. El `catch {}` remataba tragandose el fallo de red.
+   */
   const load = useCallback(async () => {
     setLoading(true);
+    setErrorCarga(null);
     try {
       const res = await fetch("/api/workflow-rules");
-      if (res.ok) setRules(await res.json());
-    } catch {}
-    finally { setLoading(false); }
+      if (!res.ok) {
+        throw new Error(
+          res.status === 401
+            ? "Tu sesion ha caducado. Vuelve a entrar."
+            : res.status === 403
+              ? "No tienes permiso para ver las automatizaciones."
+              : `El servidor ha respondido ${res.status}.`,
+        );
+      }
+      const datos: unknown = await res.json();
+      // Un 200 con otra forma dejaba `rules` en `undefined` y la pantalla
+      // reventaba al recorrerlo.
+      if (!Array.isArray(datos)) {
+        throw new Error("La respuesta del servidor no tiene el formato esperado.");
+      }
+      setRules(datos as WorkflowRule[]);
+    } catch (e: unknown) {
+      // Sin datos NO se pinta el estado vacio: se pinta el fallo.
+      setRules([]);
+      setErrorCarga(mensajeDeError(e, "No se han podido cargar las reglas."));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, reintento]);
 
   function openNew() {
     setEditingRule(null);
@@ -622,6 +891,25 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
     setSaving(true);
     setSaveError(null);
     try {
+      /*
+       * Las condiciones vacías se QUITAN, no se mandan como cadena vacía.
+       *
+       * EL DEFECTO QUE CORRIGE
+       * ----------------------
+       * Los selectores de condición usan `""` para «Cualquier estado», y eso
+       * se enviaba tal cual. Pero `ruleConditionsSchema` es estricto y sus
+       * campos son enums: `""` no es un valor válido de `CaseStatus` ni de
+       * `TaskStatus`, así que el servidor devolvía un 400.
+       *
+       * Bastaba con elegir una condición y volver a ponerla en «Cualquier
+       * estado» para que la regla dejara de poder guardarse, con un error que
+       * no decía qué campo lo causaba y sin ninguna forma de deshacerlo desde
+       * el formulario. «Sin condición» es la ausencia del campo, no un campo
+       * con nada dentro.
+       */
+      const conditions = Object.fromEntries(
+        Object.entries(form.conditions).filter(([, valor]) => valor !== "" && valor != null),
+      );
       const url = editingRule ? `/api/workflow-rules/${editingRule.id}` : "/api/workflow-rules";
       const method = editingRule ? "PATCH" : "POST";
       const res = await fetch(url, {
@@ -632,35 +920,125 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
           description: form.description || null,
           isActive: form.isActive,
           trigger: form.trigger,
-          conditions: form.conditions,
+          conditions,
           action: form.action,
           actionConfig: form.actionConfig,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error al guardar");
+      // El cuerpo se lee con red de seguridad: un 502 del proxy devuelve HTML
+      // y `res.json()` a secas sustituia el problema real por
+      // «Unexpected token '<'».
+      const data = await leerCuerpo(res);
+      if (!res.ok) {
+        throw new Error(
+          data?.error ??
+            (res.status === 403
+              ? "No tienes permiso para gestionar automatizaciones."
+              : res.status === 404
+                ? "La regla ya no existe. Actualiza la lista."
+                : `El servidor ha respondido ${res.status}.`),
+        );
+      }
       setShowModal(false);
+      setExito(editingRule ? "Regla actualizada." : "Regla creada.");
       await load();
-    } catch (err: any) {
-      setSaveError(err.message);
+    } catch (err: unknown) {
+      // El modal se queda abierto con lo escrito: perder el formulario por un
+      // error del servidor obliga a teclearlo todo otra vez.
+      setSaveError(mensajeDeError(err, "No se ha podido guardar la regla."));
     } finally {
       setSaving(false);
     }
   }
 
+  /**
+   * Activa o desactiva una regla, y solo lo da por hecho si el servidor lo
+   * confirma.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Antes se disparaba el PATCH y se recargaba sin mirar la respuesta. Con un
+   * 403 —un OPERATOR no tiene `workflow.manage`— o un 500, la recarga volvia a
+   * traer la regla con su estado ANTERIOR y el usuario veia el interruptor
+   * como si nada hubiera pasado, sin saber que su cambio no se habia
+   * guardado. En una regla que manda correos a familias, creer que la has
+   * desactivado y que siga activa no es un detalle.
+   */
   async function handleToggle(rule: WorkflowRule) {
-    await fetch(`/api/workflow-rules/${rule.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: !rule.isActive }),
-    });
-    await load();
+    if (ocupado) return; // doble clic
+    setOcupado(rule.id);
+    setErrorAccion(null);
+    setExito(null);
+    try {
+      const res = await fetch(`/api/workflow-rules/${rule.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !rule.isActive }),
+      });
+      const data = await leerCuerpo(res);
+      if (!res.ok) {
+        setErrorAccion(
+          data?.error ??
+            (res.status === 403
+              ? `No tienes permiso para ${rule.isActive ? "desactivar" : "activar"} reglas.`
+              : res.status === 404
+                ? "La regla ya no existe."
+                : `No se ha podido cambiar el estado (${res.status}).`),
+        );
+        return;
+      }
+      setExito(rule.isActive ? `Regla "${rule.name}" desactivada.` : `Regla "${rule.name}" activada.`);
+    } catch (e: unknown) {
+      setErrorAccion(mensajeDeError(e, "Error de red. El estado no ha cambiado."));
+    } finally {
+      setOcupado(null);
+      // Se recarga SIEMPRE: tanto si fue bien —para traer el estado real— como
+      // si fue mal, para que lo que se ve sea lo que hay guardado.
+      await load();
+    }
   }
 
+  /**
+   * Borra una regla, y solo cierra la confirmacion si el servidor lo confirma.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Antes: `await fetch(..., DELETE); setDeleteConfirm(null); await load();`.
+   * Pasara lo que pasara, el dialogo se cerraba y la pantalla se recargaba. Con
+   * un 403 o un 500 la regla reaparecia en la lista sin una palabra, y el
+   * usuario tenia que deducir que el borrado habia fallado.
+   */
   async function handleDelete(id: string) {
-    await fetch(`/api/workflow-rules/${id}`, { method: "DELETE" });
-    setDeleteConfirm(null);
-    await load();
+    if (ocupado) return; // doble clic
+    const regla = rules.find((r) => r.id === id);
+    setOcupado(id);
+    setErrorAccion(null);
+    setExito(null);
+    try {
+      const res = await fetch(`/api/workflow-rules/${id}`, { method: "DELETE" });
+      const data = await leerCuerpo(res);
+      if (!res.ok) {
+        setErrorAccion(
+          data?.error ??
+            (res.status === 403
+              ? "No tienes permiso para eliminar reglas."
+              : res.status === 404
+                ? "La regla ya no existe."
+                : res.status === 409
+                  ? "La regla no se puede eliminar ahora mismo."
+                  : `No se ha podido eliminar (${res.status}).`),
+        );
+        // La confirmacion se queda abierta: el borrado NO ha ocurrido.
+        return;
+      }
+      setDeleteConfirm(null);
+      setExito(`Regla "${regla?.name ?? ""}" eliminada.`);
+      await load();
+    } catch (e: unknown) {
+      setErrorAccion(mensajeDeError(e, "Error de red. La regla no se ha eliminado."));
+    } finally {
+      setOcupado(null);
+    }
   }
 
   const initialForm = editingRule
@@ -697,6 +1075,7 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
         {canManage && (
           <button
             onClick={openNew}
+            data-testid="nueva-regla"
             className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -707,8 +1086,38 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
         )}
       </div>
 
-      {rules.length === 0 ? (
-        <div className="text-center py-16 text-gray-500">
+      {errorAccion && (
+        <p
+          role="alert"
+          data-testid="error-accion-regla"
+          className="mb-4 text-sm rounded-md px-3 py-2 bg-red-50 text-red-700 border border-red-200"
+        >
+          {errorAccion}
+        </p>
+      )}
+      {exito && (
+        <p
+          role="status"
+          data-testid="exito-accion-regla"
+          className="mb-4 text-sm rounded-md px-3 py-2 bg-green-50 text-green-700 border border-green-200"
+        >
+          {exito}
+        </p>
+      )}
+
+      {errorCarga ? (
+        /*
+          El fallo NUNCA se pinta como estado vacio: «Sin reglas de
+          automatizacion» con la peticion caida dice lo contrario de lo que
+          esta pasando.
+        */
+        <AvisoError
+          mensaje={errorCarga}
+          que="las reglas de automatizacion"
+          onReintentar={() => setReintento((n) => n + 1)}
+        />
+      ) : rules.length === 0 ? (
+        <div className="text-center py-16 text-gray-500" data-testid="vacio-reglas">
           <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
@@ -726,6 +1135,7 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
               key={rule.id}
               rule={rule}
               canManage={canManage}
+              ocupado={ocupado === rule.id}
               onEdit={() => openEdit(rule)}
               onDelete={() => setDeleteConfirm(rule.id)}
               onToggle={() => handleToggle(rule)}
@@ -752,8 +1162,14 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/30" onClick={() => setDeleteConfirm(null)} />
-          <div className="relative bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h3 className="font-semibold mb-2">¿Eliminar esta regla?</h3>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tituloConfirmarBorrado"
+            data-testid="confirmar-borrado-regla"
+            className="relative bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4"
+          >
+            <h3 id="tituloConfirmarBorrado" className="font-semibold mb-2">¿Eliminar esta regla?</h3>
             <p className="text-sm text-gray-600 mb-5">Esta acción no se puede deshacer.</p>
             <div className="flex justify-end gap-3">
               <button
@@ -764,7 +1180,9 @@ export function WorkflowRulesClient({ canManage }: { canManage: boolean }) {
               </button>
               <button
                 onClick={() => handleDelete(deleteConfirm)}
-                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700"
+                disabled={ocupado !== null}
+                data-testid="confirmar-eliminar-regla"
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
               >
                 Eliminar
               </button>

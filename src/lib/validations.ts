@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   TaskCategory,
+  TaskStatus,
   CaseStatus,
   Role,
 } from "@prisma/client";
@@ -13,6 +14,10 @@ const roles = Object.values(Role) as [Role, ...Role[]];
 
 // ─── Case schemas ──────────────────────────────────────
 
+// Los clientes JS suelen serializar los campos vacíos como null; tratamos
+// null igual que undefined en los opcionales para no rechazar el alta.
+const nullAsUndefined = (v: unknown) => (v === null ? undefined : v);
+
 export const createCaseSchema = z
   .object({
     deceasedName: z
@@ -23,9 +28,9 @@ export const createCaseSchema = z
       .string()
       .min(1, "El nombre del contacto es obligatorio")
       .max(200),
-    contactEmail: z.string().email("Email no valido").optional().or(z.literal("")),
-    contactPhone: z.string().max(20).optional().or(z.literal("")),
-    province: z.string().max(100).optional(),
+    contactEmail: z.preprocess(nullAsUndefined, z.string().email("Email no valido").optional().or(z.literal(""))),
+    contactPhone: z.preprocess(nullAsUndefined, z.string().max(20).optional().or(z.literal(""))),
+    province: z.preprocess(nullAsUndefined, z.string().max(100).optional()),
     categories: z
       .array(z.nativeEnum(TaskCategory))
       .min(1, "Seleccione al menos una categoria"),
@@ -36,10 +41,10 @@ export const createCaseSchema = z
         message: "Debe aceptar el consentimiento para continuar",
       }),
     }),
-    notes: z.string().max(2000).optional(),
-    deathDate: z.string().optional(),
-    deceasedDni: z.string().max(20).optional(),
-    contactRelationship: z.string().max(100).optional(),
+    notes: z.preprocess(nullAsUndefined, z.string().max(2000).optional()),
+    deathDate: z.preprocess(nullAsUndefined, z.string().optional()),
+    deceasedDni: z.preprocess(nullAsUndefined, z.string().max(20).optional()),
+    contactRelationship: z.preprocess(nullAsUndefined, z.string().max(100).optional()),
   })
   .refine(
     (data) =>
@@ -67,18 +72,6 @@ export const updateCaseSchema = z.object({
 });
 
 export type UpdateCaseInput = z.infer<typeof updateCaseSchema>;
-
-// ─── Task schemas ──────────────────────────────────────
-
-export const createTaskSchema = z.object({
-  caseId: z.string().cuid("ID de caso invalido"),
-  category: z.nativeEnum(TaskCategory),
-  title: z.string().min(1, "El titulo es obligatorio").max(300),
-  description: z.string().max(2000).optional(),
-  dueDate: z.string().datetime().optional(),
-});
-
-export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 
 // ─── Template schemas ──────────────────────────────────
 
@@ -125,3 +118,58 @@ export const inviteUserSchema = z.object({
 });
 
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
+
+// ─── Task schemas ──────────────────────────────────────
+//
+// Antes, crear y actualizar tareas leia el body sin validar: `status` y
+// `category` llegaban como string arbitrario hasta Prisma, y `title` podia
+// ser vacio, un objeto o venir sin limite de longitud.
+
+const taskStatuses = Object.values(TaskStatus) as [TaskStatus, ...TaskStatus[]];
+
+/** Fecha ISO opcional; acepta null para borrarla. */
+const optionalDate = z
+  .union([z.string().datetime({ offset: true }), z.string().date(), z.null()])
+  .optional()
+  .transform((v) => (v === null || v === undefined ? v : new Date(v)))
+  .refine((v) => v === null || v === undefined || !Number.isNaN(v.getTime()), {
+    message: "Fecha no valida",
+  });
+
+export const createTaskSchema = z.object({
+  category: z.enum(taskCategories, { errorMap: () => ({ message: "Categoria no valida" }) }),
+  title: z.string().trim().min(1, "El titulo es obligatorio").max(300, "Titulo demasiado largo"),
+  description: z.string().max(5000, "Descripcion demasiado larga").nullish(),
+  dueDate: optionalDate,
+  assigneeId: z.string().cuid("assigneeId no valido").nullish(),
+  sortOrder: z.number().int().min(0).max(100000).optional(),
+});
+
+export type CreateTaskInput = z.infer<typeof createTaskSchema>;
+
+export const updateTaskSchema = z.object({
+  taskId: z.string().cuid("taskId no valido"),
+  status: z.enum(taskStatuses, { errorMap: () => ({ message: "Estado no valido" }) }).optional(),
+  assigneeId: z.string().cuid("assigneeId no valido").nullish(),
+  dependsOnId: z.string().cuid("dependsOnId no valido").nullish(),
+  blockReason: z.string().max(500).nullish(),
+  blockedUntil: optionalDate,
+  deadline: optionalDate,
+  dueDate: optionalDate,
+  title: z.string().trim().min(1).max(300).optional(),
+  description: z.string().max(5000).nullish(),
+});
+
+export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
+
+/**
+ * Actualizacion en bloque de tareas. Los ids se filtran despues por
+ * organizacion; aqui solo se valida la forma y los enums.
+ */
+export const batchTaskSchema = z.object({
+  taskIds: z.array(z.string().cuid()).min(1, "1-100 tareas requeridas").max(100, "1-100 tareas requeridas"),
+  status: z.enum(taskStatuses, { errorMap: () => ({ message: "Estado no valido" }) }).optional(),
+  assigneeId: z.string().cuid("assigneeId no valido").nullish(),
+});
+
+export type BatchTaskInput = z.infer<typeof batchTaskSchema>;

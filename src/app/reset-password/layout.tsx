@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Nueva contrasena",
-  description: "Establece una nueva contrasena para tu cuenta de BARITUR PRO.",
+  description: "Establece una nueva contrasena para tu cuenta de Heredia.",
   robots: { index: false },
 };
 

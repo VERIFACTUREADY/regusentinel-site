@@ -32,3 +32,63 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Playwright
+/test-results/
+/playwright-report/
+
+# Binarios y artefactos accidentales
+a.out
+*.out
+*.o
+*.so
+*.exe
+*.bin
+
+# Volcados y bases locales
+*.sql.gz
+*.dump
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs y temporales
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Artefactos de Playwright (ademas de los directorios de arriba)
+/blob-report/
+/playwright/.cache/
+*.webm
+trace.zip
+
+# Volcados de nucleo y binarios de depuracion
+core
+core.[0-9]*
+*.dSYM/
+*.pdb
+
+# Secretos y credenciales
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+.netrc
+credentials.json
+service-account*.json
+
+# Informes generados por la CI
+s3-report.json
+*-report.json

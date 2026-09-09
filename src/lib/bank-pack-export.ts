@@ -257,7 +257,7 @@ function drawCover(
   const page = pdf.addPage([PAGE_W, PAGE_H]);
   let y = PAGE_H - MARGIN;
 
-  page.drawText("BARITUR PRO", { x: MARGIN, y, size: 20, font: fontBold, color: ACCENT });
+  page.drawText("Heredia", { x: MARGIN, y, size: 20, font: fontBold, color: ACCENT });
   y -= 14;
   page.drawText("Pack Banco — herencia", { x: MARGIN, y, size: 10, font, color: GRAY });
   y -= 14;
@@ -303,7 +303,7 @@ function drawCover(
 
   // Footer
   page.drawText(
-    "Generado por BARITUR PRO",
+    "Generado por Heredia",
     { x: MARGIN, y: MARGIN, size: 8, font, color: GRAY }
   );
 }

@@ -1,5 +1,4 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession, getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { getOnboardingState } from "@/lib/onboarding";
 import { OnboardingPanel } from "@/components/dashboard/onboarding-panel";
@@ -9,7 +8,7 @@ import { UsageWidget } from "@/components/dashboard/usage-widget";
 import { DeadlineCalendar } from "@/components/dashboard/deadline-calendar";
 import { DEMO_ORG_SLUG } from "@/lib/demo-data";
 import { CASE_STATUS_COLORS } from "@/lib/constants";
-import { getAiInsights, type AiInsightsData } from "@/lib/ai-insights";
+import { getAiInsights } from "@/lib/ai-insights";
 import { getOrgRiskOverview } from "@/lib/isd-risk-aggregator";
 import { getOrgActionQueue } from "@/lib/action-queue";
 import { BulkAnalyzeButton } from "@/components/dashboard/bulk-analyze-button";
@@ -19,62 +18,121 @@ import { NoOrgSetup } from "@/components/no-org-setup";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
-async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
-  try {
-    return await fn();
-  } catch (err) {
-    console.error("[dashboard] query failed:", err);
-    return fallback;
-  }
+import { consultar, listaDe, datosDe, type Resultado } from "@/lib/consulta-segura";
+import {
+  BloqueFallido,
+  Kpi,
+  AvisoDatosIncompletos,
+} from "@/components/dashboard/fallo-bloque";
+import {
+  partesCivilesES,
+  inicioDelDiaES,
+  inicioDelDiaDeES,
+  sumarDiasES,
+  diasCivilesEntreES,
+} from "@/lib/fecha-es";
+
+/**
+ * Adapta las tareas de Prisma a lo que espera `MyTasksWidget`, que es un
+ * componente de cliente y sólo admite datos serializables.
+ *
+ * Antes se hacía `initialTasks={myTasks as any}`, que apagaba la comprobación
+ * entera: el widget declara `deadline: string | null` y le estaba llegando un
+ * `Date`. Funcionaba de milagro porque Next lo serializa por el camino, pero
+ * ni el tipo ni el componente lo decían.
+ */
+function aTareasDelWidget(
+  tareas: {
+    id: string;
+    title: string;
+    status: string;
+    caseId: string;
+    deadline: Date | null;
+    case: { id: string; ref: string; isUrgent: boolean };
+  }[],
+) {
+  return tareas.map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    caseId: t.caseId,
+    deadline: t.deadline ? t.deadline.toISOString() : null,
+    case: t.case,
+  }));
 }
 
 export default async function DashboardPage() {
-  let session;
-  try {
-    session = await getServerSession(authOptions);
-  } catch {
-    session = null;
-  }
-  if (!session?.user) redirect("/login");
-  const orgId = session.user.orgId;
+  // Sesion verificada contra base de datos: un usuario expulsado dejaba de
+  // pasar los controles de la API pero SEGUIA viendo aqui los datos de su
+  // antigua organizacion, porque el orgId salia del JWT. Lo detecto el smoke
+  // test de expulsion.
+  const verified = await getVerifiedSession();
+  const identidad = verified ?? (await (async () => {
+    const u = await getVerifiedUser();
+    return u ? { user: { id: u.id, email: u.email, name: u.name, orgId: null } } : null;
+  })());
+  if (!identidad) redirect("/login");
+  const session = identidad;
+  const orgId = verified?.orgId ?? null;
   // Usuario autenticado pero sin organización: le ofrecemos crearla
   // en lugar de mostrar un callejón sin salida.
   if (!orgId) return <NoOrgSetup userName={session.user.name} />;
 
   const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
   const userId = session.user.id;
 
-  const calMonth = now.getMonth();
-  const calYear = now.getFullYear();
-  const calFrom = new Date(calYear, calMonth, 1);
-  const calTo = new Date(calYear, calMonth + 1, 0, 23, 59, 59);
-  const weekEnd = new Date(now.getTime() + 7 * 86400000);
-
-  const isdAlertThreshold = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  /*
+   * El mes que se pinta y sus limites, en el calendario ESPANOL.
+   *
+   * Con `now.getMonth()` —hora local del proceso, que va en UTC— el dia 1 de
+   * cada mes, entre las 00:00 y las 02:00 de Madrid, el panel seguia
+   * ensenando el mes ANTERIOR y contaba los expedientes cerrados del mes que
+   * ya habia terminado.
+   */
+  const { anio: calYear, mes: mesES } = partesCivilesES(now);
+  const calMonth = mesES - 1; // `DeadlineCalendar` cuenta los meses desde 0
+  const calFrom = inicioDelDiaES(calYear, mesES, 1);
+  // Comienzo del mes siguiente menos 1 ms: vale igual para meses de 28 y de 31.
+  const calTo = new Date(
+    (mesES === 12
+      ? inicioDelDiaES(calYear + 1, 1, 1)
+      : inicioDelDiaES(calYear, mesES + 1, 1)
+    ).getTime() - 1,
+  );
+  const startOfMonth = calFrom;
+  // `weekEnd` e `isdAlertThreshold` se calculaban aqui y no los leia nadie:
+  // el corte de la semana lo hace ahora `sumarDiasES` con el calendario
+  // espanol, y el umbral ISD va escrito dentro de su propia consulta.
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
+  // Comienzo del dia ESPANOL: es el corte de «vencida» y el que separa los
+  // plazos pasados de los futuros en el calendario del panel.
+  const hoyES = inicioDelDiaDeES(now);
+  const finDeSemanaES = sumarDiasES(now, 7);
+
   const [activeCases, pendingTasks, blockedTasks, readyTasks, closedThisMonth, pendingApprovals, recentCases, recentLogs, upcomingDeadlines, onboarding, org, myTasks, calendarTasks, criticalBlockedTasks, teamWorkload, members, overdueTasksAll, isdCriticalCases, unreadPortalCount] = await Promise.all([
-    safe(() => prisma.case.count({
+    consultar("expedientesActivos", () => prisma.case.count({
       where: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
-    }), 0),
-    safe(() => prisma.task.count({
+    })),
+    consultar("tareasPendientes", () => prisma.task.count({
       where: { case: { orgId, deletedAt: null }, status: { in: ["PENDING", "IN_PROGRESS"] } },
-    }), 0),
-    safe(() => prisma.task.count({
+    })),
+    consultar("tareasBloqueadas", () => prisma.task.count({
       where: { case: { orgId, deletedAt: null }, status: "BLOCKED" },
-    }), 0),
-    safe(() => prisma.task.count({
+    })),
+    consultar("tareasListas", () => prisma.task.count({
       where: { case: { orgId, deletedAt: null }, status: "READY" },
-    }), 0),
-    safe(() => prisma.case.count({
+    })),
+    consultar("cerradosEsteMes", () => prisma.case.count({
       where: { orgId, deletedAt: null, status: "CLOSED", closedAt: { gte: startOfMonth } },
-    }), 0),
-    safe(() => prisma.approval.count({
-      where: { case: { orgId }, status: "PENDING" },
-    }), 0),
-    safe(() => prisma.case.findMany({
+    })),
+    consultar("aprobacionesPendientes", () => prisma.approval.count({
+      // `deletedAt: null` faltaba: el indicador contaba tambien las
+      // aprobaciones de expedientes ya borrados, asi que no cuadraba con la
+      // lista de /today —que si las excluye— sin ninguna explicacion visible.
+      where: { case: { orgId, deletedAt: null }, status: "PENDING" },
+    })),
+    consultar("expedientesRecientes", () => prisma.case.findMany({
       where: { orgId, deletedAt: null },
       include: {
         deceased: { select: { fullName: true } },
@@ -82,14 +140,14 @@ export default async function DashboardPage() {
       },
       orderBy: { createdAt: "desc" },
       take: 5,
-    }), [] as any[]),
-    safe(() => prisma.auditLog.findMany({
+    })),
+    consultar("actividadReciente", () => prisma.auditLog.findMany({
       where: { orgId },
       include: { user: { select: { name: true, email: true } } },
       orderBy: { createdAt: "desc" },
       take: 10,
-    }), [] as any[]),
-    safe(() => prisma.task.findMany({
+    })),
+    consultar("proximosPlazos", () => prisma.task.findMany({
       where: {
         case: { orgId, deletedAt: null },
         deadline: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), gte: now },
@@ -98,13 +156,13 @@ export default async function DashboardPage() {
       include: { case: { select: { ref: true } } },
       orderBy: { deadline: "asc" },
       take: 8,
-    }), [] as any[]),
-    safe(() => getOnboardingState(orgId), { show: false, steps: [], completed: 0, total: 0 } as any),
-    safe(() => prisma.organization.findUnique({
+    })),
+    consultar("onboarding", () => getOnboardingState(orgId)),
+    consultar("organizacion", () => prisma.organization.findUnique({
       where: { id: orgId },
       select: { slug: true },
-    }), null),
-    safe(() => prisma.task.findMany({
+    })),
+    consultar("misTareas", () => prisma.task.findMany({
       where: {
         assigneeId: userId,
         case: { orgId, deletedAt: null },
@@ -113,8 +171,8 @@ export default async function DashboardPage() {
       include: { case: { select: { id: true, ref: true, isUrgent: true } } },
       orderBy: [{ deadline: { sort: "asc", nulls: "last" } }, { sortOrder: "asc" }],
       take: 8,
-    }), [] as any[]),
-    safe(() => prisma.task.findMany({
+    })),
+    consultar("calendarioPlazos", () => prisma.task.findMany({
       where: {
         case: { orgId, deletedAt: null },
         OR: [
@@ -124,9 +182,9 @@ export default async function DashboardPage() {
         status: { notIn: ["DONE", "SKIPPED"] },
       },
       select: { deadline: true, dueDate: true },
-    }), [] as any[]),
+    })),
     // Blocked tasks stuck for > 7 days — need immediate attention
-    safe(() => prisma.task.findMany({
+    consultar("bloqueadasCriticas", () => prisma.task.findMany({
       where: {
         case: { orgId, deletedAt: null },
         status: "BLOCKED",
@@ -137,23 +195,32 @@ export default async function DashboardPage() {
       },
       orderBy: { updatedAt: "asc" },
       take: 5,
-    }), [] as any[]),
+    })),
     // Team workload: tasks grouped by assignee and status
-    safe(() => prisma.task.groupBy({
+    consultar("cargaDelEquipo", () => prisma.task.groupBy({
       by: ["assigneeId", "status"],
       where: { case: { orgId, deletedAt: null }, assigneeId: { not: null } },
       _count: true,
-    }), [] as any[]),
+    })),
     // Org members for name lookup
-    safe(() => prisma.membership.findMany({
+    consultar("miembros", () => prisma.membership.findMany({
       where: { orgId },
       select: { userId: true, user: { select: { name: true, email: true } } },
-    }), [] as any[]),
+    })),
     // Overdue tasks (deadline in the past, not done/skipped)
-    safe(() => prisma.task.findMany({
+    consultar("tareasVencidas", () => prisma.task.findMany({
       where: {
         case: { orgId, deletedAt: null, status: { notIn: ["CLOSED", "ARCHIVED"] } },
-        deadline: { lt: now },
+        /*
+         * VENCIDA = de un dia ya pasado, el mismo criterio que usa /today.
+         *
+         * Con `lt: now` las dos pantallas contaban cosas distintas llamandolas
+         * igual: una tarea con plazo hoy a las 14:00 salia como vencida en el
+         * panel a las 14:01 mientras el resumen del dia seguia —con razon—
+         * poniendola en «Para hoy». El gestor veia dos cifras que no cuadraban
+         * sin ninguna explicacion.
+         */
+        deadline: { lt: hoyES },
         status: { notIn: ["DONE", "SKIPPED"] },
       },
       select: {
@@ -163,9 +230,9 @@ export default async function DashboardPage() {
       },
       orderBy: { deadline: "asc" },
       take: 8,
-    }), [] as any[]),
+    })),
     // ISD critical: cases expiring in ≤30 days
-    safe(() => prisma.case.findMany({
+    consultar("isdCritico", () => prisma.case.findMany({
       where: {
         orgId,
         deletedAt: null,
@@ -183,42 +250,38 @@ export default async function DashboardPage() {
       },
       orderBy: { deceased: { deathDate: "asc" } },
       take: 5,
-    }), [] as any[]),
+    })),
     // Unread portal messages from families
-    safe(() => prisma.portalMessage.count({
+    consultar("mensajesSinLeer", () => prisma.portalMessage.count({
       where: {
         case: { orgId, deletedAt: null },
         fromFamily: true,
         readAt: null,
       },
-    }), 0),
+    })),
   ]);
 
-  const aiInsights: AiInsightsData = await safe(
-    () => getAiInsights(orgId),
-    {
-      thirtyDays: { casesAnalyzed: 0, chatMessages: 0, isdCalculations: 0, estimatedHoursSaved: 0 },
-      riskiestCases: [],
-      totalCasesAnalyzed: 0,
-      averageScore: null,
-    } as AiInsightsData
-  );
-
-  const riskOverview = await safe(
-    () => getOrgRiskOverview(orgId, 6),
-    { totalCasesAnalyzed: 0, countsBySeverity: { critical: 0, warning: 0, info: 0 }, topCases: [], totalActiveAlerts: 0 }
-  );
-
-  const actionQueue = await safe(
-    () => getOrgActionQueue(orgId, 8),
-    { items: [], totalCases: 0, countsByUrgency: { critical: 0, high: 0, medium: 0, low: 0 } }
-  );
+  /*
+   * Estos tres respaldos eran los más peligrosos de toda la pantalla.
+   *
+   * `getOrgRiskOverview` caía a `totalActiveAlerts: 0`, y `RiskRadarWidget`
+   * pinta con ese cero un mensaje en verde: «Todos los expedientes en orden».
+   * `getOrgActionQueue` caía a `items: []`, y `ActionQueueWidget` responde con
+   * «Nada pendiente de acción inmediata». Es decir: cuando el motor de riesgos
+   * o el de prioridades reventaba, el panel felicitaba al usuario.
+   *
+   * Ahora el fallo llega hasta el widget y se dice.
+   */
+  const aiInsights = await consultar("insightsIA", () => getAiInsights(orgId));
+  const riskOverview = await consultar("radarISD", () => getOrgRiskOverview(orgId, 6));
+  const actionQueue = await consultar("planDeAcciones", () => getOrgActionQueue(orgId, 8));
 
   // In the public demo org surface 3 "try this" shortcuts so prospects
   // get to the wow-moments (urgente case, portal familia, pack banco)
   // in under 30 seconds.
   const isDemo =
-    process.env.DEMO_ENABLED === "true" && org?.slug === DEMO_ORG_SLUG;
+    process.env.DEMO_ENABLED === "true" &&
+    datosDe(org)?.slug === DEMO_ORG_SLUG;
   let demoHighlights: {
     urgentCaseId: string | null;
     urgentCaseRef: string | null;
@@ -229,49 +292,67 @@ export default async function DashboardPage() {
   } | null = null;
   if (isDemo) {
     const [urgent, portalCase, bankCase] = await Promise.all([
-      safe(() => prisma.case.findFirst({
+      consultar("demoUrgente", () => prisma.case.findFirst({
         where: { orgId, ref: "EXP-DEMO-0004" },
         select: { id: true, ref: true },
-      }), null),
-      safe(() => prisma.case.findFirst({
+      })),
+      consultar("demoPortal", () => prisma.case.findFirst({
         where: { orgId, ref: "EXP-DEMO-0003" },
         select: { portalToken: true, ref: true },
-      }), null),
-      safe(() => prisma.case.findFirst({
+      })),
+      consultar("demoPackBanco", () => prisma.case.findFirst({
         where: { orgId, ref: "EXP-DEMO-0002" },
         select: { id: true, ref: true },
-      }), null),
+      })),
     ]);
+    // Los atajos de la demo son adornos comerciales: si su consulta falla se
+    // omite el atajo, sin alarmar a nadie. Aqui `null` no miente sobre ningun
+    // dato del despacho, sólo significa "no pongo este enlace".
+    const urgente = datosDe(urgent);
+    const portal = datosDe(portalCase);
+    const banco = datosDe(bankCase);
     demoHighlights = {
-      urgentCaseId: urgent?.id ?? null,
-      urgentCaseRef: urgent?.ref ?? null,
-      portalToken: portalCase?.portalToken ?? null,
-      portalCaseRef: portalCase?.ref ?? null,
-      bankPackCaseId: bankCase?.id ?? null,
-      bankPackCaseRef: bankCase?.ref ?? null,
+      urgentCaseId: urgente?.id ?? null,
+      urgentCaseRef: urgente?.ref ?? null,
+      portalToken: portal?.portalToken ?? null,
+      portalCaseRef: portal?.ref ?? null,
+      bankPackCaseId: banco?.id ?? null,
+      bankPackCaseRef: banco?.ref ?? null,
     };
   }
 
+  /*
+   * Los seis indicadores. `valor: null` significa «no se ha podido consultar»,
+   * y `<Kpi>` lo pinta como «—», nunca como 0.
+   */
   const kpis = [
-    { label: "Expedientes activos", value: activeCases, color: "text-blue-600" },
-    { label: "Tareas pendientes", value: pendingTasks, color: "text-orange-600" },
-    { label: "Tareas bloqueadas", value: blockedTasks, color: "text-red-600" },
-    { label: "Listas para accion", value: readyTasks, color: "text-yellow-600" },
-    { label: "Aprobaciones pend.", value: pendingApprovals, color: "text-amber-600" },
-    { label: "Cerrados este mes", value: closedThisMonth, color: "text-green-600" },
+    { id: "expedientes-activos", label: "Expedientes activos", res: activeCases, color: "text-blue-600" },
+    { id: "tareas-pendientes", label: "Tareas pendientes", res: pendingTasks, color: "text-orange-600" },
+    { id: "tareas-bloqueadas", label: "Tareas bloqueadas", res: blockedTasks, color: "text-red-600" },
+    { id: "tareas-listas", label: "Listas para accion", res: readyTasks, color: "text-yellow-600" },
+    { id: "aprobaciones-pendientes", label: "Aprobaciones pend.", res: pendingApprovals, color: "text-amber-600" },
+    { id: "cerrados-este-mes", label: "Cerrados este mes", res: closedThisMonth, color: "text-green-600" },
   ];
 
-  // Build per-day buckets for the calendar widget
+  /*
+   * Casillas del calendario del panel, agrupadas por DÍA ESPAÑOL.
+   *
+   * Antes se hacía `d.setHours(0,0,0,0); const day = d.getDate();`, que usa la
+   * hora local del proceso. El servidor va en UTC: una tarea con plazo el 21 a
+   * las 00:30 de Madrid se guarda como las 22:30 del 20 en UTC y se pintaba en
+   * la casilla del día 20 —el día anterior al que pone el expediente—.
+   */
   const calByDay: Record<number, { overdue: number; soon: number; future: number }> = {};
-  for (const t of calendarTasks) {
-    const date = t.deadline ?? t.dueDate;
-    if (!date) continue;
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    const day = d.getDate();
-    const bucket = (calByDay[day] ??= { overdue: 0, soon: 0, future: 0 });
-    if (d < now) bucket.overdue++;
-    else if (d <= weekEnd) bucket.soon++;
+  for (const t of listaDe(calendarTasks)) {
+    const fecha = t.deadline ?? t.dueDate;
+    if (!fecha) continue;
+    const { anio, mes, dia } = partesCivilesES(fecha);
+    // Sólo cuentan los días del mes que se está pintando.
+    if (anio !== calYear || mes !== calMonth + 1) continue;
+    const inicioDelDia = inicioDelDiaES(anio, mes, dia);
+    const bucket = (calByDay[dia] ??= { overdue: 0, soon: 0, future: 0 });
+    if (inicioDelDia < hoyES) bucket.overdue++;
+    else if (inicioDelDia <= finDeSemanaES) bucket.soon++;
     else bucket.future++;
   }
   const calendarDays = Object.entries(calByDay).map(([day, counts]) => ({
@@ -279,15 +360,16 @@ export default async function DashboardPage() {
     ...counts,
   }));
 
+  /** Días de calendario que faltan, contados en el calendario español. */
   function daysUntil(date: Date): number {
-    return Math.ceil((new Date(date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return diasCivilesEntreES(now, date);
   }
 
   const memberMap = Object.fromEntries(
-    (members as any[]).map((m: any) => [m.userId, m.user.name || m.user.email])
+    listaDe(members).map((m) => [m.userId, m.user.name || m.user.email]),
   );
   const workloadByUser: Record<string, { name: string; active: number; blocked: number; done: number; total: number }> = {};
-  for (const row of (teamWorkload as any[])) {
+  for (const row of listaDe(teamWorkload)) {
     if (!row.assigneeId) continue;
     if (!workloadByUser[row.assigneeId]) {
       workloadByUser[row.assigneeId] = { name: memberMap[row.assigneeId] || row.assigneeId, active: 0, blocked: 0, done: 0, total: 0 };
@@ -300,23 +382,69 @@ export default async function DashboardPage() {
   }
   const workloadEntries = Object.values(workloadByUser).sort((a, b) => b.active - a.active).slice(0, 6);
 
+  /*
+   * Listas ya desenvueltas. Cada bloque comprueba ANTES su propio
+   * `Resultado.ok`; el array vacío es sólo para poder recorrerlo.
+   */
+  const vencidas = listaDe(overdueTasksAll);
+  const isdCriticos = listaDe(isdCriticalCases);
+  const mensajesSinLeer = datosDe(unreadPortalCount);
+  const plazosProximos = listaDe(upcomingDeadlines);
+  const bloqueadasCriticas = listaDe(criticalBlockedTasks);
+  const recientes = listaDe(recentCases);
+  const registros = listaDe(recentLogs);
+  const estadoOnboarding = datosDe(onboarding);
+  const ia = datosDe(aiInsights);
+
+  /*
+   * Inventario de lo que no se ha podido cargar, para avisar arriba del todo.
+   * Se nombra en las palabras del usuario, no con el identificador interno.
+   */
+  const bloquesCaidos = (
+    [
+      [activeCases, "los expedientes activos"],
+      [pendingTasks, "las tareas pendientes"],
+      [blockedTasks, "las tareas bloqueadas"],
+      [readyTasks, "las tareas listas"],
+      [closedThisMonth, "los expedientes cerrados este mes"],
+      [pendingApprovals, "las aprobaciones pendientes"],
+      [recentCases, "los expedientes recientes"],
+      [recentLogs, "la actividad reciente"],
+      [upcomingDeadlines, "los próximos plazos"],
+      [myTasks, "mis tareas asignadas"],
+      [calendarTasks, "el calendario de plazos"],
+      [criticalBlockedTasks, "las tareas bloqueadas +7 días"],
+      [teamWorkload, "la carga del equipo"],
+      [overdueTasksAll, "las tareas vencidas"],
+      [isdCriticalCases, "los plazos ISD críticos"],
+      [unreadPortalCount, "los mensajes de las familias"],
+      [riskOverview, "el Radar ISD"],
+      [actionQueue, "el Plan de acciones"],
+      [aiInsights, "los insights de IA"],
+    ] as [Resultado<unknown>, string][]
+  )
+    .filter(([r]) => !r.ok)
+    .map(([, nombre]) => nombre);
+
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
 
       {demoHighlights && <DemoHighlights {...demoHighlights} />}
 
-      {onboarding.show && !isDemo && (
+      <AvisoDatosIncompletos bloques={bloquesCaidos} />
+
+      {estadoOnboarding?.show && !isDemo && (
         <OnboardingPanel
-          steps={onboarding.steps}
-          completed={onboarding.completed}
-          total={onboarding.total}
+          steps={estadoOnboarding.steps}
+          completed={estadoOnboarding.completed}
+          total={estadoOnboarding.total}
         />
       )}
 
       {/* Top urgencies banner */}
-      {((overdueTasksAll as any[]).length > 0 || (isdCriticalCases as any[]).length > 0 || (unreadPortalCount as number) > 0) && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4">
+      {(vencidas.length > 0 || isdCriticos.length > 0 || (mensajesSinLeer ?? 0) > 0) && (
+        <div data-testid="bloque-accion-inmediata" className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4">
           <div className="flex items-center justify-between gap-2 mb-3">
             <div className="flex items-center gap-2">
               <svg className="w-5 h-5 text-red-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -329,14 +457,14 @@ export default async function DashboardPage() {
             </Link>
           </div>
           <div className="grid md:grid-cols-3 gap-3">
-            {(overdueTasksAll as any[]).length > 0 && (
+            {vencidas.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-2">
-                  {(overdueTasksAll as any[]).length} tarea{(overdueTasksAll as any[]).length !== 1 ? "s" : ""} vencida{(overdueTasksAll as any[]).length !== 1 ? "s" : ""}
+                  {vencidas.length} tarea{vencidas.length !== 1 ? "s" : ""} vencida{vencidas.length !== 1 ? "s" : ""}
                 </p>
                 <div className="space-y-1.5">
-                  {(overdueTasksAll as any[]).slice(0, 5).map((t: any) => {
-                    const daysAgo = Math.floor((now.getTime() - new Date(t.deadline).getTime()) / 86400000);
+                  {vencidas.slice(0, 5).map((t: any) => {
+                    const daysAgo = t.deadline ? diasCivilesEntreES(t.deadline, now) : 0;
                     return (
                       <div key={t.id} className="flex items-center justify-between gap-2">
                         <Link href={`/cases/${t.case.id}`} className="text-xs text-red-800 hover:underline truncate flex-1">
@@ -346,21 +474,21 @@ export default async function DashboardPage() {
                       </div>
                     );
                   })}
-                  {(overdueTasksAll as any[]).length > 5 && (
-                    <Link href="/tasks" className="text-xs text-red-600 hover:underline">+{(overdueTasksAll as any[]).length - 5} más →</Link>
+                  {vencidas.length > 5 && (
+                    <Link href="/tasks" className="text-xs text-red-600 hover:underline">+{vencidas.length - 5} más →</Link>
                   )}
                 </div>
               </div>
             )}
-            {(isdCriticalCases as any[]).length > 0 && (
+            {isdCriticos.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-2">
-                  {(isdCriticalCases as any[]).length} ISD crítico{(isdCriticalCases as any[]).length !== 1 ? "s" : ""} (&lt;30 días)
+                  {isdCriticos.length} ISD crítico{isdCriticos.length !== 1 ? "s" : ""} (&lt;30 días)
                 </p>
                 <div className="space-y-1.5">
-                  {(isdCriticalCases as any[]).map((c: any) => {
+                  {isdCriticos.map((c: any) => {
                     const days = c.deceased?.deathDate
-                      ? 180 - Math.floor((now.getTime() - new Date(c.deceased.deathDate).getTime()) / 86400000)
+                      ? 180 - diasCivilesEntreES(c.deceased.deathDate, now)
                       : null;
                     return (
                       <div key={c.id} className="flex items-center justify-between gap-2">
@@ -376,10 +504,10 @@ export default async function DashboardPage() {
                 </div>
               </div>
             )}
-            {(unreadPortalCount as number) > 0 && (
+            {mensajesSinLeer !== null && mensajesSinLeer > 0 && (
               <div>
                 <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">
-                  {unreadPortalCount as number} mensaje{(unreadPortalCount as number) !== 1 ? "s" : ""} de familia sin leer
+                  {mensajesSinLeer} mensaje{mensajesSinLeer !== 1 ? "s" : ""} de familia sin leer
                 </p>
                 <p className="text-xs text-blue-700 mt-1">
                   Las familias están esperando respuesta.{" "}
@@ -394,31 +522,60 @@ export default async function DashboardPage() {
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         {kpis.map((kpi) => (
-          <div key={kpi.label} className="bg-white p-4 rounded-lg border">
-            <p className="text-xs text-gray-500">{kpi.label}</p>
-            <p className={`text-2xl font-bold mt-1 ${kpi.color}`}>{kpi.value}</p>
-          </div>
+          <Kpi
+            key={kpi.id}
+            id={kpi.id}
+            etiqueta={kpi.label}
+            valor={datosDe(kpi.res)}
+            color={kpi.color}
+          />
         ))}
       </div>
 
       {/* Plan de acciones + Radar ISD */}
       <div className="grid lg:grid-cols-2 gap-6 mb-8">
-        <ActionQueueWidget queue={actionQueue} />
-        <RiskRadarWidget overview={riskOverview} />
+        {actionQueue.ok ? (
+          <ActionQueueWidget queue={actionQueue.datos} />
+        ) : (
+          <BloqueFallido que="el plan de acciones" id="plan-de-acciones" />
+        )}
+        {riskOverview.ok ? (
+          <RiskRadarWidget overview={riskOverview.datos} />
+        ) : (
+          <BloqueFallido que="el Radar ISD" id="radar-isd" />
+        )}
       </div>
 
       <div className="grid lg:grid-cols-4 gap-6 mb-8">
         <div className="lg:col-span-3">
-          <MyTasksWidget initialTasks={myTasks as any} />
+          {myTasks.ok ? (
+            <MyTasksWidget initialTasks={aTareasDelWidget(myTasks.datos)} />
+          ) : (
+            <BloqueFallido que="mis tareas asignadas" id="mis-tareas" />
+          )}
         </div>
         <div className="space-y-4">
-          <DeadlineCalendar days={calendarDays} year={calYear} month={calMonth} />
+          {calendarTasks.ok ? (
+            <DeadlineCalendar days={calendarDays} year={calYear} month={calMonth} />
+          ) : (
+            <BloqueFallido que="el calendario de plazos" id="calendario-plazos" />
+          )}
           <UsageWidget />
         </div>
       </div>
 
       {/* Critical attention panel */}
-      {(upcomingDeadlines.length > 0 || (criticalBlockedTasks as any[]).length > 0) && (
+      {(!upcomingDeadlines.ok || !criticalBlockedTasks.ok) && (
+        <div className="mb-8 grid md:grid-cols-2 gap-4">
+          {!upcomingDeadlines.ok && (
+            <BloqueFallido que="los próximos plazos (30 días)" id="proximos-plazos" />
+          )}
+          {!criticalBlockedTasks.ok && (
+            <BloqueFallido que="las tareas bloqueadas +7 días" id="bloqueadas-criticas" />
+          )}
+        </div>
+      )}
+      {(plazosProximos.length > 0 || bloqueadasCriticas.length > 0) && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
@@ -438,14 +595,14 @@ export default async function DashboardPage() {
             </a>
           </div>
           <div className="grid md:grid-cols-2 gap-4">
-            {upcomingDeadlines.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            {plazosProximos.length > 0 && (
+              <div data-testid="bloque-proximos-plazos" className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-red-800 mb-3 flex items-center gap-1.5">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   Plazos proximos (30 dias)
                 </h3>
                 <div className="space-y-2">
-                  {upcomingDeadlines.map((task: any) => {
+                  {plazosProximos.map((task: any) => {
                     const days = daysUntil(task.deadline!);
                     const urgent = days <= 7;
                     return (
@@ -455,7 +612,15 @@ export default async function DashboardPage() {
                           {task.title}
                         </Link>
                         <span className={`px-2 py-0.5 rounded text-xs shrink-0 ml-2 ${urgent ? "bg-red-200 text-red-800 font-medium" : "bg-red-100 text-red-700"}`}>
-                          {days <= 0 ? "VENCIDO" : `${days}d`}
+                          {/*
+                            Este bloque consulta `deadline >= now`, asi que
+                            todo lo que llega aqui vence en el futuro. Con
+                            `days <= 0` se etiquetaba «VENCIDO» una tarea que
+                            vence HOY mas tarde —`diasCivilesEntreES` devuelve
+                            0 el mismo dia—, que es justo lo contrario de lo
+                            que pasa. Cero dias civiles es «hoy».
+                          */}
+                          {days <= 0 ? "HOY" : `${days}d`}
                         </span>
                       </div>
                     );
@@ -463,15 +628,15 @@ export default async function DashboardPage() {
                 </div>
               </div>
             )}
-            {(criticalBlockedTasks as any[]).length > 0 && (
-              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+            {bloqueadasCriticas.length > 0 && (
+              <div data-testid="bloque-bloqueadas-criticas" className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-orange-800 mb-3 flex items-center gap-1.5">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                   Tareas bloqueadas +7 dias
                 </h3>
                 <div className="space-y-2">
-                  {(criticalBlockedTasks as any[]).map((task: any) => {
-                    const daysSince = Math.floor((now.getTime() - new Date(task.updatedAt).getTime()) / (1000 * 60 * 60 * 24));
+                  {bloqueadasCriticas.map((task: any) => {
+                    const daysSince = diasCivilesEntreES(task.updatedAt, now);
                     return (
                       <div key={task.id} className="flex items-start justify-between text-sm gap-2">
                         <div className="flex-1 min-w-0">
@@ -493,8 +658,13 @@ export default async function DashboardPage() {
       )}
 
       {/* Team workload */}
-      {workloadEntries.length > 0 && (
-        <div className="bg-white rounded-lg border mb-8">
+      {(!teamWorkload.ok || !members.ok) && (
+        <div className="mb-8">
+          <BloqueFallido que="la carga de trabajo del equipo" id="carga-equipo" />
+        </div>
+      )}
+      {teamWorkload.ok && members.ok && workloadEntries.length > 0 && (
+        <div data-testid="bloque-carga-equipo" className="bg-white rounded-lg border mb-8">
           <div className="px-6 py-4 border-b flex justify-between items-center">
             <h2 className="font-semibold">Carga de trabajo del equipo</h2>
             <Link href="/reports" className="text-sm text-primary hover:underline">Ver informes</Link>
@@ -562,44 +732,44 @@ export default async function DashboardPage() {
               <span className="text-xs px-2 py-0.5 bg-white border border-purple-200 rounded-full text-purple-700">ultimos 30 dias</span>
             </div>
             <div className="flex items-center gap-4">
-              {aiInsights.averageScore !== null && (
+              {ia && ia.averageScore !== null && (
                 <div className="text-right">
                   <span className="text-xs text-gray-500">Score medio </span>
                   <span className={`font-bold ${
-                    aiInsights.averageScore >= 70 ? "text-green-600" :
-                    aiInsights.averageScore >= 40 ? "text-orange-600" : "text-red-600"
+                    ia.averageScore >= 70 ? "text-green-600" :
+                    ia.averageScore >= 40 ? "text-orange-600" : "text-red-600"
                   }`}>
-                    {aiInsights.averageScore}/100
+                    {ia.averageScore}/100
                   </span>
-                  <span className="text-xs text-gray-400 ml-1">({aiInsights.totalCasesAnalyzed} casos)</span>
+                  <span className="text-xs text-gray-400 ml-1">({ia.totalCasesAnalyzed} casos)</span>
                 </div>
               )}
-              <BulkAnalyzeButton openCaseCount={activeCases} />
+              <BulkAnalyzeButton openCaseCount={datosDe(activeCases)} />
             </div>
           </div>
           <div className="p-6 grid md:grid-cols-4 gap-4 mb-2">
             <div className="bg-white rounded-lg p-4 border border-purple-100">
               <p className="text-xs text-gray-500 uppercase tracking-wider">Casos analizados</p>
-              <p className="text-2xl font-bold text-purple-700 mt-1">{aiInsights.thirtyDays.casesAnalyzed}</p>
+              <p className="text-2xl font-bold text-purple-700 mt-1">{ia ? ia.thirtyDays.casesAnalyzed : "—"}</p>
             </div>
             <div className="bg-white rounded-lg p-4 border border-purple-100">
               <p className="text-xs text-gray-500 uppercase tracking-wider">Calculos ISD</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">{aiInsights.thirtyDays.isdCalculations}</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-1">{ia ? ia.thirtyDays.isdCalculations : "—"}</p>
             </div>
             <div className="bg-white rounded-lg p-4 border border-purple-100">
               <p className="text-xs text-gray-500 uppercase tracking-wider">Mensajes chat IA</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1">{aiInsights.thirtyDays.chatMessages}</p>
+              <p className="text-2xl font-bold text-blue-600 mt-1">{ia ? ia.thirtyDays.chatMessages : "—"}</p>
             </div>
             <div className="bg-white rounded-lg p-4 border border-purple-100">
               <p className="text-xs text-gray-500 uppercase tracking-wider">Horas ahorradas (est.)</p>
-              <p className="text-2xl font-bold text-amber-600 mt-1">{aiInsights.thirtyDays.estimatedHoursSaved}h</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">{ia ? ia.thirtyDays.estimatedHoursSaved : "—"}h</p>
             </div>
           </div>
-          {aiInsights.riskiestCases.length > 0 && (
+          {ia && ia.riskiestCases.length > 0 && (
             <div className="px-6 pb-6">
               <h3 className="text-sm font-semibold text-gray-700 mb-2">Expedientes con menor score</h3>
               <div className="space-y-2">
-                {aiInsights.riskiestCases.map((c) => (
+                {ia.riskiestCases.map((c) => (
                   <Link
                     key={c.caseId}
                     href={`/cases/${c.caseId}`}
@@ -627,7 +797,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Recent cases */}
-      <div className="bg-white rounded-lg border mb-8">
+      <div data-testid="bloque-expedientes-recientes" className="bg-white rounded-lg border mb-8">
         <div className="px-6 py-4 border-b flex justify-between items-center">
           <h2 className="font-semibold">Expedientes recientes</h2>
           <Link href="/cases" className="text-sm text-primary hover:underline">Ver todos</Link>
@@ -643,7 +813,7 @@ export default async function DashboardPage() {
             </tr>
           </thead>
           <tbody>
-            {recentCases.map((c) => (
+            {recientes.map((c) => (
               <tr key={c.id} className="border-b hover:bg-gray-50">
                 <td className="px-6 py-3">
                   <Link href={`/cases/${c.id}`} className="text-primary hover:underline font-medium">{c.ref}</Link>
@@ -656,25 +826,40 @@ export default async function DashboardPage() {
                   </span>
                 </td>
                 <td className="px-6 py-3 text-sm text-gray-500">
-                  {new Date(c.createdAt).toLocaleDateString("es-ES")}
+                  {c.createdAt.toLocaleDateString("es-ES", { timeZone: "Europe/Madrid" })}
                 </td>
               </tr>
             ))}
-            {recentCases.length === 0 && (
-              <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-400">No hay expedientes</td></tr>
+            {recientes.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-6 py-8 text-center">
+                  {recentCases.ok ? (
+                    <span className="text-gray-400" data-testid="vacio-expedientes-recientes">
+                      No hay expedientes
+                    </span>
+                  ) : (
+                    /* «No hay expedientes» era la misma frase para «hay cero» y
+                       para «no he podido consultarlo». Ya no. */
+                    <span role="alert" data-testid="fallo-expedientes-recientes" className="text-red-700">
+                      No se han podido cargar los expedientes recientes. Esto no
+                      significa que no haya ninguno.
+                    </span>
+                  )}
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
       </div>
 
       {/* Recent audit */}
-      <div className="bg-white rounded-lg border">
+      <div data-testid="bloque-actividad" className="bg-white rounded-lg border">
         <div className="px-6 py-4 border-b flex justify-between items-center">
           <h2 className="font-semibold">Actividad reciente</h2>
           <Link href="/audit" className="text-sm text-primary hover:underline">Ver todo</Link>
         </div>
         <div className="divide-y">
-          {recentLogs.map((log) => (
+          {registros.map((log) => (
             <div key={log.id} className="px-6 py-3 flex items-center justify-between text-sm">
               <div>
                 <span className="font-medium">{log.user?.name || log.user?.email || "Sistema"}</span>
@@ -682,13 +867,20 @@ export default async function DashboardPage() {
                 {log.details && <span className="text-gray-400 ml-2">- {log.details}</span>}
               </div>
               <span className="text-gray-400 text-xs">
-                {new Date(log.createdAt).toLocaleString("es-ES")}
+                {log.createdAt.toLocaleString("es-ES", { timeZone: "Europe/Madrid" })}
               </span>
             </div>
           ))}
-          {recentLogs.length === 0 && (
-            <p className="px-6 py-8 text-center text-gray-400">Sin actividad</p>
-          )}
+          {registros.length === 0 &&
+            (recentLogs.ok ? (
+              <p className="px-6 py-8 text-center text-gray-400" data-testid="vacio-actividad">
+                Sin actividad
+              </p>
+            ) : (
+              <p role="alert" data-testid="fallo-actividad" className="px-6 py-8 text-center text-red-700">
+                No se ha podido cargar la actividad reciente.
+              </p>
+            ))}
         </div>
       </div>
     </div>

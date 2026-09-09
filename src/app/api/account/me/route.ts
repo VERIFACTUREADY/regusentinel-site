@@ -1,0 +1,180 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getVerifiedUser } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
+import { logAudit } from "@/lib/audit";
+import { sendEmail } from "@/lib/email";
+import { rateLimit } from "@/lib/api-rate-limit";
+import bcrypt from "bcryptjs";
+import { z } from "zod";
+import { lockOrgForOwnership } from "@/lib/plan-limits";
+
+/** El titular es el ultimo OWNER de una organizacion: no puede darse de baja. */
+class UltimoOwnerError extends Error {
+  constructor(readonly orgName: string) {
+    super("LAST_OWNER");
+    this.name = "UltimoOwnerError";
+  }
+}
+
+/**
+ * DELETE /api/account/me — borrado de cuenta del usuario autenticado.
+ *
+ * Implementa el derecho de supresion (GDPR Art. 17 / LOPDGDD Art. 17).
+ *
+ * Proceso:
+ *   1. Valida sesion + password (no se acepta SSO sin password porque seria
+ *      vulnerable a session hijacking en este flow). Usuarios SSO sin
+ *      password deben contactar dpo@heredia.app por canal verificado.
+ *   2. Bloquea si el usuario es el unico OWNER de la org — primero transferir
+ *      ownership o eliminar la org desde billing.
+ *   3. Anonimiza el row User (mantiene referential integrity con AuditLog,
+ *      PromptLog, etc.) y elimina sus memberships.
+ *   4. Loguea en audit y envia email de confirmacion al email original.
+ *
+ * Rate-limited (3 intentos/hora/IP) para evitar abuse por session hijack.
+ */
+
+const schema = z.object({
+  password: z.string().min(1, "Password requerido para confirmar el borrado"),
+  confirmText: z.literal("BORRAR MI CUENTA"),
+});
+
+export async function DELETE(req: NextRequest) {
+  const limited = rateLimit(req, { bucket: "account-delete", windowMs: 60 * 60 * 1000, max: 3 });
+  if (limited) return limited;
+
+  // Identidad verificada contra base de datos (no contra el JWT). Se permite
+  // con la suscripción suspendida: el derecho de supresión no depende de que
+  // la organización esté al corriente de pago.
+  const verified = await getVerifiedUser();
+  if (!verified) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+  const session = { user: verified };
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "JSON invalido" }, { status: 400 });
+  }
+
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Datos invalidos", details: parsed.error.errors }, { status: 400 });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    include: { memberships: { include: { org: { select: { id: true, name: true } } } } },
+  });
+  if (!user) return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
+
+  if (!user.passwordHash) {
+    return NextResponse.json(
+      {
+        error:
+          "Tu cuenta usa inicio de sesion por SSO sin contrasena. Contacta dpo@heredia.app para verificar tu identidad y proceder con el borrado.",
+      },
+      { status: 400 }
+    );
+  }
+
+  const passwordOk = await bcrypt.compare(parsed.data.password, user.passwordHash);
+  if (!passwordOk) {
+    return NextResponse.json({ error: "Contrasena incorrecta" }, { status: 401 });
+  }
+
+  const originalEmail = user.email;
+  const originalName = user.name;
+  const anonymizedEmail = `deleted-user-${user.id}@heredia.invalid`;
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+
+  // La comprobación del último OWNER y la baja van en la MISMA transacción, y
+  // detrás de un advisory lock por organización. Antes se contaba fuera: dos
+  // owners borrando su cuenta a la vez veían ambos `ownerCount = 2`, ambos
+  // pasaban el control y la organización se quedaba sin ningún titular.
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const m of user.memberships) {
+        if (m.role !== "OWNER") continue;
+
+        await lockOrgForOwnership(m.orgId, tx);
+
+        const ownerCount = await tx.membership.count({
+          where: { orgId: m.orgId, role: "OWNER" },
+        });
+        if (ownerCount <= 1) {
+          throw new UltimoOwnerError(m.org.name);
+        }
+      }
+
+      await tx.membership.deleteMany({ where: { userId: user.id } });
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          email: anonymizedEmail,
+          name: "Cuenta eliminada",
+          passwordHash: null,
+          magicToken: null,
+          magicTokenExp: null,
+        },
+      });
+      for (const m of user.memberships) {
+        await tx.auditLog.create({
+          data: {
+            orgId: m.orgId,
+            userId: user.id,
+            action: "account.deleted",
+            // Sin el email original: escribirlo aquí dejaba el dato personal
+            // justo en el registro que documenta su supresión, y contradecía
+            // el email de confirmación que afirma haberlo eliminado.
+            details: "El titular solicitó el borrado de su cuenta (RGPD Art. 17)",
+            ip,
+          },
+        });
+      }
+    });
+  } catch (err) {
+    if (err instanceof UltimoOwnerError) {
+      return NextResponse.json(
+        {
+          error: `Eres el unico Owner de "${err.orgName}". Transfiere la titularidad a otro miembro o elimina la organizacion desde Facturacion antes de borrar tu cuenta.`,
+        },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
+
+  // Confirmacion al email original — fire and forget, no bloquea la respuesta.
+  sendEmail({
+    to: originalEmail,
+    subject: "Confirmacion de borrado de cuenta — Heredia",
+    html: `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+        <h2 style="color:#0f172a;">Tu cuenta ha sido eliminada</h2>
+        <p>Hola${originalName ? ` ${originalName}` : ""},</p>
+        <p>
+          Hemos procesado tu solicitud de borrado el ${new Date().toLocaleString("es-ES")}.
+          Tus datos personales (email, nombre, credenciales) han sido eliminados de
+          nuestros sistemas.
+        </p>
+        <p>
+          Los expedientes y datos de organizacion siguen siendo titularidad de la
+          gestoria/funeraria y se conservan segun su politica de retencion.
+          Los registros de auditoria asociados a tu actividad pasada quedan
+          anonimizados pero conservados por obligacion legal (LOPDGDD).
+        </p>
+        <p style="margin-top:24px;">
+          Si crees que esto es un error, contacta inmediatamente con
+          <a href="mailto:dpo@heredia.app">dpo@heredia.app</a>.
+        </p>
+        <hr style="border:none;border-top:1px solid #eee;margin-top:32px;" />
+        <p style="color:#94a3b8;font-size:12px;">Heredia · Datos tratados conforme al RGPD y LOPDGDD.</p>
+      </div>
+    `,
+  }).catch((err) => console.error("Account deletion confirmation email failed:", err));
+
+  return NextResponse.json({ success: true, message: "Cuenta eliminada. Recibiras confirmacion por email." });
+}

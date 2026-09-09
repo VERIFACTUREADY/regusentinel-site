@@ -1,23 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-
-// Inline validation schemas to avoid Prisma dependency
-const createCaseSchema = z.object({
-  deceasedName: z.string().min(1, "Nombre del fallecido obligatorio"),
-  deathDate: z.string().nullable().optional(),
-  deceasedDni: z.string().nullable().optional(),
-  contactName: z.string().min(1, "Nombre del solicitante obligatorio"),
-  contactPhone: z.string().nullable().optional(),
-  contactEmail: z.string().email().nullable().optional(),
-  relationship: z.string().nullable().optional(),
-  province: z.string().nullable().optional(),
-  isUrgent: z.boolean().default(false),
-  hasDeceasedInsurance: z.boolean().default(false),
-  categories: z.array(z.string()).min(1, "Selecciona al menos una categoria"),
-  consentAccepted: z.literal(true, {
-    errorMap: () => ({ message: "Debes aceptar el consentimiento" }),
-  }),
-});
+// Importamos el schema REAL: una copia inline divergió del de producción
+// (aceptaba null y usaba "relationship") y ocultó un bug del wizard de alta.
+import { createCaseSchema } from "../src/lib/validations";
 
 const demoRequestSchema = z.object({
   name: z.string().min(1),
@@ -68,6 +53,55 @@ describe("Validation Schemas", () => {
         consentAccepted: true,
       });
       expect(result.success).toBe(false);
+    });
+
+    // Regresión: el wizard (y otros clientes JS) serializan los opcionales
+    // vacíos como null; el schema debe tratarlos como undefined en vez de
+    // rechazar el alta con "Datos invalidos".
+    it("should accept null for empty optional fields", () => {
+      const result = createCaseSchema.safeParse({
+        deceasedName: "Maria Garcia",
+        contactName: "Juan Garcia",
+        contactPhone: "600111222",
+        contactEmail: null,
+        province: null,
+        notes: null,
+        deathDate: null,
+        deceasedDni: null,
+        contactRelationship: null,
+        categories: ["BANCOS"],
+        consentAccepted: true,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.contactEmail).toBeUndefined();
+        expect(result.data.province).toBeUndefined();
+      }
+    });
+
+    it("should still require email or phone when both are null", () => {
+      const result = createCaseSchema.safeParse({
+        deceasedName: "Maria Garcia",
+        contactName: "Juan Garcia",
+        contactPhone: null,
+        contactEmail: null,
+        categories: ["BANCOS"],
+        consentAccepted: true,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("should keep contactRelationship in parsed output", () => {
+      const result = createCaseSchema.safeParse({
+        deceasedName: "Maria Garcia",
+        contactName: "Juan Garcia",
+        contactEmail: "juan@example.com",
+        contactRelationship: "Hijo/a",
+        categories: ["BANCOS"],
+        consentAccepted: true,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.contactRelationship).toBe("Hijo/a");
     });
   });
 

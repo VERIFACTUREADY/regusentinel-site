@@ -1,10 +1,11 @@
 import { Metadata } from "next";
-import Link from "next/link";
 import { CalculatorClient } from "./calculator-client";
 import { ProUpsell } from "@/components/pro-upsell";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Calculadora del Impuesto de Sucesiones (ISD) por Comunidad Autónoma | BARITUR PRO",
+  title: "Calculadora del Impuesto de Sucesiones (ISD) por Comunidad Autónoma | Heredia",
   description:
     "Calcula gratis cuánto se paga por el Impuesto de Sucesiones (Modelo 650) en España según tu Comunidad Autónoma. Compara entre todas las CCAA: Madrid, Andalucía, Cataluña, Galicia, Valencia y más. Estimación basada en la normativa estatal y bonificaciones autonómicas vigentes.",
   keywords: [
@@ -89,34 +90,22 @@ export default function CalculadoraISDPage() {
       />
 
       {/* ─── Header ───────────────────────────────────────── */}
-      <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <Link href="/" className="text-lg font-semibold text-slate-900">
-            BARITUR PRO
-          </Link>
-          <nav className="flex items-center gap-6 text-sm">
-            <Link href="/precios" className="text-slate-600 hover:text-slate-900">Precios</Link>
-            <Link href="/contacto" className="text-slate-600 hover:text-slate-900">Contacto</Link>
-            <Link
-              href="/login"
-              className="rounded-md bg-slate-900 px-3 py-1.5 text-white hover:bg-slate-800"
-            >
-              Acceder
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* ─── Hero ───────────────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-4 pt-12 pb-6">
-        <div className="mx-auto max-w-3xl text-center">
-          <span className="inline-block rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-            Calculadora gratuita · Sin registro
-          </span>
-          <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 sm:text-5xl">
+      <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-blue-900 text-white">
+        <div className="absolute inset-0 dot-grid-light opacity-30" />
+        <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl animate-float-slow" />
+        <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
+        <div className="relative max-w-4xl mx-auto px-4 py-12 sm:py-14">
+          <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-400/30 rounded-full px-3 py-1 text-xs text-emerald-300 mb-4">
+            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
+            Modelo 650 · 17 CCAA · Sin registro
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold mb-3">
             Calculadora del Impuesto de Sucesiones por Comunidad Autónoma
           </h1>
-          <p className="mt-4 text-lg text-slate-600">
+          <p className="text-base sm:text-lg text-blue-100 max-w-2xl">
             Estima la cuota del <strong>Modelo 650</strong> según tu CCAA y compara
             entre las 17 Comunidades Autónomas. Tarifa estatal vigente,
             coeficientes multiplicadores y bonificaciones autonómicas
@@ -190,8 +179,8 @@ export default function CalculadoraISDPage() {
         freeToolDesc="estima la cuota de un caso puntual; hay que reintroducir todos los datos en cada consulta."
       />
 
-      {/* ─── Disclaimer + Footer ──────────────────────────── */}
-      <footer className="border-t bg-white">
+      {/* ─── Disclaimer ──────────────────────────────────── */}
+      <section className="border-t bg-white">
         <div className="mx-auto max-w-6xl px-4 py-8 text-xs text-slate-500">
           <p>
             <strong>Aviso legal:</strong> Esta calculadora es una herramienta
@@ -200,19 +189,12 @@ export default function CalculadoraISDPage() {
             autonómicas vigentes en 2025. No sustituye el asesoramiento de un
             profesional. Las normativas autonómicas evolucionan y pueden tener
             requisitos específicos que no se modelan aquí. Navarra y País Vasco
-            tienen régimen foral propio. BARITUR no presta asesoramiento
+            tienen régimen foral propio. Heredia no presta asesoramiento
             jurídico ni fiscal individual.
           </p>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-            <span>© BARITUR PRO</span>
-            <div className="flex gap-4">
-              <Link href="/legal/terminos" className="hover:text-slate-700">Términos</Link>
-              <Link href="/legal/privacidad" className="hover:text-slate-700">Privacidad</Link>
-              <Link href="/legal/cookies" className="hover:text-slate-700">Cookies</Link>
-            </div>
-          </div>
         </div>
-      </footer>
+      </section>
+      <SiteFooter />
     </main>
   );
 }

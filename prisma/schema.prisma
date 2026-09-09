@@ -86,19 +86,39 @@ model Organization {
   notifications NotificationLog[]
   workflowRules WorkflowRule[]
   caseTemplates CaseTemplate[]
+  purgeEvidence PurgeEvidence[]
+  caseCounters  CaseCounter[]
 
   retentionDays Int @default(90)
 
   // White-label del portal familia. Unlocked en plan DESPACHO/FIRMA
-  // (INICIA sigue mostrando "Powered by BARITUR PRO").
+  // (INICIA sigue mostrando "Powered by Heredia").
   brandDisplayName  String?
   brandLogoUrl      String?
   brandPrimaryColor String? // hex, e.g. "#1e40af"
   brandSupportEmail String?
   brandFooterText   String?
 
+  // Integraciones de notificación outbound (Plan Firma).
+  // - slackWebhookUrl: incoming webhook de Slack (https://hooks.slack.com/...)
+  // - customWebhookUrl: endpoint del cliente que recibe los eventos en JSON
+  // - customWebhookSecret: secreto HMAC-SHA256 que firma el payload en X-HEREDIA-Signature
+  slackWebhookUrl     String?
+  teamsWebhookUrl     String?
+  customWebhookUrl    String?
+  customWebhookSecret String?
+
   // Onboarding guiado. Se oculta al marcarse dismiss o al completar los 5 pasos.
   onboardingDismissedAt DateTime?
+
+  /// Uso de IA con proveedor externo (Anthropic). DESACTIVADO por defecto:
+  /// enviar datos de un expediente a un tercero es una decision del
+  /// responsable del tratamiento — la gestoria o funeraria —, no del
+  /// proveedor del software. Antes se hacia sin que nadie lo decidiera.
+  aiEnabled   Boolean   @default(false)
+  aiEnabledAt DateTime?
+
+  invitations Invitation[]
 }
 
 // ─── USER & MEMBERSHIP ──────────────────────────────────
@@ -119,6 +139,8 @@ model User {
   auditLogs     AuditLog[]
   promptLogs    PromptLog[]
   taskNotes     TaskNote[]
+
+  invitacionesEnviadas Invitation[] @relation("InvitacionesEnviadas")
 }
 
 model Membership {
@@ -154,12 +176,81 @@ model Case {
   portalToken   String  @unique @default(cuid())
   portalEnabled Boolean @default(true)
 
+  /// Rotación y revocación del enlace del portal. Antes el token era
+  /// permanente: si se filtraba (WhatsApp reenviado, buzón comprometido) no
+  /// había forma de invalidarlo sin desactivar el portal entero.
+  portalTokenRotatedAt DateTime?
+  portalTokenExpiresAt DateTime?
+  portalTokenRevokedAt DateTime?
+
+  /// Consentimiento vigente. Se mantienen para compatibilidad y consulta
+  /// rápida, pero la EVIDENCIA está en PortalConsent: estos campos por sí
+  /// solos no acreditan qué texto se aceptó ni desde dónde.
   consentAccepted  Boolean   @default(false)
   consentDate      DateTime?
   legitimationNote String?
 
+  /// Si en el caudal hay inmueble urbano. Activa la vigilancia del
+  /// plazo y la posible no-sujeción de la plusvalía municipal en
+  /// el Radar ISD.
+  hasUrbanProperty          Boolean @default(false)
+  /// Referencia catastral del inmueble principal del caudal (20 caracteres).
+  /// El detalle del expediente ofrece deep links a la Sede del Catastro
+  /// (consulta ficha y visor cartográfico) cuando está informada.
+  referenciaCatastral       String?
+  /// Valor declarado en la escritura previa del inmueble urbano.
+  /// Junto a propertyTransmissionValue permite detectar la no-sujeción
+  /// a IIVTNU tras RDL 26/2021 cuando no hay incremento de valor.
+  propertyAcquisitionValue  Float?
+  /// Valor declarado en la transmisión mortis causa del inmueble urbano.
+  propertyTransmissionValue Float?
+  /// Patrimonio preexistente del heredero principal (€). Alimenta la
+  /// detección de proximidad a tramos del coeficiente multiplicador
+  /// del art. 22 Ley 29/1987.
+  preexistingPatrimony      Float?
+
+  /// El causante cambió de residencia fiscal en los 5 años previos al
+  /// fallecimiento. Activa el aviso del art. 28 Ley 22/2009 (punto
+  /// de conexión por residencia habitual durante los últimos 5 años).
+  recentResidenceChange   Boolean @default(false)
+  /// Provincia/CCAA de residencia fiscal previa, si la conocemos.
+  /// Se usa en el mensaje de la alerta cuando se ha marcado un cambio.
+  previousResidenceProvince String?
+
+  /// Reducciones del art. 20 Ley 29/1987 aplicadas en el expediente
+  /// y que tienen periodo de mantenimiento (vivienda habitual,
+  /// empresa familiar, etc.). Estructura:
+  /// [{ "type": "VIVIENDA_HABITUAL", "appliedDate": "2026-04-15",
+  ///    "maintenanceYears": 5, "note"?: "..." }, ...]
+  /// El Radar ISD las vigila y alerta antes del fin del periodo.
+  appliedReductions       Json?
+
   deletedAt DateTime?
   closedAt  DateTime?
+
+  /// Ciclo de retencion, separado en fases para que "eliminado" signifique algo.
+  /// `deletedAt` es solo borrado logico: el expediente sigue en PostgreSQL y
+  /// sus documentos en S3.
+  purgeScheduledAt DateTime? // cuando toca purgar de verdad
+  /// OBSOLETO. La purga BORRA la fila `Case`, así que este campo nunca llega a
+  /// leerse con valor: presentarlo como "estado persistente del expediente" era
+  /// engañoso. La evidencia de purga vive en `PurgeEvidence`, sin datos
+  /// personales. Se conserva la columna para no reescribir historial de
+  /// migraciones; no debe usarse.
+  purgedAt      DateTime?
+  purgeError    String? // ultimo fallo, para reintento
+  purgeAttempts Int     @default(0)
+
+  /// Estado explícito del ciclo de purga. Antes sólo había un contador: al
+  /// llegar a 5 el expediente dejaba de seleccionarse y sus datos personales
+  /// quedaban abandonados en la base y en S3 sin que nadie se enterara.
+  purgeState PurgeState @default(PENDING)
+  /// Momento a partir del cual se puede volver a intentar. Implementa el
+  /// backoff: creciente mientras hay reintentos automáticos, y largo pero
+  /// finito una vez que el caso requiere intervención.
+  purgeNextAttemptAt DateTime?
+  /// Último aviso operativo enviado. Evita repetir el correo en cada pasada.
+  purgeAlertedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -175,6 +266,17 @@ model Case {
   notifications  NotificationLog[]
   workflowLogs   WorkflowLog[]
   portalMessages PortalMessage[]
+  portalConsents PortalConsent[]
+  pendingUploads PendingUpload[]
+
+  /// La referencia se generaba con `count + 1` fuera de transacción: dos altas
+  /// simultáneas producían la misma. Esta restricción hace que la segunda
+  /// falle con P2002 en lugar de duplicar, y el alta reintenta.
+  @@unique([orgId, ref])
+
+  /// Lo consulta el cron de retención para localizar lo que toca purgar.
+  @@index([purgeScheduledAt])
+  @@index([purgeState, purgeNextAttemptAt])
 }
 
 model Deceased {
@@ -196,6 +298,43 @@ model CaseContact {
   relationship String?
 
   case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+// ─── PORTAL CONSENT ─────────────────────────────────────
+//
+// El consentimiento era un booleano en Case que se sobrescribía en cada
+// aceptación. Eso no es evidencia: no acredita QUÉ texto se aceptó, ni cuándo,
+// ni desde dónde, y una segunda aceptación borraba la anterior.
+//
+// Cada aceptación crea una fila nueva e inmutable a nivel de aplicación. Si
+// cambia el texto legal, cambia `version` y `textHash`, y se requiere una
+// aceptación nueva en lugar de reutilizar la vieja.
+
+model PortalConsent {
+  id     String @id @default(cuid())
+  caseId String
+
+  /// Versión del texto legal aceptado (p. ej. "2026-08-v1").
+  version String
+  /// SHA-256 del texto exacto que se mostró. Permite demostrar años después
+  /// qué leyó exactamente la persona, sin guardar copias del texto por caso.
+  textHash String
+  /// Finalidad del consentimiento; hoy sólo el acceso al portal familiar.
+  purpose  String @default("PORTAL_FAMILIA")
+
+  /// Nombre que la persona declaró al aceptar.
+  declaredName String?
+  ip           String?
+  userAgent    String?
+
+  acceptedAt DateTime @default(now())
+  /// Retirada del consentimiento. Una fila retirada deja de habilitar acceso.
+  withdrawnAt DateTime?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, acceptedAt])
+  @@index([caseId, version])
 }
 
 // ─── PORTAL MESSAGE ─────────────────────────────────────
@@ -271,10 +410,83 @@ model Document {
   uploadedBy     String?
   isPortalUpload Boolean @default(false)
 
+  /// Visibilidad en el portal familia. Privado por defecto: antes el portal
+  /// devolvía TODOS los documentos del expediente, incluidos los internos, con
+  /// URL de descarga prefirmada. Los que sube la propia familia se marcan
+  /// visibles al crearse (es su propio documento).
+  visibleToFamily Boolean @default(false)
+
+  /// Estado de borrado del objeto en S3. Si el borrado en S3 falla, la fila NO
+  /// se elimina y queda marcada aquí para reintento: borrar la referencia
+  /// silenciosamente dejaría el fichero huérfano en el bucket para siempre.
+  deletionState  String?   // null | PENDING_S3_DELETE | S3_DELETE_FAILED
+  deletionError  String?
+  deletionAt     DateTime?
+
   createdAt DateTime @default(now())
 
   case Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
   task Task? @relation("TaskDocuments", fields: [taskId], references: [id])
+
+  @@index([caseId, visibleToFamily])
+}
+
+/// Subida en curso: el archivo viaja del navegador a S3 y NO pasa por la
+/// función.
+///
+/// POR QUÉ EXISTE
+/// --------------
+/// Una función de Vercel admite como máximo 4,5 MB de cuerpo de petición. El
+/// contrato del producto son 20 MiB, así que el archivo no puede atravesarla:
+/// el navegador lo sube directamente al almacenamiento con una URL prefirmada.
+/// Eso parte la operación en dos viajes (autorizar y confirmar) y deja un hueco
+/// entre ambos. Esta tabla es lo que vive en ese hueco.
+///
+/// QUÉ SOSTIENE
+/// ------------
+///   - La AUTORIZACIÓN: la clave, el expediente, la organización y el actor los
+///     fija el servidor al autorizar. En la confirmación no se vuelve a creer
+///     nada de lo que diga el cliente: se lee de aquí.
+///   - La IDEMPOTENCIA: `status` se reclama en la misma transacción que crea el
+///     documento, y `documentId` es único. Dos confirmaciones simultáneas de la
+///     misma subida no pueden crear dos filas.
+///   - La LIMPIEZA: `expiresAt` permite localizar y borrar los objetos de las
+///     subidas que se autorizaron y nunca se confirmaron, que si no se
+///     quedarían en el bucket para siempre sin que ninguna fila los mencione.
+model PendingUpload {
+  id     String @id @default(cuid())
+  orgId  String
+  caseId String
+
+  /// Clave en el bucket. La genera el servidor; el cliente nunca la propone.
+  fileKey String @unique
+  /// Nombre ya saneado en la autorización.
+  fileName String
+  /// Tamaño declarado al autorizar. En la confirmación se compara con el
+  /// tamaño REAL del objeto: si no coinciden, no se crea documento.
+  expectedSize Int
+
+  /// Contexto del actor, fijado al autorizar.
+  uploadedBy     String?
+  isPortalUpload Boolean @default(false)
+  /// Vinculación manual a tarea, ya validada contra expediente y organización.
+  taskId String?
+
+  /// PENDING | COMPLETED | FAILED
+  status String @default("PENDING")
+  /// Documento creado. Único: es la barrera final contra duplicados.
+  documentId String? @unique
+  /// Motivo del descarte, para poder explicar por qué no se guardó.
+  failureReason String?
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  /// Lo consulta la limpieza de caducadas.
+  @@index([status, expiresAt])
+  @@index([caseId])
 }
 
 // ─── TEMPLATE ───────────────────────────────────────────
@@ -310,19 +522,27 @@ model TemplateVersion {
 // ─── AUTOPILOT / IA ─────────────────────────────────────
 
 model PromptLog {
-  id       String  @id @default(cuid())
-  caseId   String?
-  userId   String
-  action   String // "generate_checklist" | "generate_draft" | etc
-  prompt   String
-  response String
-  model    String?
-  tokens   Int?
+  id     String  @id @default(cuid())
+  caseId String?
+  userId String
+  action String // "generate_checklist" | "generate_draft" | etc
+
+  /// El prompt integro YA NO se guarda: contenia el contexto del expediente
+  /// con nombres, DNI, telefonos y emails, duplicando la PII y conservandola
+  /// sin plazo. Se guarda su huella para poder correlacionar una respuesta
+  /// con su entrada sin almacenarla.
+  contextHash String?
+  /// Respuesta ya minimizada (sin identificadores directos).
+  response    String
+  model       String?
+  tokens      Int?
 
   createdAt DateTime @default(now())
 
   case Case? @relation(fields: [caseId], references: [id])
   user User  @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
 }
 
 model Approval {
@@ -382,6 +602,69 @@ model Subscription {
   org Organization @relation(fields: [orgId], references: [id])
 }
 
+/// Fases del ciclo de purga. La auditoría exigía distinguirlas: con un simple
+/// contador de intentos, "pendiente", "fallando" y "abandonado" eran el mismo
+/// estado a ojos de cualquiera que mirase la base de datos.
+enum PurgeState {
+  /// Programado, aún no intentado.
+  PENDING
+  /// Un proceso lo tiene reclamado ahora mismo.
+  PROCESSING
+  /// Falló y se reintenta solo, con backoff creciente.
+  RETRYABLE_FAILURE
+  /// Agotados los reintentos automáticos rápidos. Sigue reintentándose con
+  /// backoff largo, pero ya ha generado aviso operativo y admite reintento
+  /// manual: los datos personales NO se abandonan.
+  NEEDS_INTERVENTION
+  /// Sólo por completitud del enum: al completarse, la fila `Case` se elimina
+  /// y la constancia queda en `PurgeEvidence`.
+  COMPLETED
+}
+
+/// Evidencia de purga SIN datos personales.
+///
+/// La purga borra la fila `Case` entera, así que no puede quedar constancia en
+/// ella (`Case.purgedAt` nunca llegaba a observarse). Esta tabla conserva lo
+/// necesario para demostrar el cumplimiento —qué organización, qué referencia
+/// interna, cuándo, cuántos objetos se borraron— y nada más: ni nombre del
+/// causante, ni contacto, ni ningún identificador de persona.
+model PurgeEvidence {
+  id    String @id @default(cuid())
+  orgId String
+  /// Referencia interna del expediente (p. ej. `EXP-2026-0042`). No es un dato
+  /// personal: es un correlativo por organización.
+  caseRef String
+
+  scheduledAt      DateTime?
+  purgedAt         DateTime  @default(now())
+  documentsDeleted Int       @default(0)
+  attempts         Int       @default(0)
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, purgedAt])
+}
+
+/// Contador numérico de referencias de expediente, por organización y año.
+///
+/// Antes la siguiente referencia se deducía de `ORDER BY ref DESC`, es decir de
+/// una comparación de CADENAS. Con menos de 10.000 expedientes al año el
+/// relleno a cuatro dígitos hacía que el orden lexicográfico coincidiera con el
+/// numérico, así que funcionaba por accidente. En cuanto se supera esa cifra,
+/// `EXP-2026-10000` es lexicográficamente MENOR que `EXP-2026-9999`: el máximo
+/// leído sería 9999, la siguiente referencia calculada 10000 — ya existente— y
+/// el alta fallaría en bucle con P2002 hasta agotar los reintentos.
+model CaseCounter {
+  orgId String
+  year  Int
+  /// Última referencia asignada. Se incrementa de forma atómica.
+  lastNumber Int @default(0)
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, year])
+}
+
 model UsageRecord {
   id           String @id @default(cuid())
   orgId        String
@@ -407,6 +690,24 @@ enum NotificationKind {
 enum NotificationChannel {
   EMAIL_INTERNAL
   EMAIL_FAMILY
+  SLACK
+  TEAMS
+  WEBHOOK
+}
+
+/// Estado de una ENTREGA concreta (expediente, tipo, canal, destinatario,
+/// ventana). Antes no existía: se consultaba si había una entrega correcta, se
+/// enviaba, y sólo después se registraba. Dos ejecuciones simultáneas del cron
+/// leían ambas "no enviado" y ambas enviaban.
+enum NotificationDeliveryStatus {
+  /// Reservada pero aún no intentada.
+  PENDING
+  /// Reclamada por un proceso, que está llamando al proveedor externo.
+  PROCESSING
+  /// Confirmada por el proveedor.
+  SENT
+  /// Falló. Es reintentable.
+  FAILED
 }
 
 model NotificationLog {
@@ -419,15 +720,36 @@ model NotificationLog {
   status    String              @default("sent") // sent | failed
   error     String?
 
+  /// Clave de deduplicación por ENTREGA:
+  /// `<caseId>:<kind>:<channel>:<recipient>:<ventana>`.
+  ///
+  /// Antes la deduplicación era por (expediente, tipo): si un destinatario
+  /// recibía el email y otro fallaba, la siguiente ejecución saltaba el
+  /// expediente entero y el segundo no lo recibía nunca. Y un email enviado
+  /// bloqueaba también Slack, Teams y el webhook.
+  ///
+  /// Sólo se rellena en los envíos correctos, así que un fallo se puede
+  /// reintentar de forma independiente. Nullable por las filas anteriores.
+  dedupeKey String? @unique
+
+  /// Estado de la máquina de entrega. La fila se crea en PROCESSING ANTES de
+  /// llamar al proveedor externo: quien consigue crearla (o reclamarla con una
+  /// actualización condicional) es el único que envía.
+  deliveryStatus NotificationDeliveryStatus @default(SENT)
+  attempts       Int                        @default(0)
+  /// Momento en que se reclamó. Sirve para detectar entregas colgadas.
+  startedAt   DateTime?
+  completedAt DateTime?
+
   createdAt DateTime @default(now())
 
   org  Organization @relation(fields: [orgId], references: [id])
   case Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
-  // One notification of each kind per case (ISD alerts) — family reminders use
-  // a rolling 7-day window handled in application logic.
   @@index([caseId, kind])
   @@index([orgId, createdAt])
+  @@index([caseId, kind, channel, recipient])
+  @@index([deliveryStatus, startedAt])
 }
 
 // ─── CASE TASK TEMPLATES ────────────────────────────────
@@ -479,9 +801,28 @@ enum WorkflowAction {
 }
 
 enum WorkflowLogStatus {
+  /// Ejecución reclamada y en curso. La fila se crea en este estado ANTES de
+  /// llamar a ningún proveedor externo; si el proceso muere aquí, la ejecución
+  /// queda visible en vez de desaparecer.
+  PROCESSING
   SUCCESS
+  /// Parte de los destinatarios recibió el envío y parte no. Antes este estado
+  /// no existía: bastaba con que UNO de diez destinatarios funcionara para que
+  /// la ejecución se registrase como SUCCESS, y los nueve fallos quedaban
+  /// invisibles y sin reintento.
+  PARTIAL
   FAILED
   SKIPPED
+}
+
+/// Estado de la entrega a UN destinatario concreto de una ejecución de workflow.
+enum WorkflowDeliveryStatus {
+  PENDING
+  /// Reclamada por un proceso, que está llamando al proveedor externo. Sólo
+  /// quien consigue esta reclamación puede enviar.
+  PROCESSING
+  SENT
+  FAILED
 }
 
 model WorkflowRule {
@@ -514,11 +855,55 @@ model WorkflowLog {
   error     String?
   createdAt DateTime          @default(now())
 
-  rule WorkflowRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  case Case?        @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  /// Clave idempotente de la EJECUCIÓN: identifica de forma estable
+  /// (organización, regla, expediente, evento, ventana del evento).
+  ///
+  /// Es un SHA-256 de esos identificadores, así que no contiene ningún dato
+  /// personal: ni emails, ni nombres, ni contenido del expediente.
+  ///
+  /// Existe porque antes la fila se creaba DESPUÉS de enviar los correos: dos
+  /// ejecuciones simultáneas del mismo evento enviaban dos veces, y si el
+  /// proceso moría entre el envío y la escritura el correo quedaba enviado sin
+  /// registro. Ahora se reclama esta clave ANTES de llamar a nadie.
+  ///
+  /// Nullable por las filas anteriores a esta migración.
+  idempotencyKey String? @unique
+  /// Momento en que se reclamó la ejecución. Detecta ejecuciones colgadas.
+  startedAt DateTime?
+
+  rule       WorkflowRule       @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  case       Case?              @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  deliveries WorkflowDelivery[]
 
   @@index([ruleId, createdAt])
   @@index([caseId])
+}
+
+/// Entrega individual a un destinatario.
+///
+/// Sin esto, el resultado de una acción con varios destinatarios era un único
+/// booleano: no se sabía QUIÉN no lo había recibido ni se podía reintentar sólo
+/// con esos, porque reintentar la regla entera habría duplicado el envío a los
+/// que sí lo recibieron.
+model WorkflowDelivery {
+  id            String                 @id @default(cuid())
+  workflowLogId String
+  /// Email del destinatario interno.
+  recipient   String
+  status      WorkflowDeliveryStatus @default(PENDING)
+  error       String?
+  attempts    Int                    @default(0)
+  /// Momento del último intento. Es también la marca de la reclamación: una
+  /// entrega en PROCESSING más antigua que el plazo se considera abandonada y
+  /// se puede volver a reclamar.
+  lastTriedAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime               @default(now())
+
+  log WorkflowLog @relation(fields: [workflowLogId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowLogId, recipient])
+  @@index([status, lastTriedAt])
 }
 
 // ─── DEMO REQUEST ───────────────────────────────────────
@@ -545,4 +930,96 @@ model DemoRequest {
   updatedAt DateTime @updatedAt
 
   org Organization? @relation(fields: [orgId], references: [id])
+}
+
+// ─── STRIPE WEBHOOK IDEMPOTENCY ─────────────────────────
+// Stripe reintenta cada evento hasta 3 dias si el endpoint no responde 200
+// rapido. Cacheamos el event.id para no duplicar emails ni mutaciones de
+// suscripcion en reintentos.
+
+enum StripeEventStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+  /// Agotados los reintentos automáticos. Ya no se reintenta solo: requiere que
+  /// alguien mire qué pasa. Se distingue de FAILED para que un evento atascado
+  /// no quede indistinguible de uno que aún va a recuperarse por sí mismo.
+  NEEDS_INTERVENTION
+}
+
+model StripeEvent {
+  id   String @id // Stripe event.id (evt_xxx)
+  type String
+
+  /// Antes sólo existía `processedAt`, escrito ANTES de ejecutar la lógica: si
+  /// el handler fallaba, el evento quedaba marcado y el reintento de Stripe se
+  /// descartaba como duplicado. La mutación de suscripción se perdía para
+  /// siempre — un cobro cobrado y no aplicado.
+  ///
+  /// Ahora sólo PROCESSED descarta un reintento. FAILED y PROCESSING caducado
+  /// vuelven a intentarse.
+  status StripeEventStatus @default(RECEIVED)
+
+  attempts  Int       @default(0)
+  lastError String?
+  /// Momento en que se tomó el evento para procesarlo. Sirve para detectar
+  /// ejecuciones colgadas (proceso muerto a mitad).
+  startedAt   DateTime?
+  receivedAt  DateTime  @default(now())
+  completedAt DateTime?
+
+  /// Momento del último aviso operativo enviado por este evento. Evita repetir
+  /// el mismo correo en cada pasada del cron de recuperación.
+  alertedAt DateTime?
+
+  @@index([status, receivedAt])
+  @@index([receivedAt])
+  @@index([status, startedAt])
+}
+
+/// Estado de una invitacion.
+///
+/// POR QUE UNA TABLA APARTE Y NO UN CAMPO EN Membership
+/// ----------------------------------------------------
+/// El acceso se decide mirando Membership, y esa consulta se hace desde varios
+/// sitios: el callback de NextAuth, la carga de sesion, la comprobacion de
+/// tenencia. Anadir ahi un estado "revocada" obligaria a excluirlo en TODOS, y
+/// olvidarse de uno significa dejar acceso a alguien a quien se ha revocado.
+///
+/// Con una tabla aparte, revocar sigue siendo lo que ya estaba probado —borrar
+/// la membresia— y el estado queda registrado sin tocar ningun camino de
+/// acceso.
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+model Invitation {
+  id          String           @id @default(cuid())
+  orgId       String
+  email       String
+  role        Role
+  status      InvitationStatus @default(PENDING)
+  invitedById String?
+  /// Caducidad del enlace. Coincide con `User.magicTokenExp` al emitirlo.
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  /// Cuantas veces se ha reenviado. Cada reenvio rota el token, de modo que el
+  /// enlace anterior deja de servir.
+  resendCount Int              @default(0)
+  lastSentAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  invitedBy User?        @relation("InvitacionesEnviadas", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  /// Una invitacion viva por correo y organizacion. Reinvitar reutiliza la fila.
+  @@unique([orgId, email])
+  @@index([orgId, status])
 }

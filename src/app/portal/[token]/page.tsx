@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
+import { subirAlAlmacen } from "@/lib/subida-navegador";
 
 const statusLabels: Record<string, string> = {
   INTAKE: "Recibido",
@@ -167,7 +168,7 @@ function ConsentGate({
           </button>
 
           {branding.showPoweredBy && (
-            <p className="text-center text-xs text-gray-400 mt-4">Powered by BARITUR PRO</p>
+            <p className="text-center text-xs text-gray-400 mt-4">Powered by Heredia</p>
           )}
         </div>
       </main>
@@ -184,6 +185,12 @@ export default function PortalPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  /** Porcentaje real del envío al almacenamiento; `null` si no hay ninguno. */
+  const [progreso, setProgreso] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadOk, setUploadOk] = useState("");
+  const [docsError, setDocsError] = useState("");
+  const [dragOver, setDragOver] = useState(false);
   const [msgAuthor, setMsgAuthor] = useState("");
   const [msgContent, setMsgContent] = useState("");
   const [msgSending, setMsgSending] = useState(false);
@@ -214,8 +221,20 @@ export default function PortalPage() {
   }
 
   async function fetchDocs() {
-    const res = await fetch(`/api/portal/${token}/documents`);
-    if (res.ok) setDocs(await res.json());
+    // Sin `else` la familia veia "no hay documentos" cuando lo que habia
+    // fallado era la peticion. Se distingue una cosa de la otra.
+    try {
+      const res = await fetch(`/api/portal/${token}/documents`);
+      if (!res.ok) throw new Error(`El servidor ha respondido ${res.status}.`);
+      setDocs(await res.json());
+      setDocsError("");
+    } catch (e) {
+      setDocsError(
+        `No se han podido cargar los documentos: ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      );
+    }
   }
 
   async function fetchMessages() {
@@ -245,19 +264,77 @@ export default function PortalPage() {
     }
   }
 
+  /**
+   * Sube un documento desde el portal de la familia.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Era `if (res.ok) { recargar }` sin `else` ni `try`. Justo aqui, que es la
+   * pantalla que usa gente sin ningun contexto tecnico en el peor momento de su
+   * vida, un rechazo por formato, por tamaño, por limite de subidas o por
+   * consentimiento no dado se traducia en que el boton volvia a su sitio y no
+   * pasaba nada. La familia no sabia si su documento habia llegado.
+   */
+  async function uploadFile(file: File) {
+    setUploading(true);
+    setProgreso(null);
+    setUploadError("");
+    setUploadOk("");
+    try {
+      // 1. Permiso: token, consentimiento, formato y tamaño. Sin bytes todavía.
+      const auth = await fetch(`/api/portal/${token}/documents/upload-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, size: file.size }),
+      });
+      if (!auth.ok) {
+        const cuerpo = await auth.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${auth.status}.`);
+      }
+      const { uploadId, uploadUrl } = await auth.json();
+
+      // 2. El documento va directo al almacenamiento, sin pasar por la función.
+      await subirAlAlmacen(uploadUrl, file, { onProgreso: setProgreso });
+
+      // 3. Confirmación: hasta aquí NO se le dice a la familia que ha llegado.
+      const fin = await fetch(`/api/portal/${token}/documents/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uploadId }),
+      });
+      if (!fin.ok) {
+        const cuerpo = await fin.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${fin.status}.`);
+      }
+      setUploadOk(`"${file.name}" se ha enviado correctamente.`);
+      fetchDocs();
+      fetchData();
+    } catch (e) {
+      setUploadError(
+        `No se ha podido enviar "${file.name}": ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      );
+    } finally {
+      // Ningún camino puede dejar el portal en «Enviando…» indefinidamente.
+      setUploading(false);
+      setProgreso(null);
+    }
+  }
+
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-    const res = await fetch(`/api/portal/${token}/documents`, { method: "POST", body: formData });
-    if (res.ok) {
-      fetchDocs();
-      fetchData();
-    }
-    setUploading(false);
+    await uploadFile(file);
     e.target.value = "";
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file || uploading) return;
+    void uploadFile(file);
   }
 
   if (loading) return (
@@ -323,10 +400,19 @@ export default function PortalPage() {
         {/* Status progress */}
         <div className="bg-white p-6 rounded-lg border">
           <h3 className="font-semibold mb-4">Estado del expediente</h3>
-          <div className="flex gap-1">
+          {/*
+            El indicador de estado se envuelve en pantallas estrechas.
+            Antes era una sola fila de `flex-1` con etiquetas como "Pendiente de
+            documentos" dentro: un elemento flex no encoge por debajo de su
+            contenido, asi que en un movil la fila medía casi cien pixeles mas
+            que la pantalla y arrastraba a TODA la pagina del portal a
+            desplazarse en horizontal. Con `flex-wrap`, `basis` y `min-w-0` los
+            pasos bajan de linea en vez de salirse.
+          */}
+          <div className="flex flex-wrap gap-1">
             {statusOrder.map((s, i) => (
               <div key={s}
-                className={`flex-1 py-2 text-center text-xs rounded ${
+                className={`flex-1 basis-20 min-w-0 break-words py-2 text-center text-xs rounded ${
                   i <= statusIdx ? "text-white" : "bg-gray-100 text-gray-400"
                 }`}
                 style={i <= statusIdx ? { backgroundColor: primary } : undefined}
@@ -453,23 +539,108 @@ export default function PortalPage() {
         <div className="bg-white p-6 rounded-lg border">
           <h3 className="font-semibold mb-3">Subir documentos</h3>
           <p className="text-sm text-gray-500 mb-4">
-            Suba aqui la documentacion solicitada. Nombre el archivo segun la gestion correspondiente para vincularlo automaticamente (ej: &quot;certificado_defuncion.pdf&quot;).
+            Arrastra aquí tus documentos o haz clic en el botón. Nombra el archivo según la gestión correspondiente para vincularlo automáticamente (ej: &quot;certificado_defuncion.pdf&quot;).
           </p>
-          <label className={`inline-block px-4 py-2 rounded-md text-sm cursor-pointer font-medium ${
-            uploading ? "bg-gray-200 text-gray-500" : "text-white"
-          }`}
-            style={!uploading ? { backgroundColor: primary } : undefined}
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!uploading) setDragOver(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+            }}
+            onDrop={handleDrop}
+            className={`relative border-2 border-dashed rounded-lg px-6 py-8 text-center transition ${
+              dragOver
+                ? "bg-blue-50/70"
+                : uploading
+                  ? "bg-slate-50 border-slate-200"
+                  : "bg-slate-50/40 border-slate-200 hover:border-slate-300"
+            }`}
+            style={dragOver ? { borderColor: primary } : undefined}
           >
-            {uploading ? "Subiendo..." : "Subir documento"}
-            <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
-          </label>
+            <svg
+              className="w-8 h-8 mx-auto text-slate-400 mb-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M7 16a4 4 0 01-.88-7.9A5 5 0 0118 7.06 4.5 4.5 0 0117 16h-1m-7 4l3-3m0 0l3 3m-3-3v8" />
+            </svg>
+            <p className="text-sm text-slate-600 mb-3">
+              {uploading
+                ? "Subiendo…"
+                : dragOver
+                  ? "Suelta el archivo aquí"
+                  : "Arrastra el documento o pulsa para elegirlo"}
+            </p>
+            <label
+              className={`inline-block px-4 py-2 rounded-md text-sm cursor-pointer font-medium ${
+                uploading ? "bg-gray-200 text-gray-500" : "text-white"
+              }`}
+              style={!uploading ? { backgroundColor: primary } : undefined}
+            >
+              {/*
+                Progreso REAL mientras el archivo viaja al almacenamiento. Esta
+                pantalla la usa gente sin contexto tecnico en el peor momento de
+                su vida: dejarla mirando un boton quieto durante minutos es
+                pedirle que adivine si ha funcionado.
+              */}
+              {uploading
+                ? progreso === null
+                  ? "Subiendo…"
+                  : progreso < 100
+                    ? `Subiendo… ${progreso}%`
+                    : "Comprobando…"
+                : "Seleccionar archivo"}
+              <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+            </label>
+          </div>
 
+          {uploadError && (
+            <p
+              role="alert"
+              data-testid="portal-subida-error"
+              className="mt-3 text-sm rounded-md px-3 py-2 bg-red-50 text-red-700 border border-red-200"
+            >
+              {uploadError}
+            </p>
+          )}
+          {uploadOk && (
+            <p
+              role="status"
+              data-testid="portal-subida-ok"
+              className="mt-3 text-sm rounded-md px-3 py-2 bg-green-50 text-green-700 border border-green-200"
+            >
+              {uploadOk}
+            </p>
+          )}
+          {docsError && (
+            <p
+              role="alert"
+              data-testid="portal-docs-error"
+              className="mt-3 text-sm rounded-md px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200"
+            >
+              {docsError}
+            </p>
+          )}
+
+          {/*
+            `min-w-0` + `truncate` en el nombre, y la fecha que no encoge. Sin
+            esto, un nombre de archivo largo —que es lo normal cuando lo genera
+            un movil o un escaner— no cabia en la fila: un elemento flex no
+            encoge por debajo de su contenido salvo que se le quite el
+            `min-width: auto`, asi que la pagina entera del portal se desplazaba
+            en horizontal en el movil y la fecha se salia de la pantalla.
+          */}
           {docs.length > 0 && (
             <div className="mt-4 divide-y">
               {docs.map((doc: any) => (
-                <div key={doc.id} className="py-2 flex justify-between text-sm">
-                  <span>{doc.fileName}</span>
-                  <span className="text-gray-400">{new Date(doc.createdAt).toLocaleDateString("es-ES")}</span>
+                <div key={doc.id} className="py-2 flex justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate" title={doc.fileName}>{doc.fileName}</span>
+                  <span className="text-gray-400 shrink-0">{new Date(doc.createdAt).toLocaleDateString("es-ES")}</span>
                 </div>
               ))}
             </div>
@@ -559,7 +730,7 @@ export default function PortalPage() {
             </p>
           )}
           {branding.showPoweredBy && (
-            <p className="text-gray-400 pt-2">Powered by BARITUR PRO</p>
+            <p className="text-gray-400 pt-2">Powered by Heredia</p>
           )}
         </div>
       </main>

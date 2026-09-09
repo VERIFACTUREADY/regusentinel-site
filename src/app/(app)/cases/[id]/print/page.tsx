@@ -1,5 +1,4 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
@@ -28,9 +27,10 @@ const CASE_STATUS_ES: Record<string, string> = {
   ARCHIVED: "Archivado",
 };
 
-export default async function CasePrintPage({ params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) redirect("/login");
+export default async function CasePrintPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const session = await getVerifiedSession();
+  if (!session) redirect("/login");
   if (!hasPermission(session.user.role, "cases.read")) redirect("/dashboard");
 
   const c = await prisma.case.findFirst({
@@ -250,7 +250,7 @@ export default async function CasePrintPage({ params }: { params: { id: string }
 
       {/* Footer */}
       <div className="border-t pt-4 text-xs text-gray-400 text-center">
-        BARITUR PRO — Gestion post-mortem profesional — {new Date().toLocaleDateString("es-ES")}
+        Heredia — Gestion post-mortem profesional — {new Date().toLocaleDateString("es-ES")}
       </div>
     </div>
   );

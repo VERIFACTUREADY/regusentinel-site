@@ -133,7 +133,7 @@ export async function generateDossierPdf(
   }
 
   // ─── Header ────────────────────────────────────────
-  drawText("BARITUR PRO", margin, 20, true, accentColor);
+  drawText("Heredia", margin, 20, true, accentColor);
   y -= 14;
   drawText("Dossier de Expediente", margin, 10, false, grayColor);
   y -= 8;
@@ -322,7 +322,7 @@ export async function generateDossierPdf(
   });
   y -= lineHeight;
   drawText(
-    `Generado por BARITUR PRO — ${new Date().toLocaleDateString("es-ES")}`,
+    `Generado por Heredia — ${new Date().toLocaleDateString("es-ES")}`,
     margin,
     8,
     false,

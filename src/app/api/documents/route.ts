@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "documents.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireOrgPermission("documents.read");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const orgId = session.user.orgId;
   const url = new URL(req.url);
@@ -39,5 +33,31 @@ export async function GET(req: NextRequest) {
     prisma.document.count({ where: where as any }),
   ]);
 
-  return NextResponse.json({ documents, total, page, limit });
+  /*
+   * Misma forma que la primera carga del servidor.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Aquí se devolvía `case.deceased.fullName` anidado, mientras que el
+   * renderizado inicial de `/documents` aplana ese dato a `case.deceasedName`,
+   * que es lo que lee el cliente. Resultado: el nombre del fallecido se veía al
+   * abrir la página y DESAPARECÍA de toda la tabla en cuanto se buscaba, se
+   * filtraba o se cambiaba de página, porque la propiedad que el cliente lee no
+   * existía en esta respuesta.
+   */
+  const documentos = documents.map((d) => ({
+    id: d.id,
+    fileName: d.fileName,
+    mimeType: d.mimeType,
+    fileSize: d.fileSize,
+    isPortalUpload: d.isPortalUpload,
+    uploadedBy: d.uploadedBy,
+    createdAt: d.createdAt,
+    case: d.case
+      ? { id: d.case.id, ref: d.case.ref, deceasedName: d.case.deceased?.fullName ?? null }
+      : null,
+    task: d.task ? { id: d.task.id, title: d.task.title } : null,
+  }));
+
+  return NextResponse.json({ documents: documentos, total, page, limit });
 }

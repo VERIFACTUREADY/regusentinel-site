@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { notFound } from "next/navigation";
 import { CCAA_CONTENT, getCCAABySlug } from "@/lib/ccaa-content";
 import {
@@ -13,7 +15,8 @@ export async function generateStaticParams() {
   return Object.values(CCAA_CONTENT).map((c) => ({ ccaa: c.slug }));
 }
 
-export async function generateMetadata({ params }: { params: { ccaa: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ ccaa: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const content = getCCAABySlug(params.ccaa);
   if (!content) return {};
   const label = CCAA_LABELS[content.ccaa];
@@ -28,7 +31,7 @@ export async function generateMetadata({ params }: { params: { ccaa: string } })
       `plazo herencia ${label.toLowerCase()}`,
     ],
     alternates: {
-      canonical: `https://bariturpro.com/sucesiones/${content.slug}`,
+      canonical: `https://heredia.app/sucesiones/${content.slug}`,
     },
     openGraph: {
       title: `Impuesto de Sucesiones en ${label} 2025`,
@@ -50,7 +53,8 @@ function formatEUR(n: number) {
   return n.toLocaleString("es-ES", { maximumFractionDigits: 0 }) + " €";
 }
 
-export default function CCAAPage({ params }: { params: { ccaa: string } }) {
+export default async function CCAAPage(props: { params: Promise<{ ccaa: string }> }) {
+  const params = await props.params;
   const content = getCCAABySlug(params.ccaa);
   if (!content) return notFound();
 
@@ -96,16 +100,7 @@ export default function CCAAPage({ params }: { params: { ccaa: string } }) {
 
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-4 text-sm">
-              <Link href="/calculadora-isd" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/comparador-isd" className="text-gray-700 hover:text-primary">Comparador</Link>
-              <Link href="/precios" className="text-gray-700 hover:text-primary">Precios</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         {/* Breadcrumb */}
         <nav className="max-w-5xl mx-auto px-4 py-3 text-xs text-gray-500">
@@ -299,7 +294,7 @@ export default function CCAAPage({ params }: { params: { ccaa: string } }) {
           <section className="bg-gradient-to-br from-slate-900 to-blue-900 rounded-2xl p-8 text-white text-center">
             <h2 className="text-xl font-bold mb-3">Gestoría o funeraria que tramita herencias</h2>
             <p className="text-blue-200 mb-5 text-sm max-w-md mx-auto">
-              BARITUR PRO automatiza el seguimiento de plazos del Modelo 650, genera borradores y centraliza toda la documentación de cada expediente.
+              Heredia automatiza el seguimiento de plazos del Modelo 650, genera borradores y centraliza toda la documentación de cada expediente.
             </p>
             <Link
               href="/#demo"
@@ -316,6 +311,7 @@ export default function CCAAPage({ params }: { params: { ccaa: string } }) {
             </p>
           </section>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

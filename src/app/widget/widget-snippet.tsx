@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const HOST = typeof window !== "undefined" ? window.location.origin : "https://baritur.pro";
+const HOST = typeof window !== "undefined" ? window.location.origin : "https://heredia.app";
 
 export function WidgetSnippet() {
   const [theme, setTheme] = useState<"light" | "dark">("light");

@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { CASE_STATUS_COLORS, TASK_STATUS_COLORS } from "@/lib/constants";
@@ -20,9 +21,11 @@ export function SearchModal() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const controllerRef = useRef<AbortController>();
+  const controllerRef = useRef<AbortController | undefined>(undefined);
   const router = useRouter();
 
   useEffect(() => {
@@ -37,7 +40,7 @@ export function SearchModal() {
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [reintento]);
 
   useEffect(() => {
     if (open) {
@@ -61,14 +64,26 @@ export function SearchModal() {
     setLoading(true);
 
     fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(
+            res.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${res.status}.`,
+          );
+        }
+        return res.json();
+      })
       .then((data) => {
         if (data && !controller.signal.aborted) {
           setResults(data.results);
           setActiveIndex(0);
         }
       })
-      .catch(() => {})
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setErrorCarga(e instanceof Error ? e.message : "No se han podido cargar los datos.");
+      })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
@@ -118,11 +133,21 @@ export function SearchModal() {
           <kbd className="hidden sm:inline text-xs text-gray-400 border rounded px-1.5 py-0.5">ESC</kbd>
         </div>
 
-        {loading && query.length >= 2 && (
+        {errorCarga && query.length >= 2 && (
+          <div className="p-3">
+            <AvisoError
+              mensaje={errorCarga}
+              que="los resultados"
+              onReintentar={() => setReintento((n) => n + 1)}
+            />
+          </div>
+        )}
+
+        {!errorCarga && loading && query.length >= 2 && (
           <div className="px-4 py-6 text-center text-sm text-gray-400">Buscando...</div>
         )}
 
-        {!loading && query.length >= 2 && results.length === 0 && (
+        {!errorCarga && !loading && query.length >= 2 && results.length === 0 && (
           <div className="px-4 py-6 text-center text-sm text-gray-400">
             Sin resultados para &quot;{query}&quot;
           </div>

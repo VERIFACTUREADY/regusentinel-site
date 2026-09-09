@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { notFound } from "next/navigation";
 import { BLOG_POSTS, getPostBySlug, getRelatedPosts, type ContentBlock } from "@/lib/blog-posts";
 
@@ -7,20 +9,21 @@ export async function generateStaticParams() {
   return BLOG_POSTS.map((p) => ({ slug: p.slug }));
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const post = getPostBySlug(params.slug);
   if (!post) return {};
   return {
-    title: `${post.title} — BARITUR PRO`,
+    title: `${post.title} — Heredia`,
     description: post.description,
-    alternates: { canonical: `https://bariturpro.com/blog/${post.slug}` },
+    alternates: { canonical: `https://heredia.app/blog/${post.slug}` },
     openGraph: {
       title: post.title,
       description: post.description,
       type: "article",
       publishedTime: post.publishedAt,
       modifiedTime: post.updatedAt ?? post.publishedAt,
-      authors: ["BARITUR PRO"],
+      authors: ["Heredia"],
       tags: post.tags,
     },
     keywords: post.tags,
@@ -109,7 +112,8 @@ function renderBlock(block: ContentBlock, i: number) {
   }
 }
 
-export default function BlogPostPage({ params }: { params: { slug: string } }) {
+export default async function BlogPostPage(props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
   const post = getPostBySlug(params.slug);
   if (!post) return notFound();
 
@@ -122,13 +126,13 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
     description: post.description,
     datePublished: post.publishedAt,
     dateModified: post.updatedAt ?? post.publishedAt,
-    author: { "@type": "Organization", name: "BARITUR PRO" },
+    author: { "@type": "Organization", name: "Heredia" },
     publisher: {
       "@type": "Organization",
-      name: "BARITUR PRO",
-      logo: { "@type": "ImageObject", url: "https://bariturpro.com/icon" },
+      name: "Heredia",
+      logo: { "@type": "ImageObject", url: "https://heredia.app/icon" },
     },
-    mainEntityOfPage: { "@type": "WebPage", "@id": `https://bariturpro.com/blog/${post.slug}` },
+    mainEntityOfPage: { "@type": "WebPage", "@id": `https://heredia.app/blog/${post.slug}` },
     keywords: post.tags.join(", "),
   };
 
@@ -137,16 +141,7 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-white">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/calculadora-isd" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/comparador-isd" className="text-gray-700 hover:text-primary">Comparador</Link>
-              <Link href="/blog" className="text-gray-700 hover:text-primary">Blog</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         {/* Breadcrumb */}
         <nav className="max-w-3xl mx-auto px-4 py-3 text-xs text-gray-500">
@@ -190,7 +185,7 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
           {/* Author / about */}
           <div className="mt-8 bg-gray-50 rounded-xl p-5 border">
             <p className="text-sm text-gray-700">
-              <strong>BARITUR PRO</strong> es la plataforma SaaS para gestorías y funerarias que automatiza el seguimiento del Impuesto de Sucesiones, plazos legales y trámites post-fallecimiento en España.
+              <strong>Heredia</strong> es la plataforma SaaS para gestorías y funerarias que automatiza el seguimiento del Impuesto de Sucesiones, plazos legales y trámites post-fallecimiento en España.
             </p>
             <Link href="/#demo" className="mt-3 inline-block text-sm font-medium text-primary hover:underline">
               Probar gratis 14 días →
@@ -222,6 +217,7 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
             </div>
           </div>
         )}
+        <SiteFooter />
       </div>
     </>
   );

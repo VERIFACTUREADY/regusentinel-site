@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { CASE_STATUS_COLORS } from "@/lib/constants";
@@ -31,28 +32,73 @@ export default function KanbanPage() {
   const [columns, setColumns] = useState<Record<string, KanbanCase[]>>({});
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [avisoMovimiento, setAvisoMovimiento] = useState<
+    { tipo: "ok" | "err"; texto: string } | null
+  >(null);
 
   useEffect(() => {
     fetch("/api/cases/kanban")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          setColumns(data.columns);
-          setTotal(data.total);
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : r.status === 403
+                ? "No tienes permiso para ver esto."
+                : `El servidor ha respondido ${r.status}.`,
+          );
         }
+        return r.json();
       })
-      .catch(() => {})
+      .then((data) => {
+        if (!data || typeof data.columns !== "object") {
+          throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        }
+        setErrorCarga(null);
+        setColumns(data.columns);
+        setTotal(data.total);
+      })
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        // El fallo de red llega aqui igual que el del servidor: en ambos casos
+        // hay que decirlo, no dejar la pantalla como si no hubiera datos.
+        setColumns({});
+        setTotal(0);
+        setErrorCarga(e instanceof Error ? e.message : "Error de red. Comprueba tu conexion.");
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [reintento]);
 
+  /**
+   * Mueve una tarjeta de columna.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * Antes era `if (res.ok) { ... }` y nada mas: si el servidor rechazaba el
+   * cambio, la tarjeta se quedaba donde estaba y NO se decia nada. Arrastrar
+   * una tarjeta y verla volver sin explicacion se lee como un fallo del raton,
+   * no como un rechazo del servidor. Y si la red fallaba, el `fetch` lanzaba
+   * dentro de un `onDrop` que no espera a nadie: promesa rechazada sin
+   * capturar y, otra vez, silencio.
+   *
+   * La tarjeta solo se mueve cuando el servidor lo confirma, asi que en el
+   * camino malo vuelve sola a su columna; lo que faltaba era decirlo.
+   */
   async function moveCase(caseId: string, newStatus: string) {
-    const res = await fetch(`/api/cases/${caseId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    if (res.ok) {
+    setAvisoMovimiento(null);
+    try {
+      const res = await fetch(`/api/cases/${caseId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => ({}));
+        throw new Error(cuerpo.error ?? `El servidor ha respondido ${res.status}.`);
+      }
       setColumns((prev) => {
         const next = { ...prev };
         let movedCase: KanbanCase | undefined;
@@ -71,27 +117,69 @@ export default function KanbanPage() {
         }
         return next;
       });
+      setAvisoMovimiento({
+        tipo: "ok",
+        texto: `Expediente movido a ${STATUS_LABELS[newStatus] ?? newStatus}.`,
+      });
+    } catch (e) {
+      setAvisoMovimiento({
+        tipo: "err",
+        texto: `No se ha podido mover el expediente: ${
+          e instanceof Error ? e.message : "error de red"
+        }. Sigue en su columna anterior.`,
+      });
     }
   }
 
-  function handleDragStart(caseId: string) {
+  /**
+   * El expediente arrastrado viaja en el `dataTransfer`, no solo en el estado.
+   *
+   * EL DEFECTO QUE CORRIGE
+   * ----------------------
+   * `handleDrop` leia `dragging`, que es estado de React. El manejador que
+   * recibe el `drop` es el de la ultima renderizacion, asi que si el arrastre
+   * empieza y termina antes de que React vuelva a pintar —un gesto rapido, o
+   * el navegador ocupado— el manejador todavia ve `dragging` a `null` y la
+   * tarjeta no se mueve. Sin error, sin peticion: no pasa nada y el usuario no
+   * sabe por que.
+   *
+   * El `dataTransfer` es justo para esto: lo rellena el `dragstart` y lo lee el
+   * `drop` del mismo gesto, sin depender de que haya habido una renderizacion
+   * entre medias. `dragging` se queda solo para lo que es: pintar la tarjeta
+   * a medio arrastrar y marcar las columnas como zona de destino.
+   */
+  function handleDragStart(e: React.DragEvent, caseId: string) {
+    e.dataTransfer.setData("text/plain", caseId);
+    e.dataTransfer.effectAllowed = "move";
     setDragging(caseId);
   }
 
   function handleDragOver(e: React.DragEvent) {
     e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
   }
 
   function handleDrop(e: React.DragEvent, targetStatus: string) {
     e.preventDefault();
-    if (dragging) {
-      moveCase(dragging, targetStatus);
-      setDragging(null);
-    }
+    const caseId = e.dataTransfer.getData("text/plain") || dragging;
+    setDragging(null);
+    if (caseId) moveCase(caseId, targetStatus);
   }
 
   function agingDays(updatedAt: string): number {
     return Math.floor((Date.now() - new Date(updatedAt).getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  if (errorCarga) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <AvisoError
+          mensaje={errorCarga}
+          que="el tablero"
+          onReintentar={() => setReintento((n) => n + 1)}
+        />
+      </div>
+    );
   }
 
   if (loading) {
@@ -120,6 +208,20 @@ export default function KanbanPage() {
           </Link>
         </div>
       </div>
+
+      {avisoMovimiento && (
+        <p
+          role="status"
+          data-testid="aviso-kanban"
+          className={`mb-4 text-sm rounded-md px-3 py-2 ${
+            avisoMovimiento.tipo === "ok"
+              ? "bg-green-50 text-green-700 border border-green-200"
+              : "bg-red-50 text-red-700 border border-red-200"
+          }`}
+        >
+          {avisoMovimiento.texto}
+        </p>
+      )}
 
       <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: "70vh" }}>
         {STATUSES.map((status) => {
@@ -152,7 +254,7 @@ export default function KanbanPage() {
                     <div
                       key={c.id}
                       draggable
-                      onDragStart={() => handleDragStart(c.id)}
+                      onDragStart={(e) => handleDragStart(e, c.id)}
                       className={`bg-white rounded-lg border p-3 cursor-grab active:cursor-grabbing hover:shadow-sm transition-shadow ${
                         veryStale ? "border-l-4 border-l-red-400" : stale ? "border-l-4 border-l-orange-300" : ""
                       } ${dragging === c.id ? "opacity-50" : ""}`}

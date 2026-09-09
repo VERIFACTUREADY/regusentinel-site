@@ -1,21 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { getChecklistForCategories } from "@/lib/checklist-rules";
 import { calculateTaskDeadlines } from "@/lib/deadline-engine";
 import { PLAN_PRICING } from "@/lib/stripe";
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "cases.create")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const auth = await requireOrgPermission("cases.create");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const month = new Date().toISOString().slice(0, 7);
 

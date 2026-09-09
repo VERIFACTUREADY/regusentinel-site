@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 
@@ -16,13 +17,49 @@ interface UsageData {
 
 export function UsageWidget() {
   const [data, setData] = useState<UsageData | null>(null);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
 
   useEffect(() => {
     fetch("/api/usage")
-      .then((r) => (r.ok ? r.json() : null))
-      .then(setData)
-      .catch(() => {});
-  }, []);
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : r.status === 403
+                ? "No tienes permiso para ver esto."
+                : `El servidor ha respondido ${r.status}.`,
+          );
+        }
+        return r.json();
+      })
+      .then((d) => {
+        setErrorCarga(null);
+        setData(d);
+      })
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        // El fallo de red llega aqui igual que el del servidor: en ambos casos
+        // hay que decirlo, no dejar la pantalla como si no hubiera datos.
+        setErrorCarga(e instanceof Error ? e.message : "Error de red. Comprueba tu conexion.");
+      });
+  }, [reintento]);
+
+  /*
+   * Este widget se ocultaba entero al fallar (`if (!data) return null`), que es
+   * la forma mas silenciosa posible de fallar: el usuario ni siquiera sabe que
+   * habia algo ahi. Ahora el fallo se ve y se puede reintentar.
+   */
+  if (errorCarga) {
+    return (
+      <AvisoError
+        mensaje={errorCarga}
+        que="el consumo del plan"
+        onReintentar={() => setReintento((n) => n + 1)}
+      />
+    );
+  }
 
   if (!data) return null;
 
@@ -33,7 +70,7 @@ export function UsageWidget() {
   const membersNearLimit = membersPct >= 80;
 
   return (
-    <div className="bg-white p-5 rounded-xl border">
+    <div data-testid="widget-uso-del-plan" className="bg-white p-5 rounded-xl border">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold text-sm text-gray-900">Uso del plan</h3>
         <span className="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full font-medium">

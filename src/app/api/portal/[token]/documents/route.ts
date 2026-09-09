@@ -1,18 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { uploadFile, getPresignedUrl } from "@/lib/s3";
-import { logAudit } from "@/lib/audit";
-import { matchDocumentToTag } from "@/lib/doc-task-matching";
-import { triggerWorkflow } from "@/lib/workflow-engine";
+import { getPresignedUrl } from "@/lib/s3";
+import { rateLimit } from "@/lib/api-rate-limit";
+import { resolvePortalAccess } from "@/lib/portal-access";
 
-export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
-  const c = await prisma.case.findFirst({
-    where: { portalToken: params.token, portalEnabled: true, deletedAt: null },
-  });
-  if (!c) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+/**
+ * Documentos visibles para la familia.
+ *
+ * GET — antes devolvía TODOS los documentos del expediente, incluidos los
+ * internos, cada uno con su URL de descarga prefirmada. El filtro
+ * `visibleToFamily` es la corrección: los documentos internos son privados por
+ * defecto.
+ *
+ * AQUÍ YA NO SE SUBE NADA, Y ES A PROPÓSITO
+ * -----------------------------------------
+ * El `POST` multipart de esta ruta se ha retirado por el mismo motivo que el de
+ * la ficha del expediente: una función de Vercel admite 4,5 MB de cuerpo y el
+ * producto promete 20 MiB, así que el archivo no puede atravesarla. La familia
+ * sube ahora directamente al almacenamiento:
+ *
+ *   POST  documents/upload-url  → autoriza (token + consentimiento) y firma
+ *   POST  documents/complete    → verifica el objeto real y crea la fila
+ *
+ * El consentimiento se sigue exigiendo en AMBOS pasos.
+ */
+export async function GET(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
+  const limited = rateLimit(req, { bucket: "portal-docs-read", windowMs: 60_000, max: 60 });
+  if (limited) return limited;
+
+  const access = await resolvePortalAccess(params.token, { requireConsent: true });
+  if (!access.ok) return access.response;
 
   const docs = await prisma.document.findMany({
-    where: { caseId: c.id },
+    where: { caseId: access.case.id, visibleToFamily: true, deletionState: null },
     orderBy: { createdAt: "desc" },
     include: { task: { select: { id: true, title: true, category: true } } },
   });
@@ -24,90 +45,12 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
       createdAt: doc.createdAt,
       isPortalUpload: doc.isPortalUpload,
       linkedTask: doc.task ? { title: doc.task.title, category: doc.task.category } : null,
-      downloadUrl: await getPresignedUrl(doc.fileKey),
-    }))
+      downloadUrl: await getPresignedUrl(doc.fileKey, {
+        fileName: doc.fileName,
+        mimeType: doc.mimeType,
+      }),
+    })),
   );
 
   return NextResponse.json(docsWithUrls);
-}
-
-export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
-  const c = await prisma.case.findFirst({
-    where: { portalToken: params.token, portalEnabled: true, deletedAt: null },
-  });
-  if (!c) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-
-  try {
-    const formData = await req.formData();
-    const file = formData.get("file") as File;
-    if (!file) return NextResponse.json({ error: "No se encontro archivo" }, { status: 400 });
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const fileKey = `${c.orgId}/${c.id}/portal/${Date.now()}-${file.name}`;
-
-    await uploadFile(fileKey, buffer, file.type);
-
-    // Auto-match document to a task
-    let linkedTaskId: string | null = null;
-    const docTag = matchDocumentToTag(file.name);
-    if (docTag) {
-      const matchingTask = await prisma.task.findFirst({
-        where: {
-          caseId: c.id,
-          docTag,
-          status: { in: ["PENDING", "IN_PROGRESS", "BLOCKED"] },
-        },
-        orderBy: { sortOrder: "asc" },
-      });
-      if (matchingTask) linkedTaskId = matchingTask.id;
-    }
-
-    const doc = await prisma.document.create({
-      data: {
-        caseId: c.id,
-        taskId: linkedTaskId,
-        fileName: file.name,
-        fileKey,
-        mimeType: file.type,
-        fileSize: buffer.length,
-        isPortalUpload: true,
-      },
-    });
-
-    // Auto-update task status to READY
-    if (linkedTaskId) {
-      const task = await prisma.task.findUnique({ where: { id: linkedTaskId } });
-      if (task && (task.status === "PENDING" || task.status === "IN_PROGRESS")) {
-        await prisma.task.update({
-          where: { id: linkedTaskId },
-          data: { status: "READY" },
-        });
-
-        await logAudit({
-          orgId: c.orgId,
-          caseId: c.id,
-          action: "task.auto_updated_portal",
-          details: `Tarea "${task.title}" actualizada a READY por documento portal "${file.name}"`,
-        });
-      }
-    }
-
-    await logAudit({
-      orgId: c.orgId,
-      caseId: c.id,
-      action: "portal.document_uploaded",
-      details: `Documento "${file.name}" subido desde portal familia${linkedTaskId ? " (vinculado a tarea)" : ""}`,
-    });
-
-    triggerWorkflow({
-      type: "DOCUMENT_UPLOADED",
-      orgId: c.orgId,
-      caseId: c.id,
-    }).catch(console.error);
-
-    return NextResponse.json(doc, { status: 201 });
-  } catch (error) {
-    console.error("Portal upload error:", error);
-    return NextResponse.json({ error: "Error al subir archivo" }, { status: 500 });
-  }
 }

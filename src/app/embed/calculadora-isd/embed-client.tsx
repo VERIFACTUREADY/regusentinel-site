@@ -85,8 +85,8 @@ export function EmbedClient({ theme, primaryHex, defaultCcaa, showCompare, utmSo
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const ctaUrl = `https://baritur.pro/calculadora-isd?utm_source=${encodeURIComponent(utmSource)}&utm_medium=embed&utm_campaign=calculadora-isd`;
-  const brandUrl = `https://baritur.pro/?utm_source=${encodeURIComponent(utmSource)}&utm_medium=embed&utm_campaign=calculadora-isd-brand`;
+  const ctaUrl = `https://heredia.app/calculadora-isd?utm_source=${encodeURIComponent(utmSource)}&utm_medium=embed&utm_campaign=calculadora-isd`;
+  const brandUrl = `https://heredia.app/?utm_source=${encodeURIComponent(utmSource)}&utm_medium=embed&utm_campaign=calculadora-isd-brand`;
 
   const canCalculate = useMemo(() => {
     const b = Number(base);
@@ -98,7 +98,7 @@ export function EmbedClient({ theme, primaryHex, defaultCcaa, showCompare, utmSo
     function notifyHeight() {
       if (typeof window === "undefined") return;
       const h = document.documentElement.scrollHeight;
-      window.parent?.postMessage({ type: "baritur-isd-height", height: h }, "*");
+      window.parent?.postMessage({ type: "heredia-isd-height", height: h }, "*");
     }
     notifyHeight();
     const ro = new ResizeObserver(notifyHeight);
@@ -312,7 +312,7 @@ export function EmbedClient({ theme, primaryHex, defaultCcaa, showCompare, utmSo
               rel="noopener noreferrer"
               className="hover:underline"
             >
-              Powered by <strong>BARITUR PRO</strong>
+              Powered by <strong>Heredia</strong>
             </a>
           </p>
         </div>

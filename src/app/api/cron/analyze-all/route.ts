@@ -1,21 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { analyzeCase } from "@/lib/case-analyzer";
+import { validateCronSecret } from "@/lib/cron-auth";
 
 // This endpoint is called by Vercel Cron / external scheduler.
 // Protect with CRON_SECRET env var (set in Vercel project settings).
-const CRON_SECRET = process.env.CRON_SECRET;
 
 // How many cases to analyze per cron run (to stay within serverless timeout)
 const BATCH_SIZE = 15;
 
 export async function GET(req: NextRequest) {
-  // Auth: accept Bearer token or ?secret= param
-  const authHeader = req.headers.get("authorization");
-  const secretParam = req.nextUrl.searchParams.get("secret");
-  const provided = authHeader?.replace("Bearer ", "") || secretParam;
-
-  if (CRON_SECRET && provided !== CRON_SECRET) {
+  if (!validateCronSecret(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

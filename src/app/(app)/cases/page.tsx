@@ -1,5 +1,8 @@
 "use client";
 
+import { useRolConocido } from "@/components/layout/rol-context";
+import { hasPermission } from "@/lib/rbac";
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { CASE_STATUS_COLORS, ALL_CATEGORIES } from "@/lib/constants";
@@ -55,9 +58,34 @@ export default function CasesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchLoading, setBatchLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+
+  /*
+   * Un VIEWER es de solo lectura, pero esta pantalla le ofrecia "Nuevo
+   * expediente" e "Importar CSV" igual que a todos: pulsaba, rellenaba el
+   * formulario y el servidor le respondia 403. Un boton que solo sirve para
+   * llevarte a un rechazo es peor que no tenerlo.
+   *
+   * Esto NO sustituye al control del servidor, que sigue siendo el que decide:
+   * es para no prometer lo que no se puede cumplir.
+   */
+  const rol = useRolConocido();
+  const puedeCrear = Boolean(rol && hasPermission(rol, "cases.create"));
+  /*
+   * Resultado de la ultima accion (cambiar estado, lote, borrar).
+   *
+   * Antes no existia: `updateCaseStatus` tenia un `catch {}` vacio y no miraba
+   * `res.ok`, y las de lote no tenian `try` siquiera. Una accion que fallaba
+   * dejaba la pantalla igual que si hubiera funcionado, o —peor— con el
+   * spinner girando para siempre, porque la excepcion se llevaba por delante
+   * el `setBatchLoading(false)`.
+   */
+  const [avisoAccion, setAvisoAccion] = useState<
+    { tipo: "ok" | "err"; texto: string } | null
+  >(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const presets = [
     { id: "mine", label: "Mis expedientes", apply: () => { setMyTasksFilter(true); setUrgentFilter(false); setStatusFilter(""); setCategoryFilter(""); setIsdExpiringFilter(""); }, className: "border-blue-300 text-blue-700" },
@@ -100,22 +128,64 @@ export default function CasesPage() {
     if (isdExpiringFilter) params.set("isdExpiring", isdExpiringFilter);
     if (myTasksFilter) params.set("myTasks", "true");
 
+    /*
+     * Antes: `.then(res => res.ok ? res.json() : null)` y `.catch(() => {})`.
+     * Con la peticion caida la lista se quedaba como estaba y la tabla mostraba
+     * "No hay expedientes": indistinguible de que de verdad no hubiera ninguno,
+     * y significando lo contrario.
+     */
     fetch(`/api/cases?${params}`, { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data && !controller.signal.aborted) {
-          setCases(data.cases);
-          setTotal(data.total);
-          setSelected(new Set());
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(
+            res.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${res.status}.`,
+          );
         }
+        return res.json();
       })
-      .catch(() => {})
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        if (!data || !Array.isArray(data.cases)) {
+          throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        }
+        setErrorCarga(null);
+        setCases(data.cases);
+        setTotal(data.total);
+        setSelected(new Set());
+      })
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setCases([]);
+        setTotal(0);
+        setErrorCarga(e instanceof Error ? e.message : "No se han podido cargar los expedientes.");
+      })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => controller.abort();
   }, [page, statusFilter, categoryFilter, search, urgentFilter, provinceFilter, isdExpiringFilter, myTasksFilter, refreshKey]);
+
+  /*
+   * La ficha redirige aqui con `?borrado=1` despues de eliminar. Sin este
+   * aviso el usuario aterriza en la lista sin saber si el borrado ocurrio o si
+   * simplemente ha vuelto atras.
+   *
+   * Se lee de `window.location` y no con `useSearchParams` a proposito:
+   * `useSearchParams` obliga a envolver la pantalla en un `Suspense` para que
+   * Next pueda prerenderizarla, y no compensa por un aviso.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("borrado") !== "1") return;
+    setAvisoAccion({ tipo: "ok", texto: "Expediente eliminado." });
+    params.delete("borrado");
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `?${query}` : window.location.pathname);
+  }, []);
 
   function handleSearchInput(value: string) {
     setSearchInput(value);
@@ -145,44 +215,90 @@ export default function CasesPage() {
 
   async function updateCaseStatus(caseId: string, newStatus: string) {
     setUpdatingStatus(caseId);
+    setAvisoAccion(null);
     try {
       const res = await fetch(`/api/cases/${caseId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (res.ok) {
-        setCases((prev) => prev.map((c) => c.id === caseId ? { ...c, status: newStatus } : c));
+
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => ({}));
+        throw new Error(cuerpo.error ?? `El servidor ha respondido ${res.status}.`);
       }
-    } catch {}
-    setUpdatingStatus(null);
+
+      // La lista solo se actualiza si el servidor lo ha aceptado. Cambiarla
+      // antes de saberlo mostraria un estado que no existe en la base.
+      setCases((prev) => prev.map((c) => (c.id === caseId ? { ...c, status: newStatus } : c)));
+      setAvisoAccion({ tipo: "ok", texto: "Estado actualizado." });
+    } catch (e) {
+      setAvisoAccion({
+        tipo: "err",
+        texto: `No se ha podido cambiar el estado: ${
+          e instanceof Error ? e.message : "error de red"
+        }`,
+      });
+    } finally {
+      // En `finally`: si no, un fallo de red deja el selector bloqueado.
+      setUpdatingStatus(null);
+    }
   }
 
   async function batchChangeStatus(newStatus: string) {
     setBatchLoading(true);
-    const res = await fetch("/api/cases/batch", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: Array.from(selected), action: "status", status: newStatus }),
-    });
-    if (res.ok) {
+    setAvisoAccion(null);
+    const cuantos = selected.size;
+    try {
+      const res = await fetch("/api/cases/batch", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selected), action: "status", status: newStatus }),
+      });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => ({}));
+        throw new Error(cuerpo.error ?? `El servidor ha respondido ${res.status}.`);
+      }
       setRefreshKey((k) => k + 1);
+      setAvisoAccion({ tipo: "ok", texto: `${cuantos} expediente(s) actualizados.` });
+    } catch (e) {
+      setAvisoAccion({
+        tipo: "err",
+        texto: `No se han podido actualizar: ${e instanceof Error ? e.message : "error de red"}`,
+      });
+    } finally {
+      // Antes no habia `try`: un error de red se llevaba por delante esta
+      // linea y el boton se quedaba girando para siempre.
+      setBatchLoading(false);
     }
-    setBatchLoading(false);
   }
 
   async function batchDelete() {
     if (!confirm(`Eliminar ${selected.size} expediente(s)? Esta accion es reversible desde la base de datos.`)) return;
     setBatchLoading(true);
-    const res = await fetch("/api/cases/batch", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: Array.from(selected), action: "delete" }),
-    });
-    if (res.ok) {
+    setAvisoAccion(null);
+    const cuantos = selected.size;
+    try {
+      const res = await fetch("/api/cases/batch", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selected), action: "delete" }),
+      });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => ({}));
+        throw new Error(cuerpo.error ?? `El servidor ha respondido ${res.status}.`);
+      }
       setRefreshKey((k) => k + 1);
+      setAvisoAccion({ tipo: "ok", texto: `${cuantos} expediente(s) eliminados.` });
+    } catch (e) {
+      // Especialmente grave callarselo aqui: el usuario cree que ha borrado.
+      setAvisoAccion({
+        tipo: "err",
+        texto: `No se han podido eliminar: ${e instanceof Error ? e.message : "error de red"}`,
+      });
+    } finally {
+      setBatchLoading(false);
     }
-    setBatchLoading(false);
   }
 
   function exportCSV() {
@@ -203,7 +319,7 @@ export default function CasesPage() {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold">Expedientes</h1>
-          <p className="text-sm text-gray-500 mt-1">{total} expediente{total !== 1 ? "s" : ""}</p>
+          <p data-testid="total-expedientes" className="text-sm text-gray-500 mt-1">{total} expediente{total !== 1 ? "s" : ""}</p>
         </div>
         <div className="flex gap-2">
           <Link href="/cases/kanban"
@@ -217,14 +333,18 @@ export default function CasesPage() {
           >
             Exportar CSV
           </button>
+          {puedeCrear && (
           <Link href="/cases/import"
             className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm font-medium text-center">
             Importar CSV
           </Link>
+          )}
+          {puedeCrear && (
           <Link href="/cases/new"
             className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 text-sm font-medium text-center">
             Nuevo expediente
           </Link>
+          )}
         </div>
       </div>
 
@@ -284,6 +404,20 @@ export default function CasesPage() {
         </select>
       </div>
 
+      {avisoAccion && (
+        <p
+          role="status"
+          data-testid="aviso-accion"
+          className={`mb-4 text-sm rounded-md px-3 py-2 ${
+            avisoAccion.tipo === "ok"
+              ? "bg-green-50 text-green-700 border border-green-200"
+              : "bg-red-50 text-red-700 border border-red-200"
+          }`}
+        >
+          {avisoAccion.texto}
+        </p>
+      )}
+
       {/* Batch action bar */}
       {selected.size > 0 && (
         <div className="flex items-center gap-3 mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -340,10 +474,20 @@ export default function CasesPage() {
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {errorCarga ? (
+              <tr>
+                <td colSpan={8} className="px-6 py-10">
+                  <AvisoError
+                    mensaje={errorCarga}
+                    que="los expedientes"
+                    onReintentar={() => setRefreshKey((k) => k + 1)}
+                  />
+                </td>
+              </tr>
+            ) : loading ? (
               <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-400">Cargando...</td></tr>
             ) : cases.length === 0 ? (
-              <tr><td colSpan={8} className="px-6 py-12 text-center text-gray-400">No hay expedientes</td></tr>
+              <tr><td colSpan={8} data-testid="carga-vacio" className="px-6 py-12 text-center text-gray-400">No hay expedientes</td></tr>
             ) : cases.map((c) => {
               const isdDays = c.deceased?.deathDate
                 ? 180 - Math.floor((Date.now() - new Date(c.deceased.deathDate).getTime()) / (1000 * 60 * 60 * 24))
@@ -359,7 +503,7 @@ export default function CasesPage() {
                   />
                 </td>
                 <td className="px-4 py-3">
-                  <Link href={`/cases/${c.id}`} className="font-medium text-primary hover:underline">
+                  <Link href={`/cases/${c.id}`} data-testid="ref-expediente" className="font-medium text-primary hover:underline">
                     {c.ref}
                   </Link>
                   {c.isUrgent && (
@@ -419,10 +563,16 @@ export default function CasesPage() {
 
       {/* Mobile cards */}
       <div className="md:hidden space-y-3">
-        {loading ? (
+        {errorCarga ? (
+          <AvisoError
+            mensaje={errorCarga}
+            que="los expedientes"
+            onReintentar={() => setRefreshKey((k) => k + 1)}
+          />
+        ) : loading ? (
           <div className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">Cargando...</div>
         ) : cases.length === 0 ? (
-          <div className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">No hay expedientes</div>
+          <div data-testid="carga-vacio" className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">No hay expedientes</div>
         ) : cases.map((c) => (
           <div key={c.id} className={`bg-white rounded-lg border p-4 ${selected.has(c.id) ? "ring-2 ring-blue-300" : ""}`}>
             <div className="flex items-start gap-3">
@@ -465,7 +615,7 @@ export default function CasesPage() {
           >
             Anterior
           </button>
-          <span className="text-sm text-gray-500">{page} / {totalPages}</span>
+          <span data-testid="indicador-pagina" className="text-sm text-gray-500">{page} / {totalPages}</span>
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}

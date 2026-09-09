@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { dbUnavailableMessage } from "@/lib/db-errors";
 import { logAudit } from "@/lib/audit";
 import { seedDefaultCaseTemplates } from "@/lib/default-case-templates";
+import { seedSampleCase } from "@/lib/sample-case-seeder";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,8 @@ const VALID_PLANS = ["INICIA", "DESPACHO", "FIRMA"] as const;
  * (registro interrumpido, error transitorio al iniciar sesión, etc.).
  */
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const verified = await getVerifiedUser();
+  const session = verified ? { user: verified } : null;
   if (!session?.user?.id) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   }
@@ -70,8 +72,12 @@ export async function POST(req: NextRequest) {
         },
       });
       await seedDefaultCaseTemplates(tx, created.id);
+      await seedSampleCase(tx, created.id);
       return created;
-    });
+    },
+    // Mismo margen que /api/register: el seed escribe decenas de filas y el
+    // timeout por defecto (5s) puede abortar la transacción en serverless frío.
+    { timeout: 20000 });
 
     logAudit({
       orgId: org.id,
@@ -83,6 +89,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ orgId: org.id, created: true });
   } catch (err) {
     console.error("create-organization error:", err);
-    return NextResponse.json({ error: "No se pudo crear la organización" }, { status: 500 });
+    const dbMsg = dbUnavailableMessage(err);
+    return NextResponse.json(
+      { error: dbMsg ?? "No se pudo crear la organización" },
+      { status: dbMsg ? 503 : 500 }
+    );
   }
 }

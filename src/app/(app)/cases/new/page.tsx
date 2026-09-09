@@ -70,29 +70,34 @@ export default function NewCasePage() {
     setError("");
 
     try {
+      // Omitimos los opcionales vacíos: el schema del API acepta undefined
+      // pero no null, y el parentesco viaja como `contactRelationship`.
       const res = await fetch("/api/cases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           deceasedName: form.deceasedName,
-          deathDate: form.deathDate || null,
-          deceasedDni: form.deceasedDni || null,
+          deathDate: form.deathDate || undefined,
+          deceasedDni: form.deceasedDni || undefined,
           contactName: form.contactName,
-          contactPhone: form.contactPhone || null,
-          contactEmail: form.contactEmail || null,
-          relationship: form.relationship || null,
-          province: form.province || null,
+          contactPhone: form.contactPhone || undefined,
+          contactEmail: form.contactEmail || undefined,
+          contactRelationship: form.relationship || undefined,
+          province: form.province || undefined,
           isUrgent: form.isUrgent,
           hasDeceasedInsurance: form.hasDeceasedInsurance,
           categories: form.categories,
           consentAccepted: form.consentAccepted,
-          caseTemplateId: form.caseTemplateId || null,
+          caseTemplateId: form.caseTemplateId || undefined,
         }),
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Error al crear expediente");
+        const data = await res.json().catch(() => null);
+        // Con errores de validación Zod, mostrar el primer detalle es mucho
+        // más útil que el genérico "Datos invalidos".
+        const detail = Array.isArray(data?.details) && data.details[0]?.message;
+        throw new Error(detail || data?.error || "Error al crear expediente");
       }
 
       const data = await res.json();
@@ -122,20 +127,20 @@ export default function NewCasePage() {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Datos del fallecido</h2>
             <div>
-              <label className="block text-sm font-medium mb-1">Nombre completo *</label>
-              <input type="text" required value={form.deceasedName}
+              <label htmlFor="deceasedName" className="block text-sm font-medium mb-1">Nombre del fallecido *</label>
+              <input id="deceasedName" type="text" required value={form.deceasedName}
                 onChange={(e) => update("deceasedName", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md" />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Fecha aproximada de fallecimiento</label>
-              <input type="date" value={form.deathDate}
+              <label htmlFor="deathDate" className="block text-sm font-medium mb-1">Fecha aproximada de fallecimiento</label>
+              <input id="deathDate" type="date" value={form.deathDate}
                 onChange={(e) => update("deathDate", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md" />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">DNI (opcional)</label>
-              <input type="text" value={form.deceasedDni}
+              <label htmlFor="deceasedDni" className="block text-sm font-medium mb-1">DNI del fallecido (opcional)</label>
+              <input id="deceasedDni" type="text" value={form.deceasedDni}
                 onChange={(e) => update("deceasedDni", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md" />
             </div>
@@ -150,26 +155,28 @@ export default function NewCasePage() {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Datos del solicitante</h2>
             <div>
-              <label className="block text-sm font-medium mb-1">Nombre completo *</label>
-              <input type="text" required value={form.contactName}
+              <label htmlFor="contactName" className="block text-sm font-medium mb-1">Nombre del solicitante *</label>
+              <input id="contactName" type="text" required value={form.contactName}
                 onChange={(e) => update("contactName", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md" />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Telefono</label>
-              <input type="tel" value={form.contactPhone}
+              <label htmlFor="contactPhone" className="block text-sm font-medium mb-1">Telefono de contacto *</label>
+              <input id="contactPhone" type="tel" value={form.contactPhone}
                 onChange={(e) => update("contactPhone", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md" />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Email</label>
-              <input type="email" value={form.contactEmail}
+              <label htmlFor="contactEmail" className="block text-sm font-medium mb-1">Email de contacto *</label>
+              <input id="contactEmail" type="email" value={form.contactEmail}
                 onChange={(e) => update("contactEmail", e.target.value)}
+                aria-describedby="contactoAyuda"
                 className="w-full px-3 py-2 border rounded-md" />
+              <p id="contactoAyuda" className="text-xs text-gray-400 mt-1">Al menos uno de los dos: teléfono o email.</p>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Relacion con el fallecido</label>
-              <select value={form.relationship} onChange={(e) => update("relationship", e.target.value)}
+              <label htmlFor="relationship" className="block text-sm font-medium mb-1">Relacion con el fallecido</label>
+              <select id="relationship" value={form.relationship} onChange={(e) => update("relationship", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md">
                 <option value="">Seleccionar...</option>
                 {relationships.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -177,7 +184,11 @@ export default function NewCasePage() {
             </div>
             <div className="flex gap-2">
               <button onClick={() => setStep(1)} className="flex-1 py-2 border rounded-md">Atras</button>
-              <button onClick={() => form.contactName ? setStep(3) : setError("Nombre obligatorio")}
+              <button onClick={() => {
+                if (!form.contactName) return setError("Nombre obligatorio");
+                if (!form.contactPhone && !form.contactEmail) return setError("Indica al menos un teléfono o email de contacto");
+                setStep(3);
+              }}
                 className="flex-1 py-2 bg-primary text-white rounded-md hover:bg-primary/90">Siguiente</button>
             </div>
           </div>
@@ -187,8 +198,8 @@ export default function NewCasePage() {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Detalles del expediente</h2>
             <div>
-              <label className="block text-sm font-medium mb-1">Provincia</label>
-              <input type="text" value={form.province}
+              <label htmlFor="province" className="block text-sm font-medium mb-1">Provincia</label>
+              <input id="province" type="text" value={form.province}
                 onChange={(e) => update("province", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md" placeholder="Ej: Madrid" />
             </div>
@@ -206,8 +217,14 @@ export default function NewCasePage() {
                 <span className="text-sm">Seguro de decesos</span>
               </label>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Categorias de gestion *</label>
+            {/*
+              Este grupo etiquetaba con `<label>` un conjunto de casillas, no un
+              campo: un `<label>` sin control asociado no anuncia nada. Un
+              `<fieldset>` con `<legend>` sí agrupa y se lee antes de cada
+              casilla.
+            */}
+            <fieldset>
+              <legend className="block text-sm font-medium mb-2">Categorias de gestion * (elige al menos una)</legend>
               <div className="grid grid-cols-2 gap-2">
                 {categories.map((cat) => (
                   <label key={cat.id} className={`flex items-center gap-2 p-3 border rounded-md cursor-pointer ${
@@ -219,7 +236,7 @@ export default function NewCasePage() {
                   </label>
                 ))}
               </div>
-            </div>
+            </fieldset>
             <div className="flex gap-2">
               <button onClick={() => setStep(2)} className="flex-1 py-2 border rounded-md">Atras</button>
               <button onClick={() => form.categories.length > 0 ? setStep(4) : setError("Selecciona al menos una categoria")}
@@ -303,7 +320,7 @@ export default function NewCasePage() {
 
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
               <p className="font-medium mb-2">Aviso importante:</p>
-              <p>BARITUR no presta asesoramiento juridico ni fiscal individual.</p>
+              <p>Heredia no presta asesoramiento juridico ni fiscal individual.</p>
               <p>El autopiloto prepara acciones; el envio/ejecucion requiere aprobacion profesional.</p>
             </div>
 
@@ -322,7 +339,7 @@ export default function NewCasePage() {
                 onChange={(e) => update("termsAccepted", e.target.checked)}
                 className="rounded mt-1" />
               <span className="text-sm">
-                Acepto los terminos de uso y la politica de privacidad de BARITUR PRO.
+                Acepto los terminos de uso y la politica de privacidad de Heredia.
               </span>
             </label>
 
@@ -347,7 +364,16 @@ export default function NewCasePage() {
           </div>
         )}
 
-        {error && <p className="mt-3 text-red-600 text-sm">{error}</p>}
+        {/*
+          El mensaje se anuncia (`role="alert"`): antes aparecia en silencio al
+          final de la tarjeta y quien no lo viera se quedaba pulsando
+          "Siguiente" sin entender por que el asistente no avanzaba.
+        */}
+        {error && (
+          <p role="alert" data-testid="error-asistente" className="mt-3 text-red-600 text-sm">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );

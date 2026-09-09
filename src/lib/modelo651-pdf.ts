@@ -398,7 +398,7 @@ export async function generateModelo651PDF(input: Modelo651Input): Promise<Uint8
   // Footer
   rect(p1, 0, PAGE_H - 22, PAGE_W, 22, LIGHT_BLUE);
   text(p1, font, "Pagina 1 de 1  -  Borrador de trabajo, no oficial", MARGIN, PAGE_H - 8, 7, GRAY_MID);
-  text(p1, bold, "BARITUR PRO", PAGE_W - MARGIN, PAGE_H - 8, 7, BLUE, "right");
+  text(p1, bold, "Heredia", PAGE_W - MARGIN, PAGE_H - 8, 7, BLUE, "right");
 
   return pdfDoc.save();
 }

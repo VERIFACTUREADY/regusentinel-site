@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Reveal } from "@/components/reveal";
+import { SiteFooter } from "@/components/site-footer";
+import { HerediaMark } from "@/components/heredia-mark";
 
 // ─── Datos ────────────────────────────────────────────────
 
@@ -19,12 +21,14 @@ const features = [
     desc: "El dashboard detecta riesgos en toda tu cartera y te dice, expediente a expediente, la única acción siguiente ordenada por urgencia.",
     icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6",
     tone: "amber",
+    href: "/radar-isd",
   },
   {
     title: "Borradores del Modelo 650 y 651",
     desc: "Genera en PDF el borrador de Sucesiones y Donaciones con datos del expediente, plazos calculados y cuota estimada por CCAA.",
     icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
     tone: "emerald",
+    href: "/borrador-modelo650",
   },
   {
     title: "Pipeline de expedientes",
@@ -37,6 +41,7 @@ const features = [
     desc: "Enlace seguro para que la familia suba documentos clasificados automáticamente. Vinculación documento-tarea y resumen claro de cómo va todo.",
     icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z",
     tone: "sky",
+    href: "/portal-familia",
   },
   {
     title: "Pack 'listo para banco'",
@@ -46,13 +51,13 @@ const features = [
   },
   {
     title: "Audit trail y aprobaciones",
-    desc: "Registro inmutable de quién aprobó qué y cuándo. Export del expediente completo en PDF/ZIP con evidencias — válido en juicio.",
+    desc: "Registro de actividad append-only a nivel de aplicación: quién aprobó qué y cuándo. Export del expediente completo en PDF/ZIP con las evidencias registradas.",
     icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
     tone: "emerald",
   },
   {
     title: "Cumplimiento RGPD y LOPDGDD",
-    desc: "Tratamiento post-mortem (art. 3 LO 3/2018), minimización de datos, cifrado en tránsito y reposo, hosting en la UE y DPA con cada cliente.",
+    desc: "Tratamiento post-mortem (art. 3 LO 3/2018), minimización de datos y política de retención configurable con purga real. Contrato de encargado de tratamiento disponible.",
     icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z",
     tone: "amber",
   },
@@ -113,7 +118,7 @@ function HeroPreview() {
           <span className="w-2.5 h-2.5 rounded-full bg-rose-300" />
           <span className="w-2.5 h-2.5 rounded-full bg-amber-300" />
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-300" />
-          <span className="ml-3 text-[11px] font-medium text-slate-400">BARITUR PRO — Expediente EXP-2024-087</span>
+          <span className="ml-3 text-[11px] font-medium text-slate-400">Heredia — Expediente EXP-2024-087</span>
         </div>
 
         <div className="p-5 space-y-4">
@@ -238,16 +243,16 @@ export function LandingClient() {
     "@graph": [
       {
         "@type": "Organization",
-        "@id": "https://baritur.pro/#org",
-        name: "BARITUR PRO",
-        url: "https://baritur.pro",
+        "@id": "https://heredia.app/#org",
+        name: "Heredia",
+        url: "https://heredia.app",
         description:
           "Software B2B para gestorías y funerarias que automatiza los trámites post-fallecimiento en España.",
         contactPoint: { "@type": "ContactPoint", contactType: "sales", availableLanguage: "Spanish" },
       },
       {
         "@type": "SoftwareApplication",
-        name: "BARITUR PRO",
+        name: "Heredia",
         applicationCategory: "BusinessApplication",
         operatingSystem: "Web",
         offers: {
@@ -273,10 +278,10 @@ export function LandingClient() {
           },
           {
             "@type": "Question",
-            name: "¿Para qué tipo de empresa es BARITUR PRO?",
+            name: "¿Para qué tipo de empresa es Heredia?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "BARITUR PRO está diseñado para gestorías, asesorías fiscales, funerarias y despachos de abogados que gestionan trámites post-mortem de forma profesional para familias.",
+              text: "Heredia está diseñado para gestorías, asesorías fiscales, funerarias y despachos de abogados que gestionan trámites post-mortem de forma profesional para familias.",
             },
           },
           {
@@ -300,10 +305,8 @@ export function LandingClient() {
       <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/80 backdrop-blur-md">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex justify-between items-center">
           <Link href="/" className="flex items-center gap-2.5">
-            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-indigo-500 flex items-center justify-center shadow-lg shadow-primary/25">
-              <span className="text-white font-bold text-lg">B</span>
-            </span>
-            <span className="text-lg font-bold text-slate-900 tracking-tight">BARITUR PRO</span>
+            <HerediaMark className="w-9 h-9" />
+            <span className="text-lg font-semibold text-slate-900 tracking-tight">Heredia</span>
           </Link>
           <div className="flex gap-1 sm:gap-2 items-center">
             <Link href="/recursos" className="hidden md:inline px-3 py-2 text-sm font-medium text-slate-600 hover:text-primary transition">Recursos</Link>
@@ -357,7 +360,7 @@ export function LandingClient() {
 
           <Reveal delay={160}>
             <p className="mt-6 text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-              BARITUR PRO automatiza el backoffice post-fallecimiento: del certificado a los 15 días
+              Heredia automatiza el backoffice post-fallecimiento: del certificado a los 15 días
               al Modelo 650 a los 6 meses. Plazos, documentación, portal familia y cumplimiento — en una sola plataforma.
             </p>
           </Reveal>
@@ -439,7 +442,7 @@ export function LandingClient() {
             </h2>
             <p className="mt-3 text-slate-600 max-w-2xl mx-auto">
               Calculadoras, comparadores y generadores de documentos abiertos a todos.
-              La misma tecnología que mueve BARITUR PRO, sin coste.
+              La misma tecnología que mueve Heredia, sin coste.
             </p>
           </Reveal>
 
@@ -523,7 +526,8 @@ export function LandingClient() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {features.map((f, i) => (
               <Reveal key={f.title} delay={(i % 4) * 80}>
-                <div className="card-lift h-full rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm hover:shadow-xl hover:border-slate-300/80">
+                <div className={`relative card-lift h-full rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm hover:shadow-xl hover:border-slate-300/80 ${f.href ? "group" : ""}`}>
+                  {f.href && <Link href={f.href} className="absolute inset-0 rounded-2xl" aria-label={f.title} />}
                   <span className={`inline-flex w-12 h-12 rounded-xl items-center justify-center ring-4 ${toneTile[f.tone]}`}>
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d={f.icon} />
@@ -531,6 +535,14 @@ export function LandingClient() {
                   </span>
                   <h3 className="mt-4 text-base font-bold text-slate-900">{f.title}</h3>
                   <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">{f.desc}</p>
+                  {f.href && (
+                    <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary group-hover:gap-2 transition-all">
+                      Saber más
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                      </svg>
+                    </span>
+                  )}
                 </div>
               </Reveal>
             ))}
@@ -623,7 +635,7 @@ export function LandingClient() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Servicio gestionado</p>
-                  <h3 className="text-xl font-bold text-slate-900 mb-2">BARITUR MANAGED</h3>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">Heredia Managed</h3>
                   <p className="text-sm text-slate-600 max-w-xl">
                     Operación administrativa coordinada por expediente: intake guiado, recopilación documental,
                     preparación de paquetes, coordinación de plazos y comunicación con la familia. Sin asesoría legal/fiscal.
@@ -743,73 +755,7 @@ export function LandingClient() {
       </section>
 
       {/* ─── Footer ─────────────────────────────────────── */}
-      <footer className="bg-slate-950 text-slate-400">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-8">
-            <div className="lg:col-span-2">
-              <div className="flex items-center gap-2.5 mb-4">
-                <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-indigo-500 flex items-center justify-center">
-                  <span className="text-white font-bold">B</span>
-                </span>
-                <span className="text-lg font-bold text-white">BARITUR PRO</span>
-              </div>
-              <p className="text-sm leading-relaxed max-w-xs">
-                Software B2B que orquesta la gestión post-fallecimiento para gestorías, funerarias y despachos en España.
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold text-white mb-3">Producto</p>
-              <ul className="space-y-2 text-sm">
-                <li><Link href="/precios" className="hover:text-white transition">Precios</Link></li>
-                <li><Link href="/comparativa" className="hover:text-white transition">Comparativa</Link></li>
-                <li><Link href="/casos-de-uso" className="hover:text-white transition">Casos de uso</Link></li>
-                <li><Link href="/calculadora-roi" className="hover:text-white transition">Calculadora ROI</Link></li>
-                <li><Link href="/seguridad" className="hover:text-white transition">Seguridad y RGPD</Link></li>
-                <li><Link href="/integraciones" className="hover:text-white transition">Integraciones</Link></li>
-              </ul>
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold text-white mb-3">Herramientas gratis</p>
-              <ul className="space-y-2 text-sm">
-                <li><Link href="/calculadora-isd" className="hover:text-white transition">Calculadora Sucesiones</Link></li>
-                <li><Link href="/calculadora-donaciones" className="hover:text-white transition">Calculadora Donaciones</Link></li>
-                <li><Link href="/calculadora-plusvalia" className="hover:text-white transition">Calculadora Plusvalía</Link></li>
-                <li><Link href="/coste-herencia" className="hover:text-white transition">Coste de heredar</Link></li>
-                <li><Link href="/comparador-isd" className="hover:text-white transition">Comparador CCAA</Link></li>
-                <li><Link href="/borrador-modelo650" className="hover:text-white transition">Borrador Modelo 650</Link></li>
-                <li><Link href="/plantillas-documentos" className="hover:text-white transition">Plantillas de documentos</Link></li>
-              </ul>
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold text-white mb-3">Recursos</p>
-              <ul className="space-y-2 text-sm">
-                <li><Link href="/recursos" className="hover:text-white transition">Hub de recursos</Link></li>
-                <li><Link href="/blog" className="hover:text-white transition">Blog</Link></li>
-                <li><Link href="/glosario" className="hover:text-white transition">Glosario ISD</Link></li>
-                <li><Link href="/guia-fallecimiento" className="hover:text-white transition">Guía tras fallecimiento</Link></li>
-                <li><Link href="/para-gestorias" className="hover:text-white transition">Para gestorías</Link></li>
-                <li><Link href="/para-funerarias" className="hover:text-white transition">Para funerarias</Link></li>
-                <li><Link href="/docs/api" className="hover:text-white transition">API pública</Link></li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="mt-12 pt-8 border-t border-slate-800 text-xs space-y-2">
-            <p>BARITUR no presta asesoramiento jurídico ni fiscal. Orquestamos y documentamos; la decisión profesional es del gestor.</p>
-            <p>Tratamiento de datos conforme al RGPD y la LOPDGDD (LO 3/2018). Marco post-mortem: art. 3.</p>
-            <div className="flex flex-wrap items-center gap-4 pt-3">
-              <Link href="/legal/privacidad" className="hover:text-white transition">Privacidad</Link>
-              <Link href="/legal/terminos" className="hover:text-white transition">Términos</Link>
-              <Link href="/legal/cookies" className="hover:text-white transition">Cookies</Link>
-              <Link href="/changelog" className="hover:text-white transition">Changelog</Link>
-              <span className="ml-auto text-slate-500">&copy; {new Date().getFullYear()} BARITUR PRO. Todos los derechos reservados.</span>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

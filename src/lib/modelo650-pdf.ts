@@ -1,3 +1,4 @@
+import { isdDeadlineFor, isdExtensionRequestDeadlineFor, addMonths } from "./deadline-engine";
 /**
  * Generador de borrador del Modelo 650 (ISD) en formato PDF.
  *
@@ -339,12 +340,9 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
 
   if (input.deceased.deathDate) {
     const d = new Date(input.deceased.deathDate);
-    const pres = new Date(d);
-    pres.setMonth(pres.getMonth() + 6);
-    const pror = new Date(d);
-    pror.setMonth(pror.getMonth() + 12);
-    const ext = new Date(d);
-    ext.setMonth(ext.getMonth() + 5);
+    const pres = isdDeadlineFor(d);
+    const pror = addMonths(d, 12);
+    const ext = isdExtensionRequestDeadlineFor(d);
 
     plazoPresent = formatDate(pres);
     plazoProrrog = formatDate(pror);
@@ -364,7 +362,7 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
 
   rect(p1, 0, PAGE_H - 22, PAGE_W, 22, LIGHT_BLUE);
   text(p1, font, "Página 1 de 2  ·  Borrador de trabajo, no oficial", MARGIN, PAGE_H - 8, 7, GRAY_MID);
-  text(p1, bold, "BARITUR PRO", PAGE_W - MARGIN, PAGE_H - 8, 7, BLUE, "right");
+  text(p1, bold, "Heredia", PAGE_W - MARGIN, PAGE_H - 8, 7, BLUE, "right");
 
   // ─── PAGE 2 ───────────────────────────────────────────
 
@@ -444,7 +442,7 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
 
   // ─── SECTION 7: Cuota estimada ──────────────────────
 
-  y = sectionHeader(p2, bold, "CUOTA ESTIMADA — RESUMEN FISCAL (calculado por BARITUR PRO)", "7", y);
+  y = sectionHeader(p2, bold, "CUOTA ESTIMADA — RESUMEN FISCAL (calculado por Heredia)", "7", y);
   y += 4;
 
   if (ccaa && input.estimatedInheritanceValue) {
@@ -516,7 +514,7 @@ export async function generateModelo650PDF(input: Modelo650Input): Promise<Uint8
 
   // Page footer
   rect(p2, 0, PAGE_H - 22, PAGE_W, 22, LIGHT_BLUE);
-  text(p2, font, "Página 2 de 2  ·  Borrador de trabajo generado automáticamente por BARITUR PRO — No es documento oficial", MARGIN, PAGE_H - 8, 7, GRAY_MID);
+  text(p2, font, "Página 2 de 2  ·  Borrador de trabajo generado automáticamente por Heredia — No es documento oficial", MARGIN, PAGE_H - 8, 7, GRAY_MID);
   text(p2, bold, `${input.caseRef}  ·  ${formatDate(input.generatedAt)}`, PAGE_W - MARGIN, PAGE_H - 8, 7, BLUE, "right");
 
   return pdfDoc.save();

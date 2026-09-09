@@ -1,22 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
+import { nextCaseRef } from "@/lib/tenancy";
+import { checkCaseLimit, planOf, lockOrgForLimits } from "@/lib/plan-limits";
+
 import { createCaseSchema } from "@/lib/validations";
 import { getChecklistForCategories } from "@/lib/checklist-rules";
 import { logAudit } from "@/lib/audit";
 import { calculateTaskDeadlines } from "@/lib/deadline-engine";
-import { triggerWorkflow } from "@/lib/workflow-engine";
+import { triggerWorkflow, claveDeEvento } from "@/lib/workflow-engine";
+
+/** Tope de plan alcanzado. Aborta la transaccion y se traduce a 403. */
+class PlanLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlanLimitError";
+  }
+}
+
+/**
+ * P2002 sobre el indice (orgId, ref): otra alta simultanea se quedo con la
+ * referencia que habiamos elegido. Es reintentable.
+ */
+function isUniqueRefConflict(err: unknown): boolean {
+  const e = err as { code?: string; meta?: { target?: unknown } };
+  if (e?.code !== "P2002") return false;
+  const target = e.meta?.target;
+  const fields = Array.isArray(target) ? target.join(",") : String(target ?? "");
+  return fields.includes("ref");
+}
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "cases.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireOrgPermission("cases.read");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
@@ -99,39 +116,37 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "cases.create")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireOrgPermission("cases.create");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   try {
     const body = await req.json();
     const { caseTemplateId } = body;
     const data = createCaseSchema.parse(body);
 
-    // Check plan limits (includedCases per mes; excedentes facturados aparte).
-    const sub = await prisma.subscription.findUnique({ where: { orgId: session.user.orgId } });
-    if (sub?.plan === "INICIA") {
-      const month = new Date().toISOString().slice(0, 7);
-      const usage = await prisma.usageRecord.findUnique({
-        where: { orgId_month: { orgId: session.user.orgId, month } },
-      });
-      if (usage && usage.casesCreated >= 15) {
-        return NextResponse.json(
-          { error: "Limite de expedientes alcanzado para el plan Inicia (15/mes). Actualiza a Despacho." },
-          { status: 403 }
-        );
-      }
-    }
+    // El limite de plan se comprueba DENTRO de la transaccion (mas abajo),
+    // no aqui: contar fuera y crear despues deja una ventana en la que varias
+    // peticiones simultaneas ven el mismo recuento y todas pasan el tope.
+    const plan = await planOf(session.user.orgId);
 
-    // Generate ref
-    const count = await prisma.case.count({ where: { orgId: session.user.orgId } });
-    const ref = `EXP-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+    // La referencia se genera DENTRO de la transaccion, a partir del maximo ya
+    // existente para el anyo en curso. Antes se hacia `count + 1` fuera de la
+    // transaccion, asi que dos altas simultaneas producian la misma referencia
+    // y nada en la base de datos lo impedia.
+    //
+    // La restriccion @@unique([orgId, ref]) cierra la ventana que queda: si dos
+    // transacciones eligen el mismo numero, una falla con P2002 y reintentamos.
+    const createCaseTransaction = () =>
+      prisma.$transaction(async (tx) => {
+      // Serializa por organizacion la comprobacion de limite y la asignacion
+      // de referencia.
+      await lockOrgForLimits(session.user.orgId, tx);
 
-    const newCase = await prisma.$transaction(async (tx) => {
+      const limit = await checkCaseLimit(session.user.orgId, plan, tx);
+      if (!limit.allowed) throw new PlanLimitError(limit.message!);
+
+      const ref = await nextCaseRef(session.user.orgId, tx);
       const c = await tx.case.create({
         data: {
           orgId: session.user.orgId!,
@@ -228,6 +243,32 @@ export async function POST(req: NextRequest) {
       return c;
     });
 
+    // Reintento acotado ante colisión de referencia con un alta simultánea.
+    const MAX_REF_ATTEMPTS = 5;
+    let newCase: Awaited<ReturnType<typeof createCaseTransaction>> | null = null;
+
+    for (let attempt = 0; attempt < MAX_REF_ATTEMPTS; attempt++) {
+      try {
+        newCase = await createCaseTransaction();
+        break;
+      } catch (err) {
+        if (err instanceof PlanLimitError) {
+          return NextResponse.json({ error: err.message }, { status: 403 });
+        }
+        if (isUniqueRefConflict(err) && attempt < MAX_REF_ATTEMPTS - 1) continue;
+        throw err;
+      }
+    }
+
+    if (!newCase) {
+      return NextResponse.json(
+        { error: "No se pudo asignar una referencia única al expediente. Inténtalo de nuevo." },
+        { status: 409 },
+      );
+    }
+
+    const ref = newCase.ref;
+
     await logAudit({
       orgId: session.user.orgId,
       userId: session.user.id,
@@ -241,6 +282,9 @@ export async function POST(req: NextRequest) {
       orgId: session.user.orgId,
       caseId: newCase.id,
       userId: session.user.id,
+      // Un expediente se crea una vez: su id identifica el hecho de forma
+      // estable ante una reentrega, y es distinto para cada alta.
+      eventKey: claveDeEvento.expedienteCreado(newCase.id),
     }).catch(console.error);
 
     const full = await prisma.case.findUnique({

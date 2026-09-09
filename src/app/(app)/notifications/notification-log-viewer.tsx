@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -35,6 +36,8 @@ export function NotificationLogViewer() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
   const [kind, setKind] = useState("");
   const [channel, setChannel] = useState("");
   const [status, setStatus] = useState("");
@@ -42,6 +45,7 @@ export function NotificationLogViewer() {
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
+    setErrorCarga(null);
     const params = new URLSearchParams();
     params.set("page", String(page));
     params.set("limit", String(PAGE_SIZE));
@@ -50,32 +54,54 @@ export function NotificationLogViewer() {
     if (status) params.set("status", status);
 
     fetch(`/api/notifications?${params}`, { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(
+            res.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${res.status}.`,
+          );
+        }
+        return res.json();
+      })
       .then((data) => {
         if (data && !controller.signal.aborted) {
           setLogs(data.logs);
           setTotal(data.total);
         }
       })
-      .catch(() => {})
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setErrorCarga(e instanceof Error ? e.message : "No se han podido cargar los datos.");
+      })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => controller.abort();
-  }, [page, kind, channel, status]);
+  }, [page, kind, channel, status, reintento]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const hasFilters = kind || channel || status;
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
+      {/*
+        Los tres filtros llevan `<label htmlFor>` con su `id`.
+        Estaban SUELTOS: el texto se veia encima del desplegable, pero sin
+        relacion con el en el arbol de accesibilidad. Un lector de pantalla
+        anunciaba «lista» tres veces seguidas sin decir de que, pulsar sobre el
+        rotulo no enfocaba el control, y las pruebas tenian que pedirlos por
+        posicion. `title` no valdria: es una ayuda emergente, no un nombre.
+      */}
       <div className="bg-white rounded-lg border p-4">
         <div className="flex flex-wrap gap-3 items-end">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Tipo</label>
+            <label htmlFor="filtroTipo" className="block text-xs font-medium text-gray-500 mb-1">
+              Tipo
+            </label>
             <select
+              id="filtroTipo"
               value={kind}
               onChange={(e) => { setKind(e.target.value); setPage(1); }}
               className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -88,8 +114,11 @@ export function NotificationLogViewer() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Canal</label>
+            <label htmlFor="filtroCanal" className="block text-xs font-medium text-gray-500 mb-1">
+              Canal
+            </label>
             <select
+              id="filtroCanal"
               value={channel}
               onChange={(e) => { setChannel(e.target.value); setPage(1); }}
               className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -102,8 +131,11 @@ export function NotificationLogViewer() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Estado</label>
+            <label htmlFor="filtroEstado" className="block text-xs font-medium text-gray-500 mb-1">
+              Estado
+            </label>
             <select
+              id="filtroEstado"
               value={status}
               onChange={(e) => { setStatus(e.target.value); setPage(1); }}
               className="border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -116,6 +148,7 @@ export function NotificationLogViewer() {
 
           {hasFilters && (
             <button
+              data-testid="limpiar-filtros"
               onClick={() => { setKind(""); setChannel(""); setStatus(""); setPage(1); }}
               className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 border rounded-md hover:bg-gray-50"
             >
@@ -127,7 +160,9 @@ export function NotificationLogViewer() {
 
       {/* Summary */}
       <div className="flex items-center justify-between text-sm text-gray-500">
-        <span>{total} notificacion{total !== 1 ? "es" : ""}{hasFilters ? " (filtrado)" : ""}</span>
+        <span data-testid="recuento-notificaciones">
+          {total} notificacion{total !== 1 ? "es" : ""}{hasFilters ? " (filtrado)" : ""}
+        </span>
         {totalPages > 1 && <span>Pagina {page} de {totalPages}</span>}
       </div>
 
@@ -147,7 +182,17 @@ export function NotificationLogViewer() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {loading ? (
+              {errorCarga ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8">
+                    <AvisoError
+                      mensaje={errorCarga}
+                      que="los avisos"
+                      onReintentar={() => setReintento((n) => n + 1)}
+                    />
+                  </td>
+                </tr>
+              ) : loading ? (
                 <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400">Cargando...</td></tr>
               ) : logs.length === 0 ? (
                 <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400">
@@ -200,7 +245,13 @@ export function NotificationLogViewer() {
 
         {/* Mobile */}
         <div className="md:hidden divide-y">
-          {loading ? (
+          {errorCarga ? (
+            <AvisoError
+              mensaje={errorCarga}
+              que="los avisos"
+              onReintentar={() => setReintento((n) => n + 1)}
+            />
+          ) : loading ? (
             <div className="px-4 py-12 text-center text-gray-400">Cargando...</div>
           ) : logs.length === 0 ? (
             <div className="px-4 py-12 text-center text-gray-400">
@@ -215,11 +266,21 @@ export function NotificationLogViewer() {
                     {kindMeta.label}
                   </span>
                   <div className="flex items-center gap-2">
-                    {log.status === "sent" ? (
-                      <span className="w-2 h-2 rounded-full bg-green-500" />
-                    ) : (
-                      <span className="w-2 h-2 rounded-full bg-red-500" />
-                    )}
+                    {/*
+                      El punto de color iba solo: quien no distingue verde de
+                      rojo —o usa un lector de pantalla— no tenia forma de
+                      saber si el aviso se envio o fallo. El texto va en
+                      `sr-only`, sin cambiar el diseño.
+                    */}
+                    <span className="flex items-center gap-1">
+                      <span
+                        aria-hidden="true"
+                        className={`w-2 h-2 rounded-full ${log.status === "sent" ? "bg-green-500" : "bg-red-500"}`}
+                      />
+                      <span className="sr-only">
+                        {log.status === "sent" ? "Enviado" : "Fallido"}
+                      </span>
+                    </span>
                     <span className="text-xs text-gray-400">
                       {new Date(log.createdAt).toLocaleString("es-ES", {
                         day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
