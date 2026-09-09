@@ -1684,3 +1684,84 @@ aplicación construida, PostgreSQL real y MinIO real:
 El consentimiento del portal se acepta por el camino real, con sus controles: la
 subida está detrás de esa puerta y saltársela probaría una ruta que en
 producción nadie puede alcanzar.
+
+## 2026-09-09 — El archivo deja de pasar por la función (bloqueo de producción)
+
+### El defecto
+
+Una **función de Vercel admite 4,5 MB de cuerpo de petición**. El producto
+promete **20 MiB** por archivo. Mientras el multipart pasara por la función, esa
+promesa era falsa en producción: el archivo lo cortaba la entrada de la
+plataforma **antes de llegar al código**, así que ninguna comprobación del
+handler podía intervenir.
+
+Las pruebas no lo detectaban porque en local ese techo no existe. La corrección
+anterior (`middlewareClientMaxBodySize`) sólo evita que Next 15 trunque el
+cuerpo en un servidor propio; **no puede levantar el techo de la plataforma**.
+Lo que estaba verde era «20 MiB funcionan contra un Next local», que no es la
+afirmación que hacía falta.
+
+### La forma de la solución
+
+El archivo va del **navegador al almacenamiento** con una URL prefirmada. Por la
+función sólo pasa JSON pequeño, en dos saltos:
+
+| Paso | Endpoint | Qué hace |
+|---|---|---|
+| 1 | `POST …/documents/upload-url` | Permisos (o token + consentimiento), tenencia, nombre y tamaño. Fija la clave **en el servidor**, guarda un `PendingUpload` y firma la URL. |
+| 2 | `POST …/documents/complete` | Vuelve a autenticar, `HeadObject` sobre el objeto **real**, comprueba tamaño exacto y contenido con los bytes de verdad, y sólo entonces crea el documento. |
+
+En la confirmación **no se cree nada** de lo que diga el cliente salvo el
+identificador de la subida: organización, expediente, actor, clave, nombre y
+tamaño esperado se leen del `PendingUpload` que escribió el servidor.
+
+### Idempotencia y simultaneidad
+
+La reclamación del `PendingUpload` va **dentro de la misma transacción** que crea
+el documento. Dos confirmaciones a la vez no pueden producir dos filas: la
+segunda espera el bloqueo de fila, ve el estado ya cambiado y devuelve el
+documento de la primera. `PendingUpload.documentId` es `@unique` como barrera
+final. Reintentar tras un corte de red devuelve el mismo documento con 200.
+
+### El precio, dicho claro
+
+Con multipart, un contenido falsificado se rechazaba **antes** de tocar S3.
+Ahora el objeto ya está escrito cuando se le miran los bytes, así que todo
+descarte lo **borra**. Y una subida autorizada que nadie confirma dejaría un
+objeto sin ninguna fila que lo mencione: de eso se ocupa
+`limpiarSubidasCaducadas`, que corre en el cron de retención y además barre unas
+pocas en cada autorización. La fila sólo desaparece **después** de que el objeto
+se haya podido borrar; si el borrado falla, la fila se queda y el siguiente
+barrido lo reintenta.
+
+Lo que sí se puede decidir sin bytes —la extensión y el tamaño declarado— se
+sigue cortando antes de firmar nada, para no entregar un permiso de escritura a
+un `.exe`.
+
+### Los POST multipart se retiran
+
+`POST /api/cases/[id]/documents` y `POST /api/portal/[token]/documents` **ya no
+existen** (responden 405). Mantenerlos habría dejado dos contratos de subida
+contradictorios, y uno de ellos miente sobre el tamaño que admite. Los `GET` no
+cambian.
+
+### Lo que NO cambia
+
+Máximo de 20 MiB y su mensaje literal; consentimiento del portal exigido en
+**ambos** pasos; aislamiento por organización; vinculación automática a tareas;
+acciones de auditoría (que son **distintas** en portal y ficha:
+`portal.document_uploaded` / `document.uploaded`); identidad del evento de
+automatización; y las URL de descarga, que siguen reescribiendo
+`Content-Type` y `Content-Disposition` en la propia firma.
+
+### CORS: requisito nuevo de despliegue
+
+El navegador escribe en otro origen, así que el bucket **debe** responder al
+`OPTIONS` de comprobación o la subida muere antes de empezar (y el navegador, por
+diseño, no deja ver el motivo). `scripts/init-bucket.mjs` lo configura para
+desarrollo y CI con `AllowedOrigins: *`.
+
+**En producción esto no está hecho y es imprescindible**: hay que configurar CORS
+en el bucket real limitado al dominio de la aplicación, y el endpoint de
+almacenamiento tiene que ser alcanzable desde el navegador del usuario. Queda
+anotado como requisito pendiente.

@@ -658,7 +658,12 @@ test.describe("Documentos: errores de subida", () => {
 
     const antes = await prisma.document.count({ where: { caseId: caso.id } });
     permitirFalloEn(page, "/documents");
-    await page.route(`**/api/cases/${caso.id}/documents`, async (route) => {
+    /*
+     * La subida ya no es una sola peticion: primero se pide permiso y luego se
+     * confirma. Se intercepta el PRIMER salto, que es donde el servidor puede
+     * negarse antes de que salga un solo byte.
+     */
+    await page.route(`**/api/cases/${caso.id}/documents/upload-url`, async (route) => {
       if (route.request().method() === "POST") {
         await route.fulfill({
           status: 500,
@@ -689,7 +694,7 @@ test.describe("Documentos: errores de subida", () => {
     await abrirPestanaDocumentos(page, caso.id);
 
     permitirFalloEn(page, "/documents");
-    await page.route(`**/api/cases/${caso.id}/documents`, async (route) => {
+    await page.route(`**/api/cases/${caso.id}/documents/upload-url`, async (route) => {
       if (route.request().method() === "POST") await route.abort("failed");
       else await route.continue();
     });
@@ -716,7 +721,13 @@ test.describe("Documentos: errores de subida", () => {
 
     const antes = await prisma.document.count({ where: { caseId: caso.id } });
     permitirFalloEn(page, "/documents");
-    await page.route(`**/api/cases/${caso.id}/documents`, async (route) => {
+    /*
+     * Se intercepta la CONFIRMACION, que es el paso que habla con el
+     * almacenamiento (comprueba que el objeto esta y que pesa lo que debe).
+     * El archivo llega a escribirse, pero sin confirmacion NO hay documento:
+     * ese objeto queda como subida caducada y lo recoge la limpieza.
+     */
+    await page.route(`**/api/cases/${caso.id}/documents/complete`, async (route) => {
       if (route.request().method() === "POST") {
         await route.fulfill({
           status: 502,
@@ -748,7 +759,11 @@ test.describe("Documentos: errores de subida", () => {
     // con seguridad mientras la primera sigue en vuelo, que es justo el doble
     // clic del usuario impaciente.
     let enVuelo = 0;
-    await page.route(`**/api/cases/${caso.id}/documents`, async (route) => {
+    /*
+     * Se cuenta la AUTORIZACION: una por intento de subida. Un segundo clic
+     * produciria una segunda, y eso es exactamente lo que no debe pasar.
+     */
+    await page.route(`**/api/cases/${caso.id}/documents/upload-url`, async (route) => {
       if (route.request().method() === "POST") {
         enVuelo++;
         await new Promise((r) => setTimeout(r, 6_000));
@@ -1129,11 +1144,15 @@ test.describe("Documentos: aislamiento entre organizaciones", () => {
       expect([403, 404]).toContain(lista.status());
     }
 
-    const subida = await page.request.post(`/api/cases/${ajeno.caseId}/documents`, {
-      multipart: {
-        file: { name: "intruso.pdf", mimeType: "application/pdf", buffer: PDF_BYTES },
-      },
-    });
+    /*
+     * La subida ya no manda el archivo a la funcion: primero se pide permiso.
+     * La barrera de tenencia esta ahi, que es donde se entrega la URL de
+     * escritura. Sin permiso no hay a donde escribir.
+     */
+    const subida = await page.request.post(
+      `/api/cases/${ajeno.caseId}/documents/upload-url`,
+      { data: { fileName: "intruso.pdf", size: PDF_BYTES.length } },
+    );
     expect(subida.status(), "no se puede subir a un expediente ajeno").toBe(404);
     expect(
       await prisma.document.count({ where: { caseId: ajeno.caseId, fileName: "intruso.pdf" } }),
@@ -1220,10 +1239,8 @@ test.describe("Documentos: roles", () => {
     await login(page, E2E.viewer);
     permitirFalloEn(page, "/api/");
 
-    const subida = await page.request.post(`/api/cases/${caso.id}/documents`, {
-      multipart: {
-        file: { name: "viewer.pdf", mimeType: "application/pdf", buffer: PDF_BYTES },
-      },
+    const subida = await page.request.post(`/api/cases/${caso.id}/documents/upload-url`, {
+      data: { fileName: "viewer.pdf", size: PDF_BYTES.length },
     });
     expect(subida.status(), "un VIEWER no puede subir").toBe(403);
 
@@ -1519,7 +1536,7 @@ test.describe("Documentos: portal familiar", () => {
 
     await abrirPortal(page);
     permitirFalloEn(page, "/portal");
-    await page.route(`**/api/portal/${PORTAL.token}/documents`, async (route) => {
+    await page.route(`**/api/portal/${PORTAL.token}/documents/upload-url`, async (route) => {
       if (route.request().method() === "POST") {
         await route.fulfill({
           status: 500,
@@ -1553,11 +1570,11 @@ test.describe("Documentos: portal familiar", () => {
     });
     await expect(page.getByLabel(/Seleccionar archivo/)).toHaveCount(0);
 
-    const subida = await page.request.post("/api/portal/token-que-no-existe/documents", {
-      multipart: {
-        file: { name: "intruso.pdf", mimeType: "application/pdf", buffer: PDF_BYTES },
-      },
-    });
+    // Un token inexistente no recibe ni permiso de escritura.
+    const subida = await page.request.post(
+      "/api/portal/token-que-no-existe/documents/upload-url",
+      { data: { fileName: "intruso.pdf", size: PDF_BYTES.length } },
+    );
     expect(subida.status()).toBeGreaterThanOrEqual(400);
     expect(await prisma.document.count({ where: { fileName: "intruso.pdf" } })).toBe(0);
   });
@@ -1573,11 +1590,10 @@ test.describe("Documentos: portal familiar", () => {
       const lectura = await page.request.get(`/api/portal/${PORTAL.token}/documents`);
       expect(lectura.status(), "un token revocado no sirve documentos").toBeGreaterThanOrEqual(400);
 
-      const subida = await page.request.post(`/api/portal/${PORTAL.token}/documents`, {
-        multipart: {
-          file: { name: "revocado.pdf", mimeType: "application/pdf", buffer: PDF_BYTES },
-        },
-      });
+      const subida = await page.request.post(
+        `/api/portal/${PORTAL.token}/documents/upload-url`,
+        { data: { fileName: "revocado.pdf", size: PDF_BYTES.length } },
+      );
       expect(subida.status()).toBeGreaterThanOrEqual(400);
       expect(await prisma.document.count({ where: { fileName: "revocado.pdf" } })).toBe(0);
     } finally {

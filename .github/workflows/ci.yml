@@ -278,6 +278,7 @@ jobs:
         run: |
           npx vitest run --config vitest.integration.config.ts \
             __tests__/integration/s3-db.test.ts \
+            __tests__/integration/subida-directa-db.test.ts \
             --reporter=default --reporter=json --outputFile=s3-report.json
 
       - name: Confirmar que las pruebas de S3 se han EJECUTADO

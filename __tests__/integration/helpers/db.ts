@@ -24,7 +24,7 @@ export async function resetDatabase() {
   // orden de las claves foraneas.
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
-      "AuditLog", "PromptLog", "Approval", "TaskNote", "Document", "Task",
+      "AuditLog", "PromptLog", "Approval", "TaskNote", "PendingUpload", "Document", "Task",
       "PortalMessage", "CaseContact", "Deceased", "NotificationLog",
       "WorkflowDelivery", "WorkflowLog", "WorkflowRule", "CaseTemplateTask", "CaseTemplate",
       "TemplateVersion", "Template", "Case", "UsageRecord", "Subscription",
