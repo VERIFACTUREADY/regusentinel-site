@@ -9,6 +9,7 @@ import { buildGoogleCalendarUrl, buildIcsDataUrl } from "@/lib/calendar-export";
 import { buildCatastroConsultaUrl, buildCatastroMapaUrl } from "@/lib/catastro";
 import { useRolConocido } from "@/components/layout/rol-context";
 import { hasPermission } from "@/lib/rbac";
+import { subirAlAlmacen } from "@/lib/subida-navegador";
 
 type AppliedReductionUi = {
   type: "VIVIENDA_HABITUAL" | "EMPRESA_FAMILIAR" | "EXPLOTACION_AGRARIA" | "DISCAPACIDAD" | "OTRA";
@@ -1138,21 +1139,30 @@ El equipo de gestión`;
    * acto y corta la segunda en seco.
    */
   const subiendoRef = useRef(false);
+  /** Porcentaje real de la subida al almacenamiento; `null` si no hay ninguna. */
+  const [progresoSubida, setProgresoSubida] = useState<number | null>(null);
 
   /**
-   * Sube un documento al expediente.
+   * Sube un documento al expediente, EN TRES PASOS.
    *
-   * EL DEFECTO QUE CORRIGE
-   * ----------------------
-   * Era `if (res.ok) { ... }` sin `else` y sin `try`. El servidor rechaza por
-   * motivos muy concretos y muy frecuentes —formato no admitido, contenido que
-   * no corresponde a la extensión, archivo vacío, más de 20 MB, 403 de VIEWER,
-   * 502 si el almacenamiento no responde— y de todos ellos el usuario recibía
-   * exactamente lo mismo: nada. La lista se recargaba, el documento no estaba,
-   * y no había una sola palabra que explicara por qué.
+   * POR QUÉ TRES Y NO UNO
+   * ---------------------
+   * Antes se mandaba el archivo entero a `/api/cases/{id}/documents` en un
+   * multipart. En producción eso no podía funcionar: una función de Vercel
+   * admite 4,5 MB de cuerpo de petición y aquí el máximo son 20 MiB. El archivo
+   * lo cortaba la entrada de la plataforma antes de llegar al código.
    *
-   * Además no había ningún estado de subida: se podía pulsar dos veces y subir
-   * el mismo archivo dos veces.
+   * Ahora: se pide permiso (JSON pequeño), el archivo va DIRECTO al
+   * almacenamiento, y luego se confirma (JSON pequeño). Por la función sólo
+   * pasan metadatos.
+   *
+   * QUÉ SE MANTIENE
+   * ---------------
+   * El éxito no se anuncia hasta que el servidor CONFIRMA: mientras el archivo
+   * está en el bucket pero sin verificar, no existe como documento y no se dice
+   * que exista. Todos los rechazos —formato, contenido, tamaño, permisos— se
+   * siguen mostrando con su mensaje real, y el cerrojo síncrono contra el doble
+   * envío sigue en su sitio.
    */
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -1164,18 +1174,34 @@ El equipo de gestión`;
 
     subiendoRef.current = true;
     setSubiendo(true);
-    const formData = new FormData();
-    formData.append("file", file);
+    setProgresoSubida(0);
     try {
-      const res = await fetch(`/api/cases/${caseId}/documents`, {
+      // 1. Permiso. Aquí se rechazan formato y tamaño sin mover un solo byte.
+      const auth = await fetch(`/api/cases/${caseId}/documents/upload-url`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, size: file.size }),
       });
-      if (!res.ok) {
-        const cuerpo = await res.json().catch(() => null);
-        throw new Error(cuerpo?.error || `El servidor ha respondido ${res.status}.`);
+      if (!auth.ok) {
+        const cuerpo = await auth.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${auth.status}.`);
       }
-      const data = await res.json();
+      const { uploadId, uploadUrl } = await auth.json();
+
+      // 2. El archivo, directo al almacenamiento.
+      await subirAlAlmacen(uploadUrl, file, { onProgreso: setProgresoSubida });
+
+      // 3. Confirmación. Sólo aquí el documento pasa a existir.
+      const fin = await fetch(`/api/cases/${caseId}/documents/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uploadId }),
+      });
+      if (!fin.ok) {
+        const cuerpo = await fin.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${fin.status}.`);
+      }
+      const data = await fin.json();
       if (!data.taskId && data.suggestions) {
         setUploadHint({ fileName: file.name, suggestions: data.suggestions });
       } else {
@@ -1194,8 +1220,11 @@ El equipo de gestión`;
       // no un documento que en realidad no llegó a guardarse.
       fetchCase();
     } finally {
+      // Pase lo que pase se sale del estado de subida: ningún camino puede
+      // dejar la pantalla en «Subiendo…» para siempre.
       subiendoRef.current = false;
       setSubiendo(false);
+      setProgresoSubida(null);
     }
   }
 
@@ -2926,7 +2955,19 @@ El equipo de gestión`;
                     : "bg-primary text-white cursor-pointer hover:bg-primary/90"
                 }`}
               >
-                {subiendo ? "Subiendo…" : "Subir documento"}
+                {/*
+                  Con progreso REAL cuando lo hay. Un archivo de 20 MiB en una
+                  conexion lenta tarda minutos: sin porcentaje no se distingue
+                  "va" de "se ha colgado". Cuando el navegador no puede calcular
+                  el total, se dice «Subiendo…» y no se inventa una cifra.
+                */}
+                {subiendo
+                  ? progresoSubida === null
+                    ? "Subiendo…"
+                    : progresoSubida < 100
+                      ? `Subiendo… ${progresoSubida}%`
+                      : "Comprobando…"
+                  : "Subir documento"}
                 {/*
                   El `<label>` envolvente da nombre accesible al input, que va
                   oculto a la vista porque el control nativo no se puede

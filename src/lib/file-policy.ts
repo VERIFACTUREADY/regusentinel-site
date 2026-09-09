@@ -255,6 +255,53 @@ export function validateFile(params: {
 }
 
 /**
+ * Comprobación de NOMBRE y TAMAÑO, sin ver un solo byte.
+ *
+ * POR QUÉ HACE FALTA APARTE
+ * -------------------------
+ * Con la subida directa al almacenamiento, el servidor autoriza antes de que
+ * exista ningún byte que mirar: no puede llamar a `validateFile`, que decide
+ * por contenido. Esto es lo único que sí se puede decidir en ese momento, y
+ * evita entregar un permiso de escritura para un `.exe` o para algo que ya se
+ * sabe que excede el máximo.
+ *
+ * NO SUSTITUYE A `validateFile`. La extensión la pone quien sube y se falsifica
+ * sola; la palabra final la siguen teniendo los bytes reales, ya en la
+ * confirmación. Esto sólo evita el viaje inútil.
+ */
+export function validarNombreYTamano(params: {
+  fileName: string;
+  size: number;
+}): FileValidationResult {
+  const { fileName, size } = params;
+
+  if (!Number.isFinite(size) || size <= 0) {
+    return { ok: false, reason: "empty", message: "El archivo está vacío." };
+  }
+
+  if (size > MAX_FILE_BYTES) {
+    return {
+      ok: false,
+      reason: "too_large",
+      message: `El archivo supera el máximo de ${MAX_FILE_MB} MB.`,
+    };
+  }
+
+  const ext = extensionOf(fileName);
+  const allowed = ALLOWED_TYPES.find((t) => t.extensions.includes(ext));
+  if (!allowed || ext === "svg") {
+    const lista = Array.from(new Set(ALLOWED_TYPES.map((t) => t.label))).join(", ");
+    return {
+      ok: false,
+      reason: "extension_not_allowed",
+      message: `Formato no admitido. Se aceptan: ${lista}.`,
+    };
+  }
+
+  return { ok: true, detectedType: allowed.mime };
+}
+
+/**
  * Limpia el nombre original para mostrarlo y para la cabecera de descarga.
  * No se usa como parte principal de la clave de S3.
  */

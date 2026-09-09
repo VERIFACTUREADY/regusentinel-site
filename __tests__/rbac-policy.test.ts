@@ -52,6 +52,10 @@ const EXEMPT_ENDPOINTS: Record<string, string> = {
   "health": "Health check sin auth",
   "portal/[token]": "Acceso de familia por token CUID, rate-limited 60/min/IP",
   "portal/[token]/documents": "Sub-endpoint del portal familia, rate-limited 60 lectura / 10 upload por min",
+  "portal/[token]/documents/upload-url":
+    "Autorizacion de subida directa de la familia. Sin RBAC por definicion —no hay sesion—: la barrera es token vigente MAS consentimiento (resolvePortalAccess con requireConsent), y ademas rate-limit 10/min/IP. La clave y el ambito los fija el servidor; el cliente no propone ninguno.",
+  "portal/[token]/documents/complete":
+    "Confirmacion de subida directa de la familia. Vuelve a exigir token vigente y consentimiento, y solo acepta subidas de ESTE expediente y de origen portal. Rate-limited 30/min/IP: reintentar es legitimo y no duplica documentos.",
   "portal/[token]/messages": "Sub-endpoint del portal familia, rate-limited 60 lectura / 20 write por min",
   "portal/[token]/consent": "Aceptacion de consentimiento en el portal, rate-limited 10/min",
 

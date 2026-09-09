@@ -9,18 +9,31 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../src/lib/prisma", () => ({
-  prisma: {
+vi.mock("../src/lib/prisma", () => {
+  const prisma: any = {
     case: { findFirst: vi.fn(), update: vi.fn() },
-    document: { findMany: vi.fn(), create: vi.fn() },
+    document: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn() },
     portalConsent: { findFirst: vi.fn(), create: vi.fn() },
     portalMessage: { findMany: vi.fn(), create: vi.fn() },
-    task: { findFirst: vi.fn(), update: vi.fn() },
-  },
-}));
+    task: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    pendingUpload: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      updateMany: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+  };
+  prisma.$transaction = vi.fn(async (fn: any) => fn(prisma));
+  return { prisma };
+});
 vi.mock("../src/lib/s3", () => ({
   uploadFile: vi.fn().mockResolvedValue(undefined),
   getPresignedUrl: vi.fn().mockResolvedValue("https://signed"),
+  getPresignedUploadUrl: vi.fn().mockResolvedValue("https://signed-put"),
+  headObject: vi.fn(),
+  downloadHead: vi.fn(),
   deleteFile: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../src/lib/audit", () => ({ logAudit: vi.fn().mockResolvedValue(undefined) }));
@@ -30,7 +43,9 @@ vi.mock("../src/lib/workflow-engine", () => ({ triggerWorkflow: vi.fn().mockReso
 import { prisma } from "../src/lib/prisma";
 import { getPresignedUrl } from "../src/lib/s3";
 import { PORTAL_CONSENT_VERSION } from "../src/lib/portal-consent";
-import { GET as docsGET, POST as docsPOST } from "../src/app/api/portal/[token]/documents/route";
+import { GET as docsGET } from "../src/app/api/portal/[token]/documents/route";
+import { POST as autorizarPOST } from "../src/app/api/portal/[token]/documents/upload-url/route";
+import { POST as confirmarPOST } from "../src/app/api/portal/[token]/documents/complete/route";
 import { GET as messagesGET, POST as messagesPOST } from "../src/app/api/portal/[token]/messages/route";
 
 const caseFindFirst = prisma.case.findFirst as unknown as ReturnType<typeof vi.fn>;
@@ -116,13 +131,17 @@ describe("Consentimiento como requisito", () => {
   });
 
   it("sin consentimiento no se pueden subir documentos", async () => {
-    const form = async () => {
-      const fd = new FormData();
-      fd.set("file", new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], "x.pdf", { type: "application/pdf" }));
-      return fd;
-    };
-    const res = await docsPOST(req({}, form), { params: Promise.resolve({ token: "tok" }) });
+    /*
+     * Con la subida directa, "no poder subir" significa NO RECIBIR EL PERMISO:
+     * sin URL prefirmada el navegador no tiene a donde escribir. Por eso la
+     * barrera se comprueba en la autorizacion, que es donde se entrega.
+     */
+    const res = await autorizarPOST(req({ fileName: "x.pdf", size: 1024 }), {
+      params: Promise.resolve({ token: "tok" }),
+    });
     expect(res.status).toBe(403);
+    const { getPresignedUploadUrl } = await import("../src/lib/s3");
+    expect(getPresignedUploadUrl).not.toHaveBeenCalled();
     expect(prisma.document.create).not.toHaveBeenCalled();
   });
 
@@ -198,29 +217,75 @@ describe("Revocacion y caducidad del token", () => {
 });
 
 describe("Politica de archivos aplicada en el portal", () => {
-  function upload(file: File) {
-    return docsPOST(
-      req({}, async () => {
-        const fd = new FormData();
-        fd.set("file", file);
-        return fd;
-      }),
-      { params: Promise.resolve({ token: "tok" }) },
-    );
+  /*
+   * DONDE SE APLICA AHORA, Y POR QUE CAMBIA
+   * ---------------------------------------
+   * Con el multipart, el contenido falsificado se rechazaba ANTES de tocar S3
+   * porque los bytes pasaban por la funcion. Ya no pasan: el navegador escribe
+   * directo en el almacenamiento (una funcion de Vercel admite 4,5 MB y el
+   * maximo son 20 MiB). Asi que el objeto YA EXISTE cuando se le miran los
+   * bytes, y rechazarlo implica BORRARLO.
+   *
+   * La exigencia no baja: sigue sin crearse documento, y ademas se comprueba
+   * que el objeto no se queda en el bucket. Lo que se puede decidir sin bytes
+   * —la extension— se sigue cortando antes de firmar nada.
+   */
+  const PENDIENTE = {
+    id: "pu_1",
+    orgId: "org-1",
+    caseId: "case-1",
+    fileKey: "org-1/case-1/portal/" + "b".repeat(32) + ".pdf",
+    fileName: "factura.pdf",
+    expectedSize: 8,
+    uploadedBy: null,
+    isPortalUpload: true,
+    taskId: null,
+    status: "PENDING",
+    documentId: null,
+    failureReason: null,
+    expiresAt: new Date(Date.now() + 60_000),
+    createdAt: new Date(),
+  };
+
+  async function confirmarCon(bytes: Uint8Array) {
+    const { headObject, downloadHead } = await import("../src/lib/s3");
+    (prisma as any).pendingUpload.findUnique.mockResolvedValue(PENDIENTE);
+    (prisma as any).pendingUpload.update.mockResolvedValue({});
+    (headObject as any).mockResolvedValue({ contentLength: bytes.length });
+    (downloadHead as any).mockResolvedValue(Buffer.from(bytes));
+    return confirmarPOST(req({ uploadId: "pu_1" }), {
+      params: Promise.resolve({ token: "tok" }),
+    });
   }
 
-  it("rechaza un MIME falsificado antes de subir a S3", async () => {
+  it("rechaza un MIME falsificado y BORRA el objeto del bucket", async () => {
+    // PNG dentro de un .pdf. El cliente ya no declara tipo: deciden los bytes.
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    const res = await upload(new File([png], "factura.pdf", { type: "application/pdf" }));
+    const res = await confirmarCon(png);
 
     expect(res.status).toBe(400);
-    const { uploadFile } = await import("../src/lib/s3");
-    expect(uploadFile).not.toHaveBeenCalled();
+    expect(prisma.document.create).not.toHaveBeenCalled();
+    const { deleteFile } = await import("../src/lib/s3");
+    expect(deleteFile).toHaveBeenCalledWith(PENDIENTE.fileKey);
   });
 
-  it("rechaza un ejecutable renombrado", async () => {
-    const exe = new Uint8Array([0x4d, 0x5a, 0x90, 0x00]);
-    const res = await upload(new File([exe], "documento.pdf", { type: "application/pdf" }));
+  it("rechaza un ejecutable renombrado y BORRA el objeto del bucket", async () => {
+    const exe = new Uint8Array([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00]);
+    const res = await confirmarCon(exe);
+
     expect(res.status).toBe(400);
+    expect(prisma.document.create).not.toHaveBeenCalled();
+    const { deleteFile } = await import("../src/lib/s3");
+    expect(deleteFile).toHaveBeenCalledWith(PENDIENTE.fileKey);
+  });
+
+  it("una extension no admitida no llega ni a recibir permiso de escritura", async () => {
+    const res = await autorizarPOST(req({ fileName: "programa.exe", size: 16 }), {
+      params: Promise.resolve({ token: "tok" }),
+    });
+
+    expect(res.status).toBe(400);
+    const { getPresignedUploadUrl } = await import("../src/lib/s3");
+    expect(getPresignedUploadUrl).not.toHaveBeenCalled();
   });
 });

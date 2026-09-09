@@ -267,6 +267,7 @@ model Case {
   workflowLogs   WorkflowLog[]
   portalMessages PortalMessage[]
   portalConsents PortalConsent[]
+  pendingUploads PendingUpload[]
 
   /// La referencia se generaba con `count + 1` fuera de transacción: dos altas
   /// simultáneas producían la misma. Esta restricción hace que la segunda
@@ -428,6 +429,64 @@ model Document {
   task Task? @relation("TaskDocuments", fields: [taskId], references: [id])
 
   @@index([caseId, visibleToFamily])
+}
+
+/// Subida en curso: el archivo viaja del navegador a S3 y NO pasa por la
+/// función.
+///
+/// POR QUÉ EXISTE
+/// --------------
+/// Una función de Vercel admite como máximo 4,5 MB de cuerpo de petición. El
+/// contrato del producto son 20 MiB, así que el archivo no puede atravesarla:
+/// el navegador lo sube directamente al almacenamiento con una URL prefirmada.
+/// Eso parte la operación en dos viajes (autorizar y confirmar) y deja un hueco
+/// entre ambos. Esta tabla es lo que vive en ese hueco.
+///
+/// QUÉ SOSTIENE
+/// ------------
+///   - La AUTORIZACIÓN: la clave, el expediente, la organización y el actor los
+///     fija el servidor al autorizar. En la confirmación no se vuelve a creer
+///     nada de lo que diga el cliente: se lee de aquí.
+///   - La IDEMPOTENCIA: `status` se reclama en la misma transacción que crea el
+///     documento, y `documentId` es único. Dos confirmaciones simultáneas de la
+///     misma subida no pueden crear dos filas.
+///   - La LIMPIEZA: `expiresAt` permite localizar y borrar los objetos de las
+///     subidas que se autorizaron y nunca se confirmaron, que si no se
+///     quedarían en el bucket para siempre sin que ninguna fila los mencione.
+model PendingUpload {
+  id     String @id @default(cuid())
+  orgId  String
+  caseId String
+
+  /// Clave en el bucket. La genera el servidor; el cliente nunca la propone.
+  fileKey String @unique
+  /// Nombre ya saneado en la autorización.
+  fileName String
+  /// Tamaño declarado al autorizar. En la confirmación se compara con el
+  /// tamaño REAL del objeto: si no coinciden, no se crea documento.
+  expectedSize Int
+
+  /// Contexto del actor, fijado al autorizar.
+  uploadedBy     String?
+  isPortalUpload Boolean @default(false)
+  /// Vinculación manual a tarea, ya validada contra expediente y organización.
+  taskId String?
+
+  /// PENDING | COMPLETED | FAILED
+  status String @default("PENDING")
+  /// Documento creado. Único: es la barrera final contra duplicados.
+  documentId String? @unique
+  /// Motivo del descarte, para poder explicar por qué no se guardó.
+  failureReason String?
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  /// Lo consulta la limpieza de caducadas.
+  @@index([status, expiresAt])
+  @@index([caseId])
 }
 
 // ─── TEMPLATE ───────────────────────────────────────────

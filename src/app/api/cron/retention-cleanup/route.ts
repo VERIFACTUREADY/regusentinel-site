@@ -4,6 +4,7 @@ import { runRetention, purgeOldPromptLogs, reintentarPurga } from "@/lib/retenti
 import { PROMPT_LOG_RETENTION_DAYS } from "@/lib/ai-privacy";
 import { sendEmail } from "@/lib/email";
 import { validateCronSecret } from "@/lib/cron-auth";
+import { limpiarSubidasCaducadas } from "@/lib/subida-directa";
 
 export async function GET(req: NextRequest) {
   if (!validateCronSecret(req)) {
@@ -18,6 +19,21 @@ export async function GET(req: NextRequest) {
   // documentos en S3, mientras la politica de privacidad afirmaba lo contrario.
   const retention = await runRetention(prisma, now);
   const promptLogsPurged = await purgeOldPromptLogs(PROMPT_LOG_RETENTION_DAYS, prisma);
+
+  /*
+   * Subidas autorizadas que nunca se confirmaron.
+   *
+   * Con la subida directa al almacenamiento, el servidor firma un permiso de
+   * escritura y el navegador escribe por su cuenta. Si el usuario cierra la
+   * pestaña entre una cosa y la otra, el objeto queda en el bucket sin ninguna
+   * fila que lo mencione. Esta pasada es la garantía de que eso se recoge; la
+   * autorización barre además unas pocas cada vez, para que no se acumulen
+   * entre ejecuciones del cron.
+   */
+  const subidasCaducadas = await limpiarSubidasCaducadas({ ahora: now }).catch((err) => {
+    console.error("Limpieza de subidas caducadas fallida:", err);
+    return null;
+  });
 
   const results = retention.results.map((r) => ({
     name: r.ref,
@@ -64,6 +80,7 @@ export async function GET(req: NextRequest) {
     needsIntervention: retention.needsIntervention,
     alerts: retention.alerts,
     promptLogsPurged,
+    subidasCaducadas,
     // Solo referencias de expediente; sin nombres ni emails.
     details: retention.results.map((r) => ({ ref: r.ref, ok: r.ok, error: r.error })),
     timestamp: now.toISOString(),

@@ -1,19 +1,38 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../src/lib/prisma", () => ({
-  prisma: {
+vi.mock("../src/lib/prisma", () => {
+  /*
+   * `$transaction` ejecuta el callback contra ESTE mismo doble, para que las
+   * aserciones sobre `document.create` sigan valiendo tanto si la escritura
+   * ocurre dentro de la transaccion como fuera.
+   */
+  const prisma: any = {
     case: { findFirst: vi.fn(), update: vi.fn() },
     portalMessage: { findMany: vi.fn(), create: vi.fn() },
-    document: { findMany: vi.fn(), create: vi.fn() },
+    document: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn() },
     // El portal exige consentimiento vigente para toda accion.
     portalConsent: { findFirst: vi.fn(), create: vi.fn() },
-    task: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-  },
-}));
+    task: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    // Estado del hueco entre autorizar y confirmar la subida directa.
+    pendingUpload: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      updateMany: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+  };
+  prisma.$transaction = vi.fn(async (fn: any) => fn(prisma));
+  return { prisma };
+});
 
 vi.mock("../src/lib/s3", () => ({
   uploadFile: vi.fn().mockResolvedValue(undefined),
   getPresignedUrl: vi.fn().mockResolvedValue("https://signed-url"),
+  getPresignedUploadUrl: vi.fn().mockResolvedValue("https://signed-put-url"),
+  headObject: vi.fn(),
+  downloadHead: vi.fn(),
   deleteFile: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -37,7 +56,14 @@ vi.mock("../src/lib/deadline-engine", () => ({
 }));
 
 import { prisma } from "../src/lib/prisma";
-import { uploadFile, getPresignedUrl } from "../src/lib/s3";
+import {
+  uploadFile,
+  getPresignedUrl,
+  getPresignedUploadUrl,
+  headObject,
+  downloadHead,
+  deleteFile,
+} from "../src/lib/s3";
 import { logAudit } from "../src/lib/audit";
 import { matchDocumentToTag } from "../src/lib/doc-task-matching";
 import { triggerWorkflow } from "../src/lib/workflow-engine";
@@ -46,7 +72,9 @@ import { PORTAL_CONSENT_VERSION } from "../src/lib/portal-consent";
 import { GET as portalGET } from "../src/app/api/portal/[token]/route";
 import { GET as messagesGET, POST as messagesPOST } from "../src/app/api/portal/[token]/messages/route";
 import { POST as consentPOST } from "../src/app/api/portal/[token]/consent/route";
-import { GET as docsGET, POST as docsPOST } from "../src/app/api/portal/[token]/documents/route";
+import { GET as docsGET } from "../src/app/api/portal/[token]/documents/route";
+import { POST as autorizarPOST } from "../src/app/api/portal/[token]/documents/upload-url/route";
+import { POST as confirmarPOST } from "../src/app/api/portal/[token]/documents/complete/route";
 
 const caseFindFirst = prisma.case.findFirst as unknown as ReturnType<typeof vi.fn>;
 const caseUpdate = prisma.case.update as unknown as ReturnType<typeof vi.fn>;
@@ -64,6 +92,19 @@ const matchMock = matchDocumentToTag as unknown as ReturnType<typeof vi.fn>;
 const workflowMock = triggerWorkflow as unknown as ReturnType<typeof vi.fn>;
 const consentFindFirst = prisma.portalConsent.findFirst as unknown as ReturnType<typeof vi.fn>;
 const consentCreate = prisma.portalConsent.create as unknown as ReturnType<typeof vi.fn>;
+
+// Piezas de la subida en dos pasos.
+const docFindUnique = prisma.document.findUnique as unknown as ReturnType<typeof vi.fn>;
+const taskFindMany = prisma.task.findMany as unknown as ReturnType<typeof vi.fn>;
+const pendingCreate = (prisma as any).pendingUpload.create as ReturnType<typeof vi.fn>;
+const pendingFindUnique = (prisma as any).pendingUpload.findUnique as ReturnType<typeof vi.fn>;
+const pendingFindMany = (prisma as any).pendingUpload.findMany as ReturnType<typeof vi.fn>;
+const pendingUpdateMany = (prisma as any).pendingUpload.updateMany as ReturnType<typeof vi.fn>;
+const pendingUpdate = (prisma as any).pendingUpload.update as ReturnType<typeof vi.fn>;
+const firmaSubidaMock = getPresignedUploadUrl as unknown as ReturnType<typeof vi.fn>;
+const headMock = headObject as unknown as ReturnType<typeof vi.fn>;
+const headBytesMock = downloadHead as unknown as ReturnType<typeof vi.fn>;
+const borrarMock = deleteFile as unknown as ReturnType<typeof vi.fn>;
 
 /** Consentimiento vigente: lo exigen subida, descarga y mensajes. */
 function grantConsent() {
@@ -125,11 +166,20 @@ function fakeCase(overrides: any = {}) {
 }
 
 function resetAll() {
-  for (const m of [caseFindFirst, caseUpdate, msgFindMany, msgCreate, docFindMany, docCreate, taskFindFirst, taskFindUnique, taskUpdate, uploadMock, presignedMock, auditMock, matchMock, workflowMock, consentFindFirst, consentCreate]) {
+  for (const m of [caseFindFirst, caseUpdate, msgFindMany, msgCreate, docFindMany, docCreate, docFindUnique, taskFindFirst, taskFindUnique, taskFindMany, taskUpdate, uploadMock, presignedMock, auditMock, matchMock, workflowMock, consentFindFirst, consentCreate, pendingCreate, pendingFindUnique, pendingFindMany, pendingUpdateMany, pendingUpdate, firmaSubidaMock, headMock, headBytesMock, borrarMock]) {
     m.mockReset();
   }
   uploadMock.mockResolvedValue(undefined);
   presignedMock.mockResolvedValue("https://signed-url");
+  firmaSubidaMock.mockResolvedValue("https://signed-put-url");
+  borrarMock.mockResolvedValue(undefined);
+  // El barrido oportunista de caducadas no debe estorbar a ninguna prueba.
+  pendingFindMany.mockResolvedValue([]);
+  pendingCreate.mockImplementation(async ({ data }: any) => ({ id: "pu_1", ...data }));
+  // `update` devuelve promesa en Prisma real; sin este valor por defecto el
+  // doble devuelve `undefined` y el `.catch()` del descarte revienta.
+  pendingUpdate.mockResolvedValue({});
+  taskFindMany.mockResolvedValue([]);
   auditMock.mockResolvedValue(undefined);
   workflowMock.mockResolvedValue(undefined);
   // Por defecto hay consentimiento: cada bloque que pruebe su ausencia lo
@@ -375,135 +425,289 @@ describe("GET /api/portal/[token]/documents — listar documentos", () => {
   });
 });
 
-describe("POST /api/portal/[token]/documents — subir documento", () => {
+describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
   beforeEach(resetAll);
 
-  // La politica de archivos valida el CONTENIDO, no el Content-Type: los
-  // ficheros de prueba llevan la cabecera %PDF real.
-  function fakeFile(name: string, mimeType = "application/pdf", size = 1024): File {
-    const blob = new Blob([pdfBytes("x".repeat(size))], { type: mimeType });
-    return new File([blob], name, { type: mimeType });
+  /*
+   * POR QUE DOS PASOS
+   * -----------------
+   * El archivo ya no atraviesa la funcion: una funcion de Vercel admite 4,5 MB
+   * de cuerpo y el maximo del producto son 20 MiB. El navegador escribe directo
+   * en el almacenamiento con una URL prefirmada, asi que estas pruebas cubren
+   * AUTORIZAR (permisos, tenencia, politica de nombre y tamano) y CONFIRMAR
+   * (objeto real, contenido real, creacion de la fila).
+   *
+   * Lo que se exige aqui es lo mismo que se exigia al multipart; lo unico que
+   * cambia es donde ocurre.
+   */
+
+  const CABECERA_PDF = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a]);
+  const TAMANO = 1024;
+
+  function pendiente(overrides: any = {}) {
+    return {
+      id: "pu_1",
+      orgId: "org1",
+      caseId: "case_abc",
+      fileKey: "org1/case_abc/portal/" + "a".repeat(32) + ".pdf",
+      fileName: "dni.pdf",
+      expectedSize: TAMANO,
+      uploadedBy: null,
+      isPortalUpload: true,
+      taskId: null,
+      status: "PENDING",
+      documentId: null,
+      failureReason: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      createdAt: new Date(),
+      ...overrides,
+    };
   }
 
-  function fakeFormReq(file: File | null) {
-    return fakeReq({
-      form: async () => {
-        const fd = new FormData();
-        if (file) fd.set("file", file);
-        return fd;
-      },
+  /** Deja lista una confirmacion que llega hasta la creacion del documento. */
+  function prepararConfirmacion(overrides: any = {}) {
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
+    pendingFindUnique.mockResolvedValue(pendiente(overrides));
+    headMock.mockResolvedValue({ contentLength: TAMANO });
+    headBytesMock.mockResolvedValue(CABECERA_PDF);
+    pendingUpdateMany.mockResolvedValue({ count: 1 });
+    pendingUpdate.mockResolvedValue({});
+    taskFindMany.mockResolvedValue([]);
+  }
+
+  function autorizar(body: any) {
+    return autorizarPOST(fakeReq({ body }), { params: Promise.resolve({ token: "tok123" }) });
+  }
+
+  function confirmar(uploadId = "pu_1") {
+    return confirmarPOST(fakeReq({ body: { uploadId } }), {
+      params: Promise.resolve({ token: "tok123" }),
     });
   }
 
-  it("404 si el expediente no existe", async () => {
+  it("404 si el expediente no existe: no se firma ninguna URL de escritura", async () => {
     caseFindFirst.mockResolvedValueOnce(null);
-    const res = await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: Promise.resolve({ token: "x" }) });
+    const res = await autorizar({ fileName: "dni.pdf", size: TAMANO });
     expect(res.status).toBe(404);
-    expect(uploadMock).not.toHaveBeenCalled();
+    expect(firmaSubidaMock).not.toHaveBeenCalled();
+    expect(pendingCreate).not.toHaveBeenCalled();
   });
 
-  it("400 si no se envia archivo", async () => {
+  it("400 si no se dice que archivo es", async () => {
     caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
-    const res = await docsPOST(fakeFormReq(null), { params: Promise.resolve({ token: "tok123" }) });
+    const res = await autorizar({});
     expect(res.status).toBe(400);
-    expect(uploadMock).not.toHaveBeenCalled();
+    expect(firmaSubidaMock).not.toHaveBeenCalled();
   });
 
-  it("happy path: sube a S3, crea Document, auto-match tarea + audit log", async () => {
+  it("la clave la genera el servidor y no lleva el nombre del usuario", async () => {
     caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
-    matchMock.mockReturnValueOnce("DNI"); // doc se identifica como DNI
+    pendingCreate.mockImplementation(async ({ data }: any) => ({ id: "pu_1", ...data }));
+
+    const res = await autorizar({ fileName: "dni.pdf", size: TAMANO });
+    expect(res.status).toBe(201);
+
+    const clave = pendingCreate.mock.calls[0][0].data.fileKey;
+    // Aleatoria y dentro del ambito: ni adivinable ni con el nombre dentro.
+    expect(clave).toMatch(/^org1\/case_abc\/portal\/[0-9a-f]{32}\.pdf$/);
+    expect(clave).not.toContain("dni.pdf");
+    expect(firmaSubidaMock).toHaveBeenCalledWith(clave, expect.anything());
+  });
+
+  it("un formato no admitido no llega a recibir permiso de escritura", async () => {
+    caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
+    const res = await autorizar({ fileName: "programa.exe", size: TAMANO });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/Formato no admitido/);
+    expect(firmaSubidaMock).not.toHaveBeenCalled();
+  });
+
+  it("un tamano por encima del maximo se rechaza con 413 antes de firmar", async () => {
+    caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
+    const res = await autorizar({ fileName: "dni.pdf", size: 21 * 1024 * 1024 });
+    expect(res.status).toBe(413);
+    expect((await res.json()).error).toBe("El archivo supera el máximo de 20 MB.");
+    expect(firmaSubidaMock).not.toHaveBeenCalled();
+  });
+
+  it("happy path: verifica el objeto, crea Document, vincula tarea y audita", async () => {
+    prepararConfirmacion();
+    matchMock.mockReturnValueOnce("DNI");
+    // 1a: la busqueda por docTag. 2a: la relectura de findTaskInCase.
     taskFindFirst.mockResolvedValueOnce({ id: "t1", title: "Subir DNI heredero" });
     docCreate.mockResolvedValueOnce({ id: "doc_new", fileName: "dni.pdf" });
     taskFindFirst.mockResolvedValueOnce({ id: "t1", title: "Subir DNI heredero", status: "PENDING" });
     taskUpdate.mockResolvedValueOnce({});
 
-    const res = await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: Promise.resolve({ token: "tok123" }) });
+    const res = await confirmar();
     const body = await res.json();
 
     expect(res.status).toBe(201);
     expect(body.id).toBe("doc_new");
 
+    // El tamano se comprueba contra el objeto REAL, no contra lo declarado.
+    expect(headMock).toHaveBeenCalledOnce();
 
-    // S3 upload
-    expect(uploadMock).toHaveBeenCalledOnce();
-    const [fileKey, , mimeType] = uploadMock.mock.calls[0];
-    // Clave aleatoria: la anterior era `${Date.now()}-${file.name}`, adivinable
-    // y con el nombre proporcionado por el usuario dentro de la ruta.
-    expect(fileKey).toMatch(/^org1\/case_abc\/portal\/[0-9a-f]{32}\.pdf$/);
-    expect(fileKey).not.toContain("dni.pdf");
-    expect(mimeType).toBe("application/pdf");
-
-    // Document vinculado a la tarea
     expect(docCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         caseId: "case_abc",
         taskId: "t1",
         fileName: "dni.pdf",
         isPortalUpload: true,
+        visibleToFamily: true,
+        fileSize: TAMANO,
       }),
     });
 
-    // Task pasa a READY automaticamente
     expect(taskUpdate).toHaveBeenCalledWith({
       where: { id: "t1" },
       data: { status: "READY" },
     });
 
-    // Dos audits: uno por la tarea auto-actualizada, otro por el upload
+    // Dos audits: la tarea auto-actualizada y la subida.
     expect(auditMock).toHaveBeenCalledTimes(2);
     /*
      * El evento lleva la identidad DEL DOCUMENTO. Sin ella la clave del motor
      * era `(org, regla, expediente, tipo, ventana de 5 min)`, asi que dos
-     * documentos seguidos del mismo expediente contaban como un solo hecho y
-     * la automatizacion solo se ejecutaba para el primero.
+     * documentos seguidos del mismo expediente contaban como un solo hecho.
      */
     expect(workflowMock).toHaveBeenCalledWith({
       type: "DOCUMENT_UPLOADED",
       orgId: "org1",
       caseId: "case_abc",
+      userId: undefined,
       eventKey: "document:doc_new",
     });
   });
 
-  it("documento sin match de tarea: se sube sin vincular y audit dice 'sin tarea'", async () => {
-    caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
-    matchMock.mockReturnValueOnce(null); // no se identifica el tag
+  it("documento sin match de tarea: se guarda sin vincular y con un solo audit", async () => {
+    prepararConfirmacion({ fileName: "otro.pdf" });
+    matchMock.mockReturnValueOnce(null);
     docCreate.mockResolvedValueOnce({ id: "doc_new" });
 
-    await docsPOST(fakeFormReq(fakeFile("otro.pdf")), { params: Promise.resolve({ token: "tok123" }) });
+    await confirmar();
 
     expect(docCreate).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        taskId: null,
-        fileName: "otro.pdf",
-      }),
+      data: expect.objectContaining({ taskId: null, fileName: "otro.pdf" }),
     });
     expect(taskUpdate).not.toHaveBeenCalled();
-    // Solo 1 audit (el del upload), no el de tarea actualizada
     expect(auditMock).toHaveBeenCalledTimes(1);
   });
 
   it("tarea ya DONE no se modifica al subir el documento (no degrada)", async () => {
-    caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
+    prepararConfirmacion();
     matchMock.mockReturnValueOnce("DNI");
     taskFindFirst.mockResolvedValueOnce({ id: "t1", title: "Subir DNI" });
     docCreate.mockResolvedValueOnce({ id: "doc_new" });
-    taskFindUnique.mockResolvedValueOnce({ id: "t1", title: "Subir DNI", status: "DONE" });
+    taskFindFirst.mockResolvedValueOnce({ id: "t1", title: "Subir DNI", status: "DONE" });
 
-    await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: Promise.resolve({ token: "tok123" }) });
+    await confirmar();
 
     expect(taskUpdate).not.toHaveBeenCalled();
   });
 
-  it("error en upload S3 devuelve 500 con mensaje generico", async () => {
-    caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
-    uploadMock.mockRejectedValueOnce(new Error("S3 quota exceeded"));
+  it("un fallo del almacenamiento devuelve 500 generico y no filtra el motivo", async () => {
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
+    pendingFindUnique.mockResolvedValue(pendiente());
+    headMock.mockRejectedValueOnce(new Error("S3 quota exceeded"));
 
-    const res = await docsPOST(fakeFormReq(fakeFile("dni.pdf")), { params: Promise.resolve({ token: "tok123" }) });
+    const res = await confirmar();
     const body = await res.json();
 
     expect(res.status).toBe(500);
     expect(body.error).toBe("Error al subir archivo");
     expect(body.error).not.toContain("S3 quota");
+    expect(docCreate).not.toHaveBeenCalled();
+  });
+
+  it("si el objeto no esta, no se inventa un documento", async () => {
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
+    pendingFindUnique.mockResolvedValue(pendiente());
+    headMock.mockResolvedValue(null); // 404 real del almacenamiento
+
+    const res = await confirmar();
+    expect(res.status).toBe(400);
+    expect(docCreate).not.toHaveBeenCalled();
+  });
+
+  it("un objeto de tamano distinto al autorizado se descarta y se borra", async () => {
+    prepararConfirmacion();
+    // Se autorizo 1024 y se ha escrito otra cosa: no es la operacion permitida.
+    headMock.mockResolvedValue({ contentLength: TAMANO + 1 });
+
+    const res = await confirmar();
+
+    expect(res.status).toBe(400);
+    expect(docCreate).not.toHaveBeenCalled();
+    expect(borrarMock).toHaveBeenCalledWith(pendiente().fileKey);
+    expect(pendingUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) }),
+    );
+  });
+
+  it("un contenido que no corresponde a la extension se descarta y se borra", async () => {
+    prepararConfirmacion();
+    // Bytes de PNG dentro de un .pdf: lo delata el contenido, no la cabecera
+    // declarada, que aqui ya no la pone nadie.
+    headBytesMock.mockResolvedValue(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+
+    const res = await confirmar();
+
+    expect(res.status).toBe(400);
+    expect(docCreate).not.toHaveBeenCalled();
+    expect(borrarMock).toHaveBeenCalledWith(pendiente().fileKey);
+  });
+
+  it("confirmar dos veces no crea dos documentos", async () => {
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
+    // Ya confirmada: la segunda llamada devuelve el mismo documento.
+    pendingFindUnique.mockResolvedValue(
+      pendiente({ status: "COMPLETED", documentId: "doc_new" }),
+    );
+    docFindUnique.mockResolvedValue({ id: "doc_new", fileName: "dni.pdf" });
+
+    const res = await confirmar();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.id).toBe("doc_new");
+    expect(docCreate).not.toHaveBeenCalled();
+  });
+
+  it("una subida de OTRO expediente no se puede confirmar desde este portal", async () => {
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
+    pendingFindUnique.mockResolvedValue(pendiente({ caseId: "case_ajeno", orgId: "org2" }));
+
+    const res = await confirmar();
+
+    expect(res.status).toBe(404);
+    expect(docCreate).not.toHaveBeenCalled();
+  });
+
+  it("una subida INTERNA no se puede confirmar desde el portal", async () => {
+    // El origen decide autoria y visibilidad: cambiarlo aqui convertiria un
+    // documento interno en visible para la familia.
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
+    pendingFindUnique.mockResolvedValue(pendiente({ isPortalUpload: false }));
+
+    const res = await confirmar();
+
+    expect(res.status).toBe(404);
+    expect(docCreate).not.toHaveBeenCalled();
+  });
+
+  it("una subida caducada se descarta y no crea documento", async () => {
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
+    pendingFindUnique.mockResolvedValue(
+      pendiente({ expiresAt: new Date(Date.now() - 1000) }),
+    );
+
+    const res = await confirmar();
+
+    expect(res.status).toBe(410);
+    expect(docCreate).not.toHaveBeenCalled();
+    expect(borrarMock).toHaveBeenCalledWith(pendiente().fileKey);
   });
 });

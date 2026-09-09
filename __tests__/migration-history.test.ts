@@ -53,6 +53,7 @@ const HISTORIAL_CONGELADO: Record<string, string> = {
   "20260805200000_case_counter": "abfb1f9f40dbfde8",
   "20260806000000_workflow_claim_before_send": "4ddc64df31599e58",
   "20260806120000_invitaciones": "9579eab038223447",
+  "20260909184718_subidas_directas_a_almacenamiento": "61ee2c792112ab32",
 };
 
 function huella(nombre: string): string {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
+import { subirAlAlmacen } from "@/lib/subida-navegador";
 
 const statusLabels: Record<string, string> = {
   INTAKE: "Recibido",
@@ -184,6 +185,8 @@ export default function PortalPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  /** Porcentaje real del envío al almacenamiento; `null` si no hay ninguno. */
+  const [progreso, setProgreso] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState("");
   const [uploadOk, setUploadOk] = useState("");
   const [docsError, setDocsError] = useState("");
@@ -274,18 +277,34 @@ export default function PortalPage() {
    */
   async function uploadFile(file: File) {
     setUploading(true);
+    setProgreso(null);
     setUploadError("");
     setUploadOk("");
-    const formData = new FormData();
-    formData.append("file", file);
     try {
-      const res = await fetch(`/api/portal/${token}/documents`, {
+      // 1. Permiso: token, consentimiento, formato y tamaño. Sin bytes todavía.
+      const auth = await fetch(`/api/portal/${token}/documents/upload-url`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, size: file.size }),
       });
-      if (!res.ok) {
-        const cuerpo = await res.json().catch(() => null);
-        throw new Error(cuerpo?.error || `El servidor ha respondido ${res.status}.`);
+      if (!auth.ok) {
+        const cuerpo = await auth.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${auth.status}.`);
+      }
+      const { uploadId, uploadUrl } = await auth.json();
+
+      // 2. El documento va directo al almacenamiento, sin pasar por la función.
+      await subirAlAlmacen(uploadUrl, file, { onProgreso: setProgreso });
+
+      // 3. Confirmación: hasta aquí NO se le dice a la familia que ha llegado.
+      const fin = await fetch(`/api/portal/${token}/documents/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uploadId }),
+      });
+      if (!fin.ok) {
+        const cuerpo = await fin.json().catch(() => null);
+        throw new Error(cuerpo?.error || `El servidor ha respondido ${fin.status}.`);
       }
       setUploadOk(`"${file.name}" se ha enviado correctamente.`);
       fetchDocs();
@@ -297,7 +316,9 @@ export default function PortalPage() {
         }`,
       );
     } finally {
+      // Ningún camino puede dejar el portal en «Enviando…» indefinidamente.
       setUploading(false);
+      setProgreso(null);
     }
   }
 
@@ -561,7 +582,19 @@ export default function PortalPage() {
               }`}
               style={!uploading ? { backgroundColor: primary } : undefined}
             >
-              {uploading ? "Subiendo…" : "Seleccionar archivo"}
+              {/*
+                Progreso REAL mientras el archivo viaja al almacenamiento. Esta
+                pantalla la usa gente sin contexto tecnico en el peor momento de
+                su vida: dejarla mirando un boton quieto durante minutos es
+                pedirle que adivine si ha funcionado.
+              */}
+              {uploading
+                ? progreso === null
+                  ? "Subiendo…"
+                  : progreso < 100
+                    ? `Subiendo… ${progreso}%`
+                    : "Comprobando…"
+                : "Seleccionar archivo"}
               <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
             </label>
           </div>

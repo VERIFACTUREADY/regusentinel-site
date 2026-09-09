@@ -1,19 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { uploadFile, getPresignedUrl, deleteFile } from "@/lib/s3";
-import { logAudit } from "@/lib/audit";
-import { matchDocumentToTag } from "@/lib/doc-task-matching";
-import { triggerWorkflow, claveDeEvento } from "@/lib/workflow-engine";
+import { getPresignedUrl } from "@/lib/s3";
 import { rateLimit } from "@/lib/api-rate-limit";
 import { resolvePortalAccess } from "@/lib/portal-access";
-import { validateFile, sanitizeFileName, buildFileKey, MAX_FILE_BYTES, MAX_FILE_MB } from "@/lib/file-policy";
 
 /**
- * GET — documentos visibles para la familia.
+ * Documentos visibles para la familia.
  *
- * Antes devolvía TODOS los documentos del expediente, incluidos los internos,
- * cada uno con su URL de descarga prefirmada. El filtro `visibleToFamily` es
- * la corrección: los documentos internos son privados por defecto.
+ * GET — antes devolvía TODOS los documentos del expediente, incluidos los
+ * internos, cada uno con su URL de descarga prefirmada. El filtro
+ * `visibleToFamily` es la corrección: los documentos internos son privados por
+ * defecto.
+ *
+ * AQUÍ YA NO SE SUBE NADA, Y ES A PROPÓSITO
+ * -----------------------------------------
+ * El `POST` multipart de esta ruta se ha retirado por el mismo motivo que el de
+ * la ficha del expediente: una función de Vercel admite 4,5 MB de cuerpo y el
+ * producto promete 20 MiB, así que el archivo no puede atravesarla. La familia
+ * sube ahora directamente al almacenamiento:
+ *
+ *   POST  documents/upload-url  → autoriza (token + consentimiento) y firma
+ *   POST  documents/complete    → verifica el objeto real y crea la fila
+ *
+ * El consentimiento se sigue exigiendo en AMBOS pasos.
  */
 export async function GET(req: NextRequest, props: { params: Promise<{ token: string }> }) {
   const params = await props.params;
@@ -44,149 +53,4 @@ export async function GET(req: NextRequest, props: { params: Promise<{ token: st
   );
 
   return NextResponse.json(docsWithUrls);
-}
-
-export async function POST(req: NextRequest, props: { params: Promise<{ token: string }> }) {
-  const params = await props.params;
-  // 10 uploads/min por IP. Limite muy bajo porque cada upload escribe en S3 + DB.
-  const limited = rateLimit(req, { bucket: "portal-docs-upload", windowMs: 60_000, max: 10 });
-  if (limited) return limited;
-
-  const access = await resolvePortalAccess(params.token, { requireConsent: true });
-  if (!access.ok) return access.response;
-  const c = access.case;
-
-  let fileKey: string | null = null;
-
-  try {
-    /*
-     * Mismo caso que en la subida desde la ficha: Next 15 lanza al parsear un
-     * multipart demasiado grande, antes de que la comprobacion de tamano de
-     * abajo pueda responder con el limite. La familia se merece leer por que
-     * se ha rechazado su documento tanto como el gestor.
-     *
-     * Lo declarado solo se mira cuando el parseo YA ha fallado: el armazon del
-     * multipart abulta, y comparar `content-length` a secas rechazaria un
-     * archivo de exactamente el maximo.
-     */
-    let formData: FormData;
-    try {
-      formData = await req.formData();
-    } catch (errorDeParseo) {
-      const declarado = Number(req.headers.get("content-length") ?? "");
-      if (Number.isFinite(declarado) && declarado > MAX_FILE_BYTES) {
-        return NextResponse.json(
-          { error: `El archivo supera el máximo de ${MAX_FILE_MB} MB.` },
-          { status: 413 },
-        );
-      }
-      throw errorDeParseo;
-    }
-
-    const file = formData.get("file");
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: "No se encontro archivo" }, { status: 400 });
-    }
-
-    // Tamaño ANTES de leer el contenido: así un archivo de 2 GB no llega
-    // siquiera a cargarse en memoria ni a subirse a S3.
-    if (file.size > MAX_FILE_BYTES) {
-      return NextResponse.json(
-        { error: `El archivo supera el máximo de ${MAX_FILE_MB} MB.` },
-        { status: 413 },
-      );
-    }
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const verdict = validateFile({
-      fileName: file.name,
-      size: buffer.length,
-      declaredMime: file.type,
-      head: buffer.subarray(0, 4096),
-    });
-    if (!verdict.ok) {
-      return NextResponse.json({ error: verdict.message }, { status: 400 });
-    }
-
-    const safeName = sanitizeFileName(file.name);
-    fileKey = buildFileKey({ orgId: c.orgId, caseId: c.id, fileName: safeName, fromPortal: true });
-
-    await uploadFile(fileKey, buffer, verdict.detectedType ?? "application/octet-stream");
-
-    // Auto-match document to a task (siempre dentro de este expediente).
-    let linkedTaskId: string | null = null;
-    const docTag = matchDocumentToTag(safeName);
-    if (docTag) {
-      const matchingTask = await prisma.task.findFirst({
-        where: {
-          caseId: c.id,
-          docTag,
-          status: { in: ["PENDING", "IN_PROGRESS", "BLOCKED"] },
-        },
-        orderBy: { sortOrder: "asc" },
-      });
-      if (matchingTask) linkedTaskId = matchingTask.id;
-    }
-
-    let doc;
-    try {
-      doc = await prisma.document.create({
-        data: {
-          caseId: c.id,
-          taskId: linkedTaskId,
-          fileName: safeName,
-          fileKey,
-          mimeType: verdict.detectedType,
-          fileSize: buffer.length,
-          isPortalUpload: true,
-          // Lo ha subido la familia: es suyo y debe poder verlo.
-          visibleToFamily: true,
-        },
-      });
-    } catch (dbError) {
-      // Compensación: el objeto ya está en S3 pero la fila no existe. Sin esto
-      // el bucket acumulaba huérfanos que nadie podía borrar ni encontrar.
-      await deleteFile(fileKey).catch((e) =>
-        console.error("No se pudo limpiar el objeto huérfano en S3:", fileKey, e),
-      );
-      throw dbError;
-    }
-
-    if (linkedTaskId) {
-      const task = await prisma.task.findFirst({
-        where: { id: linkedTaskId, caseId: c.id },
-      });
-      if (task && (task.status === "PENDING" || task.status === "IN_PROGRESS")) {
-        await prisma.task.update({ where: { id: task.id }, data: { status: "READY" } });
-
-        await logAudit({
-          orgId: c.orgId,
-          caseId: c.id,
-          action: "task.auto_updated_portal",
-          details: `Tarea "${task.title}" actualizada a READY por un documento del portal`,
-        });
-      }
-    }
-
-    await logAudit({
-      orgId: c.orgId,
-      caseId: c.id,
-      action: "portal.document_uploaded",
-      details: `Documento subido desde el portal familiar${linkedTaskId ? " (vinculado a tarea)" : ""}`,
-    });
-
-    triggerWorkflow({
-      type: "DOCUMENT_UPLOADED",
-      orgId: c.orgId,
-      caseId: c.id,
-      // Mismo motivo que en la subida interna: sin el id del documento, dos
-      // documentos seguidos del portal contaban como uno.
-      eventKey: claveDeEvento.documentoSubido(doc.id),
-    }).catch(console.error);
-
-    return NextResponse.json(doc, { status: 201 });
-  } catch (error) {
-    console.error("Portal upload error:", error);
-    return NextResponse.json({ error: "Error al subir archivo" }, { status: 500 });
-  }
 }
