@@ -2005,3 +2005,55 @@ cada comportamiento de borde: donde importaba, se probó contra MinIO real y se
 dejó anotado. No se afirma CORS configurado en el bucket de producción. No se
 afirma cero vulnerabilidades: xlsx sigue siendo un bloqueo de producción aparte,
 deliberadamente fuera del alcance de esta fase.
+
+## 2026-09-14 — Verificación en CI real: imagen de MinIO muerta en Docker Hub y un ALTA de producción sin revisar
+
+Al esperar la CI de la fase anterior sobre el commit ya empujado, "Integración
+S3 (MinIO real)" y "E2E Playwright" fallaron dos veces seguidas (dos intentos,
+dos workflows cada vez) con el mismo error:
+
+```
+docker: Error response from daemon: pull access denied for minio/minio,
+repository does not exist or may require 'docker login': denied
+```
+
+La primera lectura —límite temporal de Docker Hub— era incorrecta. Comprobado
+contra la API pública: la imagen `minio/minio:RELEASE.2025-04-22T22-12-26Z`
+que fija `.github/workflows/ci.yml` ya no existe en Docker Hub
+(`{"message":"object not found"}`, no un 429). MinIO retiró sus imágenes de
+Docker Hub; el mismo tag, sin cambios, sigue publicado en
+`quay.io/minio/minio`. Es un defecto preexistente del workflow —idéntico ya en
+`d899d2d`, no introducido por esta fase ni la anterior— que hacía im**posible**
+que esos dos jobs se pusieran en verde nunca, con independencia de si el
+código era correcto. Corregido cambiando el origen de la imagen a
+`quay.io/minio/minio` en los dos sitios donde se arranca el contenedor (mismo
+tag exacto, mismo binario). No se ha tocado `docker-compose.yml` (mismo
+problema, pero solo afecta al entorno local de desarrollo, no a la puerta de
+CI que este cierre debe verificar).
+
+Por separado, la auditoría de producción mostró un tercer ALTA sin revisar,
+distinto de los dos de xlsx: `nodemailer` `GHSA-2x7j-588g-ccc2` (complejidad
+O(n²) en `addressparser`, DoS remoto vía una lista de direcciones manipulada).
+La versión (9.0.5) no cambió entre `d899d2d` y esta rama — no lo causó ningún
+cambio de esta fase, es un aviso que no estaba revisado. Comprobado contra el
+código, no supuesto: la superficie SÍ es alcanzable. `z.string().email()` (usado
+en `src/app/api/register/route.ts` y en `src/lib/validations.ts` para el email
+de contacto de expediente) no limita la longitud —una cadena de 50.000
+caracteres en la parte local sigue pasando esa validación, comprobado en este
+puesto—, y ese valor llega sin más límite a `to` en `sendWelcomeEmail` /
+`sendPortalLink`, que nodemailer parsea con `addressparser`. Un registro público
+no autenticado con un "email" adversarialmente largo bastaría para intentar el
+DoS. No se trata de una migración mayor: `npm audit` señala arreglo disponible
+con una versión compatible, `9.1.1` (misma serie 9.x), que corrige las cuatro
+vulnerabilidades listadas para el paquete (la de ALTA y tres MODERADAS de
+suplantación de dominio). Aplicado: `nodemailer` `^9.0.5` → `^9.1.1`. Reaudite
+de producción tras el cambio: únicamente quedan los dos ALTA de xlsx, ya
+conocidos y fuera de alcance. Los 101 tests que ejercitan las funciones de
+envío de correo (`register-flow`, `cron-digest-briefing`, `cron-ops`,
+`cron-revenue`, `stripe-idempotency`, `workflow-safety`) se repitieron después
+del cambio: 101/101 en verde.
+
+Ninguna de las dos correcciones toca los diez defectos A–J de la subida
+directa ni cambia su lógica; son requisitos de la propia puerta de entrega de
+esta fase (los cinco jobs no-auditoría deben quedar en verde; la auditoría
+solo puede seguir en rojo por xlsx) que no se podían cumplir sin ellas.

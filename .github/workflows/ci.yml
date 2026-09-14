@@ -245,13 +245,23 @@ jobs:
       # contenedor. La alternativa habitual —la imagen de Bitnami, que arranca
       # sola— dejo de publicar la etiqueta `latest` y el pull falla con
       # `manifest unknown`. Con `docker run` controlamos ambas cosas.
+      #
+      # Registro: `quay.io/minio/minio`, no Docker Hub.
+      #
+      # MinIO retiro sus imagenes de Docker Hub; el mismo tag exacto que antes
+      # se resolvia alli (`RELEASE.2025-04-22T22-12-26Z`) ahora responde
+      # "object not found" en la API de Docker Hub y el pull falla con
+      # "pull access denied" en cada intento, no de forma intermitente. El
+      # mismo tag SI existe, sin cambios, en quay.io/minio/minio, que es el
+      # registro que MinIO publica activamente. Este cambio es solo de origen
+      # de la imagen: mismo tag, mismo binario.
       - name: Arrancar MinIO
         run: |
           docker run -d --name minio-ci \
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin123 \
-            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+            quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
 
       # Verificacion explicita: si MinIO no responde, el job falla AQUI con un
       # mensaje claro en vez de dejar que las pruebas se salten en silencio.
@@ -351,13 +361,16 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - run: npx prisma generate
 
+      # Registro: quay.io, no Docker Hub — ver el comentario equivalente en el
+      # job de integracion S3 mas arriba (MinIO retiro sus imagenes de Docker
+      # Hub; mismo tag, origen distinto).
       - name: Arrancar MinIO
         run: |
           docker run -d --name minio-e2e \
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin123 \
-            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+            quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
 
       - name: Comprobar que MinIO responde
         run: |
