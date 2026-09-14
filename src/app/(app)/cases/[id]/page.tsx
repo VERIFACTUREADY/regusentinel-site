@@ -1186,10 +1186,10 @@ El equipo de gestión`;
         const cuerpo = await auth.json().catch(() => null);
         throw new Error(cuerpo?.error || `El servidor ha respondido ${auth.status}.`);
       }
-      const { uploadId, uploadUrl } = await auth.json();
+      const { uploadId, uploadUrl, fields } = await auth.json();
 
-      // 2. El archivo, directo al almacenamiento.
-      await subirAlAlmacen(uploadUrl, file, { onProgreso: setProgresoSubida });
+      // 2. El archivo, directo al almacenamiento, con la política firmada.
+      await subirAlAlmacen({ url: uploadUrl, fields }, file, { onProgreso: setProgresoSubida });
 
       // 3. Confirmación. Sólo aquí el documento pasa a existir.
       const fin = await fetch(`/api/cases/${caseId}/documents/complete`, {

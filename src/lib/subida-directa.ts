@@ -1,51 +1,80 @@
 /**
- * SUBIDA DIRECTA AL ALMACENAMIENTO: autorizar, y después verificar.
+ * SUBIDA DIRECTA AL ALMACENAMIENTO: autorizar, verificar y sólo ENTONCES fijar.
  *
  * EL PROBLEMA QUE RESUELVE
  * ------------------------
  * Una función de Vercel admite como máximo **4,5 MB** de cuerpo de petición.
- * El producto promete **20 MiB** por archivo. Mientras el multipart pasara por
- * la función, esa promesa era falsa en producción: el archivo ni siquiera
- * llegaba al código, lo cortaba la entrada de la plataforma. Que en local
- * funcionara no demostraba nada, porque en local no existe ese límite.
+ * El producto promete **20 MiB** por archivo. El navegador escribe directo en
+ * el almacenamiento con una política de subida firmada; la función sólo maneja
+ * JSON pequeño, dos veces:
  *
- * `middlewareClientMaxBodySize` sólo evita que Next 15 trunque el cuerpo en un
- * servidor propio; no puede levantar el techo de la plataforma.
+ *   1. AUTORIZAR — permisos, tenencia y política de nombre/tamaño. Fija una
+ *      clave de PREPARACIÓN y guarda un `PendingUpload`. Devuelve la política.
+ *   2. CONFIRMAR — vuelve a autenticar, inspecciona el objeto REAL en la clave
+ *      de preparación, lee sus bytes de forma condicionada a que no hayan
+ *      cambiado, y sólo si todo cuadra los COPIA a una clave FINAL nueva antes
+ *      de crear el documento.
  *
- * LA FORMA DE LA SOLUCIÓN
- * -----------------------
- * El archivo no atraviesa la función: el navegador lo sube directamente al
- * almacenamiento con una URL prefirmada. La función sólo maneja JSON pequeño,
- * dos veces:
+ * POR QUÉ DOS CLAVES, NO UNA (revisión de seguridad tras d899d2d)
+ * -----------------------------------------------------------------
+ * La primera versión firmaba un PUT desnudo sobre la clave que el `Document`
+ * acabaría usando. Dos huecos, ambos reproducidos contra MinIO real antes de
+ * corregirlos:
  *
- *   1. AUTORIZAR — comprueba permisos, tenencia y política, fija la clave y
- *      guarda un `PendingUpload` con lo que el servidor sabe. Devuelve la URL.
- *   2. CONFIRMAR — vuelve a autenticar, comprueba el objeto REAL (que existe,
- *      cuánto pesa y qué contiene) y sólo entonces crea el documento.
+ *   A) La URL de escritura sigue siendo válida hasta que caduca (15 min). Tras
+ *      confirmar, reutilizarla sobrescribía el MISMO objeto que el documento ya
+ *      referenciaba: la fila decía "PDF verificado, 1024 bytes" mientras el
+ *      bucket servía otra cosa. Ahora el documento sólo referencia la clave
+ *      FINAL, que el navegador nunca ve ni puede volver a escribir: reutilizar
+ *      la política de subida como mucho reescribe la preparación, que ya no le
+ *      importa a nadie una vez confirmado.
+ *
+ *   B) Una URL PUT desnuda no impone ningún tamaño: declarar 1 KB al autorizar
+ *      y escribir 21 MiB de verdad funcionaba —200 OK— sin que `complete`
+ *      llegara a intervenir. Ahora se firma una POLÍTICA POST con
+ *      `content-length-range` en el tamaño EXACTO autorizado: el propio
+ *      almacén rechaza cualquier otro tamaño ANTES de guardar nada. Verificado
+ *      contra la versión de MinIO fijada en la CI.
+ *
+ * LA CADENA DE INTEGRIDAD ENTRE INSPECCIONAR Y COPIAR
+ * ------------------------------------------------------
+ * Entre que se pregunta "¿qué hay ahí?" (`HeadObject`) y se lee el contenido,
+ * la clave de preparación sigue siendo escribible por cualquiera con la
+ * política. `leerObjetoSiCoincide` ata la lectura al ETag exacto que se acaba
+ * de inspeccionar con `If-Match`: si el objeto cambió entre medias, el almacén
+ * responde 412 y aquí se aborta, en vez de validar unos bytes y copiar otros.
+ * `crearObjetoSiNoExiste` usa `If-None-Match: *` al escribir la clave final,
+ * así que tampoco puede pisar un final ya existente.
  *
  * LO QUE ESTE ARCHIVO NO SE CREE
- * ------------------------------
+ * -------------------------------
  * Nada de lo que diga el cliente al confirmar salvo el identificador de la
- * subida. Organización, expediente, actor, clave, nombre y tamaño esperado se
- * leen del `PendingUpload` que escribió el servidor. El tamaño y el tipo se
- * comprueban contra el objeto, no contra lo que el navegador declare.
+ * subida. Organización, expediente, clave, nombre y tamaño esperado se leen
+ * del `PendingUpload` que escribió el servidor. El actor también se ata: para
+ * subidas internas, quien confirma debe ser el MISMO usuario que autorizó; para
+ * el portal, la misma aceptación de consentimiento (ver `ContextoActor` más
+ * abajo — el portal no tiene identidad por persona, y eso se documenta, no se
+ * disimula).
  *
  * EL PRECIO, DICHO CLARO
- * ----------------------
- * Con multipart, un contenido falsificado se rechazaba ANTES de tocar S3. Aquí
- * el objeto ya está escrito cuando se le miran los bytes, así que el rechazo
- * implica BORRARLO. Por eso todo camino de descarte pasa por `descartar()`, y
- * por eso existe la limpieza por caducidad: una subida autorizada que nadie
- * confirma dejaría el objeto en el bucket sin ninguna fila que lo mencione.
+ * ------------------------
+ * El objeto de preparación se escribe antes de que nadie mire su contenido, así
+ * que todo descarte implica borrarlo. Y una preparación autorizada que nadie
+ * confirma dejaría un objeto sin ninguna fila útil que lo mencione: de eso se
+ * ocupa `limpiarSubidasCaducadas`, con reclamación explícita (CAS) para que una
+ * limpieza y una confirmación que llegan a la vez no puedan pisarse.
  */
 
 import type { Document } from "@prisma/client";
 import { prisma } from "./prisma";
 import {
-  getPresignedUploadUrl,
-  headObject,
-  downloadHead,
+  crearPoliticaDeSubida,
+  inspeccionarObjeto,
+  leerObjetoSiCoincide,
+  crearObjetoSiNoExiste,
   deleteFile,
+  ErrorDePrecondicion,
+  type PoliticaDeSubida,
 } from "./s3";
 import { logAudit } from "./audit";
 import { matchDocumentToTag, DOC_MATCH_RULES } from "./doc-task-matching";
@@ -55,24 +84,37 @@ import {
   validarNombreYTamano,
   sanitizeFileName,
   buildFileKey,
+  buildStagingKey,
   MAX_FILE_BYTES,
   MAX_FILE_MB,
 } from "./file-policy";
 import { triggerWorkflow, claveDeEvento } from "./workflow-engine";
 
-/** Validez de la URL de escritura. Es un permiso: corto. */
+/** Validez de la política de subida. Es un permiso: corto. */
 const VALIDEZ_URL_SEGUNDOS = 15 * 60;
 
 /**
- * Validez del registro pendiente. Más larga que la URL a propósito: una subida
- * que empieza en el minuto 14 y tarda en terminar debe poder confirmarse.
+ * Validez del registro pendiente. Más larga que la política a propósito: una
+ * subida que empieza en el minuto 14 y tarda en terminar debe poder
+ * confirmarse.
  */
 const VALIDEZ_REGISTRO_MS = 60 * 60 * 1000;
 
-/** Cabecera que se trae para decidir el tipo real. Igual que en multipart. */
-const BYTES_DE_CABECERA = 4096;
+/**
+ * Cuánto se conserva una fila ya COMPLETED. Sólo sostiene la idempotencia de
+ * reintentos tras un corte de red; el `Document` y su objeto viven aparte y no
+ * dependen de esta fila. Pasado el plazo, sólo desaparece la FILA.
+ */
+const RETENCION_COMPLETADAS_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Cuántas caducadas se barren al autorizar. Bajo: no es la garantía, es ayuda. */
+/**
+ * Antigüedad a partir de la cual una reclamación de limpieza (`CLEANING`) se
+ * considera abandonada —el proceso se cayó a mitad— y otra pasada puede volver
+ * a reclamarla. Así una caída no deja la fila huérfana para siempre.
+ */
+const RECLAMACION_ABANDONADA_MS = 10 * 60 * 1000;
+
+/** Cuántas caducadas/abandonadas se barren al autorizar. Ayuda, no garantía. */
 const BARRIDO_OPORTUNISTA = 3;
 
 export interface ContextoActor {
@@ -81,6 +123,14 @@ export interface ContextoActor {
   /** Usuario del equipo. `null` cuando sube la familia desde el portal. */
   userId: string | null;
   isPortalUpload: boolean;
+  /**
+   * Identidad del consentimiento del portal vigente, cuando `isPortalUpload`.
+   * El portal no distingue personas —el enlace es compartido por la familia—,
+   * así que esto ata la operación a la ACEPTACIÓN concreta bajo la que actúa,
+   * no a un individuo. Es la atadura más fuerte que el modelo de datos actual
+   * puede ofrecer; queda documentada como límite, no disimulada.
+   */
+  portalConsentId?: string | null;
 }
 
 export type ResultadoAutorizacion =
@@ -88,6 +138,7 @@ export type ResultadoAutorizacion =
       ok: true;
       uploadId: string;
       uploadUrl: string;
+      fields: Record<string, string>;
       fileName: string;
       expiresAt: Date;
     }
@@ -105,10 +156,8 @@ export type ResultadoConfirmacion =
   | { ok: false; status: number; error: string };
 
 /**
- * Paso 1: autorizar. Devuelve una URL de escritura acotada a UNA clave.
- *
- * Todo lo que aquí se decide queda escrito en `PendingUpload`, porque es lo
- * único que la confirmación va a creerse después.
+ * Paso 1: autorizar. Devuelve una política de escritura acotada a UNA clave de
+ * preparación y a UN tamaño exacto.
  */
 export async function autorizarSubida(params: {
   actor: ContextoActor;
@@ -131,11 +180,10 @@ export async function autorizarSubida(params: {
   const fileName = sanitizeFileName(nombreCrudo);
 
   /*
-   * Nombre y tamaño, que es lo único comprobable sin bytes. El tamaño llega
-   * declarado por el cliente y podría mentir: por eso NO es la comprobación
-   * definitiva, sólo evita entregar un permiso de escritura para algo que ya
-   * se sabe inadmisible. La palabra final la tiene la confirmación contra el
-   * objeto real.
+   * Nombre y tamaño DECLARADOS: lo único comprobable sin bytes. Evita entregar
+   * un permiso de escritura a algo ya inadmisible. La palabra final la tiene
+   * el ALMACÉN (política content-length-range) y, después, la confirmación
+   * contra el objeto real.
    */
   const previo = validarNombreYTamano({ fileName, size });
   if (!previo.ok) {
@@ -146,8 +194,6 @@ export async function autorizarSubida(params: {
     };
   }
 
-  // La tarea se valida AHORA, contra expediente y organización. Si se dejara
-  // para la confirmación, el cliente podría cambiarla por el camino.
   let taskId: string | null = null;
   if (typeof params.taskId === "string" && params.taskId) {
     const tarea = await findTaskInCase(params.taskId, actor.caseId, actor.orgId);
@@ -161,37 +207,32 @@ export async function autorizarSubida(params: {
     taskId = tarea.id;
   }
 
-  // La clave la genera el servidor. El cliente no la propone ni la ve venir.
-  const fileKey = buildFileKey({
-    orgId: actor.orgId,
-    caseId: actor.caseId,
-    fileName,
-    fromPortal: actor.isPortalUpload,
-  });
+  // Clave de PREPARACIÓN, generada por el servidor. Nunca la usará el Document.
+  const stagingKey = buildStagingKey({ orgId: actor.orgId, caseId: actor.caseId, fileName });
 
   const pendiente = await prisma.pendingUpload.create({
     data: {
       orgId: actor.orgId,
       caseId: actor.caseId,
-      fileKey,
+      stagingKey,
       fileName,
       expectedSize: size,
       uploadedBy: actor.userId,
+      portalConsentId: actor.isPortalUpload ? (actor.portalConsentId ?? null) : null,
       isPortalUpload: actor.isPortalUpload,
       taskId,
       expiresAt: new Date(Date.now() + VALIDEZ_REGISTRO_MS),
     },
   });
 
-  const uploadUrl = await getPresignedUploadUrl(fileKey, {
-    expiresIn: VALIDEZ_URL_SEGUNDOS,
-  });
+  const politica: PoliticaDeSubida = await crearPoliticaDeSubida(
+    stagingKey,
+    size,
+    VALIDEZ_URL_SEGUNDOS,
+  );
 
-  /*
-   * Barrido oportunista. La garantía es el cron; esto sólo hace que, mientras
-   * la función se use, las caducadas no se acumulen. Un fallo aquí no puede
-   * impedir una subida legítima.
-   */
+  // Barrido oportunista: no es la garantía (lo es el cron), sólo evita que se
+  // acumulen mientras la función se usa. Un fallo aquí no bloquea la subida.
   try {
     await limpiarSubidasCaducadas({ limite: BARRIDO_OPORTUNISTA });
   } catch (err) {
@@ -201,43 +242,33 @@ export async function autorizarSubida(params: {
   return {
     ok: true,
     uploadId: pendiente.id,
-    uploadUrl,
+    uploadUrl: politica.url,
+    fields: politica.fields,
     fileName,
     expiresAt: pendiente.expiresAt,
   };
 }
 
-/** Borra el objeto y deja constancia de por qué no se guardó. */
-async function descartar(
-  pendienteId: string,
-  fileKey: string,
-  motivo: string,
-): Promise<void> {
+/** Borra el objeto de preparación y marca el motivo, sin lanzar. */
+async function descartar(pendienteId: string, stagingKey: string, motivo: string): Promise<void> {
   try {
-    await deleteFile(fileKey);
+    await deleteFile(stagingKey);
   } catch (err) {
-    // La fila queda en FAILED y sin caducar todavía: la recoge el barrido.
-    console.error("No se pudo borrar el objeto descartado:", fileKey, err);
+    console.error("No se pudo borrar el objeto de preparación descartado:", stagingKey, err);
   }
   await prisma.pendingUpload
-    .update({
-      where: { id: pendienteId },
-      data: { status: "FAILED", failureReason: motivo },
-    })
+    .update({ where: { id: pendienteId }, data: { status: "FAILED", failureReason: motivo } })
     .catch((err) => console.error("No se pudo marcar la subida como fallida:", err));
 }
 
 /** Señal interna: otra confirmación simultánea se llevó la subida. */
 class YaReclamada extends Error {}
+/** Señal interna: la limpieza la reclamó justo antes (CLEANING). */
+class EnLimpieza extends Error {}
 
 /**
- * Paso 2: confirmar. Comprueba el objeto real y crea el documento.
- *
- * Es idempotente y resistente a llamadas simultáneas: la reclamación del
- * registro pendiente va DENTRO de la misma transacción que crea el documento,
- * así que dos confirmaciones a la vez no pueden producir dos filas — la segunda
- * se queda esperando el bloqueo de fila, ve el estado ya cambiado y devuelve el
- * documento que creó la primera.
+ * Paso 2: confirmar. Inspecciona la preparación, la copia a una clave final
+ * nueva sólo si todo cuadra, y crea el documento.
  */
 export async function confirmarSubida(params: {
   actor: ContextoActor;
@@ -254,87 +285,82 @@ export async function confirmarSubida(params: {
   /*
    * Mismo 404 para "no existe" y "no es tuya": responder distinto convertiría
    * este endpoint en un oráculo para saber qué subidas hay en otras
-   * organizaciones.
+   * organizaciones o de qué persona.
    */
-  if (
-    !pendiente ||
-    pendiente.orgId !== actor.orgId ||
-    pendiente.caseId !== actor.caseId
-  ) {
+  const perteneceAlAmbito =
+    pendiente &&
+    pendiente.orgId === actor.orgId &&
+    pendiente.caseId === actor.caseId &&
+    pendiente.isPortalUpload === actor.isPortalUpload;
+
+  if (!perteneceAlAmbito) {
     return { ok: false, status: 404, error: "Subida no encontrada" };
   }
 
-  // Una subida del portal no se confirma desde la aplicación interna ni al
-  // revés: el origen decide visibilidad y autoría, y no puede cambiarse aquí.
-  if (pendiente.isPortalUpload !== actor.isPortalUpload) {
+  /*
+   * ATADURA DEL ACTOR.
+   *
+   * Sin esto, cualquier persona con permiso de subida EN EL MISMO expediente
+   * podía confirmar el `uploadId` de otra —adivinable sólo si se conoce, pero
+   * la barrera de tenencia no bastaba— y la auditoría atribuía el documento a
+   * quien nunca lo subió.
+   *
+   * Interno: el confirmador debe ser el MISMO usuario que autorizó.
+   * Portal: debe seguir vigente la MISMA aceptación de consentimiento bajo la
+   * que se autorizó. El portal no tiene identidad por persona —cualquier
+   * miembro de la familia con el enlace puede actuar—, así que esto no
+   * distingue personas dentro de la familia; distingue una sesión de portal
+   * autorizada de una petición que llega con sólo el `uploadId` adivinado o
+   * filtrado, y detecta si el consentimiento se retiró y se volvió a aceptar
+   * entre medias.
+   */
+  if (!pendiente!.isPortalUpload && pendiente!.uploadedBy !== actor.userId) {
+    return { ok: false, status: 404, error: "Subida no encontrada" };
+  }
+  if (pendiente!.isPortalUpload && pendiente!.portalConsentId !== (actor.portalConsentId ?? null)) {
     return { ok: false, status: 404, error: "Subida no encontrada" };
   }
 
-  // Ya confirmada: se devuelve lo mismo que la primera vez. Reintentar tras un
-  // corte de red no puede duplicar el documento.
-  if (pendiente.status === "COMPLETED" && pendiente.documentId) {
-    const existente = await prisma.document.findUnique({
-      where: { id: pendiente.documentId },
-    });
+  const pu = pendiente!;
+
+  // Ya confirmada: se devuelve lo mismo que la primera vez.
+  if (pu.status === "COMPLETED" && pu.documentId) {
+    const existente = await prisma.document.findUnique({ where: { id: pu.documentId } });
     if (existente) {
       return { ok: true, documento: existente, taskUpdated: false, yaConfirmada: true };
     }
   }
 
-  if (pendiente.status === "FAILED") {
-    return {
-      ok: false,
-      status: 400,
-      error: pendiente.failureReason ?? "La subida no se pudo completar.",
-    };
+  if (pu.status === "FAILED") {
+    return { ok: false, status: 400, error: pu.failureReason ?? "La subida no se pudo completar." };
   }
 
-  if (pendiente.expiresAt.getTime() < Date.now()) {
-    await descartar(pendiente.id, pendiente.fileKey, "La subida ha caducado.");
-    return {
-      ok: false,
-      status: 410,
-      error: "La subida ha caducado. Vuelve a intentarlo.",
-    };
+  if (pu.status === "CLEANING") {
+    return { ok: false, status: 410, error: "La subida ha caducado. Vuelve a intentarlo." };
   }
 
-  // ¿Está el objeto de verdad? Un fallo de consulta LANZA en `headObject`; sólo
-  // un 404 real devuelve null.
-  const cabecera = await headObject(pendiente.fileKey);
+  if (pu.expiresAt.getTime() < Date.now()) {
+    await descartar(pu.id, pu.stagingKey, "La subida ha caducado.");
+    return { ok: false, status: 410, error: "La subida ha caducado. Vuelve a intentarlo." };
+  }
+
+  // ¿Está el objeto de preparación de verdad? Un fallo de consulta LANZA en
+  // `inspeccionarObjeto`; sólo un 404 real del almacén devuelve null.
+  const cabecera = await inspeccionarObjeto(pu.stagingKey);
   if (!cabecera) {
-    return {
-      ok: false,
-      status: 400,
-      error: "No se ha recibido el archivo. Vuelve a intentarlo.",
-    };
+    return { ok: false, status: 400, error: "No se ha recibido el archivo. Vuelve a intentarlo." };
   }
 
-  const tamanoReal = cabecera.contentLength;
+  const tamanoReal = cabecera.tamano;
 
-  // La política, contra el tamaño REAL. Esta es la comprobación que cuenta: la
-  // de la autorización se apoyaba en lo que declaró el cliente.
   if (tamanoReal > MAX_FILE_BYTES) {
-    await descartar(
-      pendiente.id,
-      pendiente.fileKey,
-      `El archivo supera el máximo de ${MAX_FILE_MB} MB.`,
-    );
-    return {
-      ok: false,
-      status: 413,
-      error: `El archivo supera el máximo de ${MAX_FILE_MB} MB.`,
-    };
+    await descartar(pu.id, pu.stagingKey, `El archivo supera el máximo de ${MAX_FILE_MB} MB.`);
+    return { ok: false, status: 413, error: `El archivo supera el máximo de ${MAX_FILE_MB} MB.` };
   }
-
-  /*
-   * Y contra lo que se autorizó. Que quepan 20 MiB no significa que valga
-   * cualquier cosa: se autorizó un archivo concreto de un tamaño concreto, y
-   * subir otro distinto con esa URL no es la operación autorizada.
-   */
-  if (tamanoReal !== pendiente.expectedSize) {
+  if (tamanoReal !== pu.expectedSize) {
     await descartar(
-      pendiente.id,
-      pendiente.fileKey,
+      pu.id,
+      pu.stagingKey,
       "El archivo recibido no coincide con el que se autorizó.",
     );
     return {
@@ -344,16 +370,27 @@ export async function confirmarSubida(params: {
     };
   }
 
-  // Contenido real. `declaredMime` no se pasa: aquí no hay nada que declarar
-  // ningún cliente, deciden los bytes.
-  const cabeceraBytes = await downloadHead(pendiente.fileKey, BYTES_DE_CABECERA);
-  const veredicto = validateFile({
-    fileName: pendiente.fileName,
-    size: tamanoReal,
-    head: cabeceraBytes,
-  });
+  // Lectura condicionada al ETag exacto inspeccionado: si el objeto cambia
+  // entre medias, el almacén responde 412 y aquí se aborta sin copiar nada.
+  let bytes: Buffer;
+  try {
+    bytes = await leerObjetoSiCoincide(pu.stagingKey, cabecera.etag, MAX_FILE_BYTES);
+  } catch (err) {
+    if (err instanceof ErrorDePrecondicion) {
+      // No se marca FAILED: puede ser una carrera legítima con un reintento en
+      // vuelo. El cliente puede reintentar confirmar.
+      return {
+        ok: false,
+        status: 409,
+        error: "El archivo ha cambiado mientras se verificaba. Vuelve a intentarlo.",
+      };
+    }
+    throw err;
+  }
+
+  const veredicto = validateFile({ fileName: pu.fileName, size: tamanoReal, head: bytes });
   if (!veredicto.ok) {
-    await descartar(pendiente.id, pendiente.fileKey, veredicto.message!);
+    await descartar(pu.id, pu.stagingKey, veredicto.message!);
     return {
       ok: false,
       status: veredicto.reason === "too_large" ? 413 : 400,
@@ -361,78 +398,118 @@ export async function confirmarSubida(params: {
     };
   }
 
-  // Vinculación a tarea: la manual ya venía validada desde la autorización; si
-  // no la hay, se intenta por nombre, siempre dentro de este expediente.
-  let linkedTaskId: string | null = pendiente.taskId;
-  if (!linkedTaskId) {
-    const docTag = matchDocumentToTag(pendiente.fileName);
+  // Vinculación a tarea: se revalida AHORA, porque pudo borrarse entre la
+  // autorización y la confirmación.
+  let linkedTaskId: string | null = null;
+  if (pu.taskId) {
+    const tarea = await findTaskInCase(pu.taskId, pu.caseId, pu.orgId);
+    linkedTaskId = tarea?.id ?? null;
+  } else {
+    const docTag = matchDocumentToTag(pu.fileName);
     if (docTag) {
       const tarea = await prisma.task.findFirst({
-        where: {
-          caseId: pendiente.caseId,
-          docTag,
-          status: { in: ["PENDING", "IN_PROGRESS", "BLOCKED"] },
-        },
+        where: { caseId: pu.caseId, docTag, status: { in: ["PENDING", "IN_PROGRESS", "BLOCKED"] } },
         orderBy: { sortOrder: "asc" },
       });
-      if (tarea) linkedTaskId = tarea.id;
+      linkedTaskId = tarea?.id ?? null;
     }
   }
+
+  // Clave FINAL, nueva y aleatoria: el navegador nunca la ve.
+  const finalKey = buildFileKey({
+    orgId: pu.orgId,
+    caseId: pu.caseId,
+    fileName: pu.fileName,
+    fromPortal: pu.isPortalUpload,
+  });
+
+  // Escribe el final SÓLO si no existe ya (If-None-Match: *). Con clave
+  // aleatoria la colisión es prácticamente imposible; la comprobación es la
+  // garantía, no la probabilidad.
+  await crearObjetoSiNoExiste(finalKey, bytes, veredicto.detectedType ?? "application/octet-stream");
 
   let documento: Document;
   try {
     documento = await prisma.$transaction(async (tx) => {
       /*
-       * La reclamación y la creación, juntas. Si esto se hiciera en dos pasos,
-       * un fallo entre ambos dejaría la subida marcada como completada sin
-       * documento, y el reintento no podría arreglarlo.
+       * Reclamación y creación juntas, para que dos confirmaciones a la vez no
+       * puedan producir dos filas: la segunda ve el estado ya cambiado.
        */
       const reclamo = await tx.pendingUpload.updateMany({
-        where: { id: pendiente.id, status: "PENDING" },
-        data: { status: "COMPLETED" },
+        where: { id: pu.id, status: "PENDING" },
+        data: { status: "COMPLETED", completedAt: new Date() },
       });
       if (reclamo.count === 0) throw new YaReclamada();
 
-      const creado = await tx.document.create({
-        data: {
-          caseId: pendiente.caseId,
-          taskId: linkedTaskId,
-          fileName: pendiente.fileName,
-          fileKey: pendiente.fileKey,
-          mimeType: veredicto.detectedType,
-          fileSize: tamanoReal,
-          uploadedBy: pendiente.uploadedBy,
-          isPortalUpload: pendiente.isPortalUpload,
-          // Lo que sube la familia es suyo y lo ve; lo interno es privado.
-          visibleToFamily: pendiente.isPortalUpload,
-        },
-      });
+      /*
+       * La tarea pudo borrarse en el instante entre la revalidación de arriba
+       * y este `create` (ventana real, aunque estrecha). Si el `create` con
+       * `taskId` viola la clave foránea, se reintenta SIN vincular —nunca a
+       * otra tarea distinta— en vez de devolver un 500 o dejar el objeto final
+       * huérfano.
+       */
+      let creado: Document;
+      try {
+        creado = await tx.document.create({
+          data: {
+            caseId: pu.caseId,
+            taskId: linkedTaskId,
+            fileName: pu.fileName,
+            fileKey: finalKey,
+            mimeType: veredicto.detectedType,
+            fileSize: tamanoReal,
+            uploadedBy: pu.uploadedBy,
+            isPortalUpload: pu.isPortalUpload,
+            visibleToFamily: pu.isPortalUpload,
+          },
+        });
+      } catch (err) {
+        const prismaErr = err as { code?: string; meta?: { field_name?: unknown } };
+        const nombreCampo = prismaErr.meta?.field_name;
+        const esFkTarea =
+          prismaErr.code === "P2003" &&
+          typeof nombreCampo === "string" &&
+          nombreCampo.toLowerCase().includes("taskid");
+        if (!esFkTarea) throw err;
+        linkedTaskId = null;
+        creado = await tx.document.create({
+          data: {
+            caseId: pu.caseId,
+            taskId: null,
+            fileName: pu.fileName,
+            fileKey: finalKey,
+            mimeType: veredicto.detectedType,
+            fileSize: tamanoReal,
+            uploadedBy: pu.uploadedBy,
+            isPortalUpload: pu.isPortalUpload,
+            visibleToFamily: pu.isPortalUpload,
+          },
+        });
+      }
 
       await tx.pendingUpload.update({
-        where: { id: pendiente.id },
-        data: { documentId: creado.id },
+        where: { id: pu.id },
+        data: { finalKey, documentId: creado.id },
       });
 
       return creado;
     });
   } catch (err) {
     if (err instanceof YaReclamada) {
-      // Otra confirmación simultánea ganó la carrera. Ya ha comprometido su
-      // transacción, así que su documento existe: se devuelve ese.
-      const actual = await prisma.pendingUpload.findUnique({
-        where: { id: pendiente.id },
-      });
+      /*
+       * Otra confirmación simultánea ganó la carrera y ya comprometió su
+       * transacción. El objeto final que ACABAMOS de crear nosotros no lo usa
+       * nadie: sin borrarlo quedaría huérfano —dos objetos finales para una
+       * sola subida—. Se borra y se devuelve el documento de la ganadora.
+       */
+      await deleteFile(finalKey).catch((e) =>
+        console.error("No se pudo borrar el objeto final perdedor de la carrera:", finalKey, e),
+      );
+      const actual = await prisma.pendingUpload.findUnique({ where: { id: pu.id } });
       if (actual?.documentId) {
-        const existente = await prisma.document.findUnique({
-          where: { id: actual.documentId },
-        });
+        const existente = await prisma.document.findUnique({ where: { id: actual.documentId } });
         if (existente) {
-          return {
-            ok: true,
-            documento: existente,
-            taskUpdated: false,
-            yaConfirmada: true,
-          };
+          return { ok: true, documento: existente, taskUpdated: false, yaConfirmada: true };
         }
       }
       return {
@@ -441,55 +518,71 @@ export async function confirmarSubida(params: {
         error: "La subida se está confirmando. Vuelve a intentarlo.",
       };
     }
+    // Cualquier otro fallo: el objeto final que se acaba de crear no tiene
+    // documento que lo reclame. Se limpia antes de propagar el error.
+    await deleteFile(finalKey).catch((e) =>
+      console.error("No se pudo limpiar el objeto final tras un fallo de confirmación:", finalKey, e),
+    );
     throw err;
   }
 
   /*
-   * A partir de aquí, la transacción ya está comprometida. Lo que sigue son
-   * efectos: si algo falla, el documento sigue existiendo y es correcto.
+   * El objeto de preparación ya no hace falta: se borra ahora mismo. Se
+   * ESPERA (no es fire-and-forget): dejarlo suelto competía de forma real con
+   * la siguiente operación sobre la misma fila —incluida la propia limpieza
+   * por caducidad, que puede correr en cualquier momento— y el resultado era
+   * indistinguible de un fallo real. Si falla, no es grave: la limpieza lo
+   * reintentará (ver `limpiarSubidasCaducadas`, pasada de "preparación sin
+   * borrar tras confirmar"), y NO se retrasa la respuesta más que ese borrado.
+   */
+  try {
+    await deleteFile(pu.stagingKey);
+    await prisma.pendingUpload
+      .update({ where: { id: pu.id }, data: { stagingDeletedAt: new Date() } })
+      .catch(() => {});
+  } catch (err) {
+    console.error("No se pudo borrar la preparación tras confirmar:", pu.stagingKey, err);
+  }
+
+  /*
+   * A partir de aquí la transacción ya está comprometida: lo que sigue son
+   * efectos. Si algo falla, el documento sigue existiendo y es correcto.
    */
   let taskUpdated = false;
   if (linkedTaskId) {
-    const tarea = await findTaskInCase(linkedTaskId, pendiente.caseId, pendiente.orgId);
+    const tarea = await findTaskInCase(linkedTaskId, pu.caseId, pu.orgId);
     if (tarea && (tarea.status === "PENDING" || tarea.status === "IN_PROGRESS")) {
       await prisma.task.update({ where: { id: tarea.id }, data: { status: "READY" } });
       taskUpdated = true;
 
-      /*
-       * Las acciones de auditoría del portal y de la ficha son DISTINTAS y
-       * llevan siéndolo desde antes: se conservan tal cual. Renombrarlas
-       * rompería las consultas y el histórico ya escrito.
-       */
+      // Las acciones de auditoría del portal y de la ficha son DISTINTAS y lo
+      // llevan siendo desde antes: se conservan tal cual.
       await logAudit({
-        orgId: pendiente.orgId,
-        userId: pendiente.uploadedBy ?? undefined,
-        caseId: pendiente.caseId,
-        action: pendiente.isPortalUpload ? "task.auto_updated_portal" : "task.auto_updated",
-        details: pendiente.isPortalUpload
+        orgId: pu.orgId,
+        userId: pu.uploadedBy ?? undefined,
+        caseId: pu.caseId,
+        action: pu.isPortalUpload ? "task.auto_updated_portal" : "task.auto_updated",
+        details: pu.isPortalUpload
           ? `Tarea "${tarea.title}" actualizada a READY por un documento del portal`
-          : `Tarea "${tarea.title}" actualizada a READY por documento "${pendiente.fileName}"`,
+          : `Tarea "${tarea.title}" actualizada a READY por documento "${pu.fileName}"`,
       });
     }
   }
 
   await logAudit({
-    orgId: pendiente.orgId,
-    userId: pendiente.uploadedBy ?? undefined,
-    caseId: pendiente.caseId,
-    action: pendiente.isPortalUpload ? "portal.document_uploaded" : "document.uploaded",
-    details: pendiente.isPortalUpload
+    orgId: pu.orgId,
+    userId: pu.uploadedBy ?? undefined,
+    caseId: pu.caseId,
+    action: pu.isPortalUpload ? "portal.document_uploaded" : "document.uploaded",
+    details: pu.isPortalUpload
       ? `Documento subido desde el portal familiar${linkedTaskId ? " (vinculado a tarea)" : ""}`
-      : `Archivo "${pendiente.fileName}" subido${linkedTaskId ? " (vinculado a tarea)" : ""}`,
+      : `Archivo "${pu.fileName}" subido${linkedTaskId ? " (vinculado a tarea)" : ""}`,
   });
 
   let suggestions: string[] | undefined;
-  if (!linkedTaskId && !pendiente.isPortalUpload) {
+  if (!linkedTaskId && !pu.isPortalUpload) {
     const pendientes = await prisma.task.findMany({
-      where: {
-        caseId: pendiente.caseId,
-        status: { in: ["PENDING", "IN_PROGRESS"] },
-        docTag: { not: null },
-      },
+      where: { caseId: pu.caseId, status: { in: ["PENDING", "IN_PROGRESS"] }, docTag: { not: null } },
       select: { docTag: true, title: true },
       take: 5,
     });
@@ -503,9 +596,9 @@ export async function confirmarSubida(params: {
 
   triggerWorkflow({
     type: "DOCUMENT_UPLOADED",
-    orgId: pendiente.orgId,
-    caseId: pendiente.caseId,
-    userId: pendiente.uploadedBy ?? undefined,
+    orgId: pu.orgId,
+    caseId: pu.caseId,
+    userId: pu.uploadedBy ?? undefined,
     eventKey: claveDeEvento.documentoSubido(documento.id),
   }).catch(console.error);
 
@@ -520,56 +613,113 @@ export interface ResumenLimpieza {
 }
 
 /**
- * Borra los objetos de subidas autorizadas que nunca llegaron a confirmarse.
+ * Recoge lo que nadie confirmó y lo que se confirmó hace mucho.
  *
- * POR QUÉ NO BASTA CON BORRAR LA FILA
- * -----------------------------------
- * Si se borrara la fila sin haber borrado el objeto, el objeto quedaría en el
- * bucket para siempre y ya no habría nada que dijera que está ahí. Por eso la
- * fila sólo desaparece DESPUÉS de que el objeto se haya podido borrar; si el
- * borrado falla, la fila se queda y el siguiente barrido lo reintenta.
+ * TRES PASADAS, CADA UNA CON SU PROPIA GARANTÍA
+ * ------------------------------------------------
+ *  1. CADUCADAS SIN CONFIRMAR: reclama con CAS (`PENDING` → `CLEANING`) antes
+ *     de tocar nada. Si una confirmación gana la carrera —ya reclamó a
+ *     `COMPLETED`—, la reclamación de limpieza no encuentra fila que actualizar
+ *     y se salta esa subida sin haber borrado su objeto. Sólo tras reclamar se
+ *     borra el objeto y, si eso funciona, la fila.
+ *
+ *  2. RECLAMACIONES ABANDONADAS: una reclamación (`CLEANING`) de la que nadie
+ *     volvió a saber —el proceso se cayó entre reclamar y borrar— vuelve a
+ *     intentarse pasado `RECLAMACION_ABANDONADA_MS`. Así una caída no deja la
+ *     fila huérfana para siempre.
+ *
+ *  3. PREPARACIÓN SIN BORRAR TRAS CONFIRMAR: si el borrado inmediato al
+ *     confirmar falló, aquí se reintenta. Sólo toca `COMPLETED` con
+ *     `stagingDeletedAt IS NULL`, nunca la clave FINAL: borrar la preparación
+ *     de un documento ya vivo es seguro porque son claves DISTINTAS.
+ *
+ * Y, aparte, RETENCIÓN: filas `COMPLETED` más viejas que
+ * `RETENCION_COMPLETADAS_MS` se borran —sólo la FILA; el `Document` y su objeto
+ * final no dependen de esta tabla y no se tocan—.
  */
 export async function limpiarSubidasCaducadas(
   opciones: { limite?: number; ahora?: Date } = {},
 ): Promise<ResumenLimpieza> {
   const { limite = 100, ahora = new Date() } = opciones;
+  const resumen: ResumenLimpieza = { revisadas: 0, objetosBorrados: 0, filasBorradas: 0, errores: 0 };
 
-  const caducadas = await prisma.pendingUpload.findMany({
-    where: { status: { not: "COMPLETED" }, expiresAt: { lt: ahora } },
+  // ── 1 y 2: candidatas a limpiar (caducadas sin confirmar + reclamaciones abandonadas) ──
+  const candidatas = await prisma.pendingUpload.findMany({
+    where: {
+      OR: [
+        { status: "PENDING", expiresAt: { lt: ahora } },
+        {
+          status: "CLEANING",
+          claimedAt: { lt: new Date(ahora.getTime() - RECLAMACION_ABANDONADA_MS) },
+        },
+      ],
+    },
     take: limite,
-    select: { id: true, fileKey: true },
+    select: { id: true, stagingKey: true, status: true },
   });
+  resumen.revisadas += candidatas.length;
 
-  const resumen: ResumenLimpieza = {
-    revisadas: caducadas.length,
-    objetosBorrados: 0,
-    filasBorradas: 0,
-    errores: 0,
-  };
-
-  for (const caducada of caducadas) {
+  for (const candidata of candidatas) {
     try {
-      // Borrar una clave inexistente no es un error: la subida pudo
+      // CAS: sólo se reclama si sigue en el estado que se leyó. Si una
+      // confirmación ganó entre medias, `count` será 0 y no se toca el objeto.
+      const reclamo = await prisma.pendingUpload.updateMany({
+        where: { id: candidata.id, status: candidata.status },
+        data: { status: "CLEANING", claimedAt: ahora },
+      });
+      if (reclamo.count === 0) continue;
+    } catch (err) {
+      resumen.errores++;
+      console.error("No se pudo reclamar la subida para limpieza:", candidata.id, err);
+      continue;
+    }
+
+    try {
+      // Borrar una clave inexistente no es un error: la preparación pudo
       // autorizarse y no llegar a escribirse nunca.
-      await deleteFile(caducada.fileKey);
+      await deleteFile(candidata.stagingKey);
       resumen.objetosBorrados++;
     } catch (err) {
       resumen.errores++;
-      console.error(
-        "No se pudo borrar el objeto de una subida caducada:",
-        caducada.fileKey,
-        err,
-      );
+      console.error("No se pudo borrar el objeto de una subida caducada:", candidata.stagingKey, err);
+      // Se queda en CLEANING: la próxima pasada, pasado el margen, la reintenta.
       continue;
     }
     try {
-      await prisma.pendingUpload.delete({ where: { id: caducada.id } });
+      await prisma.pendingUpload.delete({ where: { id: candidata.id } });
       resumen.filasBorradas++;
     } catch (err) {
       resumen.errores++;
-      console.error("No se pudo borrar la subida caducada:", caducada.id, err);
+      console.error("No se pudo borrar la subida caducada:", candidata.id, err);
     }
   }
+
+  // ── 3: preparación de COMPLETED que no se pudo borrar al confirmar ──
+  const preparacionesPendientes = await prisma.pendingUpload.findMany({
+    where: { status: "COMPLETED", stagingDeletedAt: null },
+    take: limite,
+    select: { id: true, stagingKey: true },
+  });
+  for (const p of preparacionesPendientes) {
+    resumen.revisadas++;
+    try {
+      await deleteFile(p.stagingKey);
+      await prisma.pendingUpload.update({ where: { id: p.id }, data: { stagingDeletedAt: ahora } });
+      resumen.objetosBorrados++;
+    } catch (err) {
+      resumen.errores++;
+      console.error("No se pudo borrar la preparación de una subida ya confirmada:", p.stagingKey, err);
+    }
+  }
+
+  // ── Retención: filas COMPLETED viejas. Sólo la fila; nunca el Document. ──
+  const retiro = await prisma.pendingUpload.deleteMany({
+    where: {
+      status: "COMPLETED",
+      completedAt: { lt: new Date(ahora.getTime() - RETENCION_COMPLETADAS_MS) },
+    },
+  });
+  resumen.filasBorradas += retiro.count;
 
   return resumen;
 }

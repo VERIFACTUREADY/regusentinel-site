@@ -4,22 +4,31 @@
  *
  * QUE SE PRUEBA Y POR QUE ES DISTINTO DE LO ANTERIOR
  * ---------------------------------------------------
- * La aplicacion promete «maximo 20 MB». Hasta ahora eso se comprobaba mandando
- * el archivo a la propia ruta de Next, y pasaba. Pero en produccion no podia
- * pasar: una funcion de Vercel admite **4,5 MB** de cuerpo de peticion, asi que
- * el archivo lo cortaba la entrada de la plataforma antes de llegar al codigo.
- * La prueba estaba comprobando algo que en el sitio donde importa no ocurre.
+ * La aplicacion promete «maximo 20 MB». Una funcion de Vercel admite **4,5 MB**
+ * de cuerpo de peticion, asi que el archivo lo cortaria la entrada de la
+ * plataforma si pasara por la funcion. El navegador escribe DIRECTAMENTE en el
+ * almacenamiento con una politica de subida firmada (un POST con campos, no un
+ * PUT desnudo: el almacen impone el tamano exacto, ver `subida-directa-db.test.ts`
+ * para la reproduccion de por que eso importa). Por la funcion solo pasa JSON
+ * pequeno en `upload-url` y `complete`.
  *
- * Ahora el archivo va del NAVEGADOR al almacenamiento con una URL prefirmada, y
- * por la funcion solo pasa JSON pequeno. Estas pruebas lo conducen como una
- * persona —el control real de la pantalla, no una llamada al API— y ademas
- * vigilan el trafico para demostrar la propiedad que resuelve el bloqueo:
+ * Estas pruebas conducen el flujo como una persona —el control real de la
+ * pantalla, no una llamada al API— y ademas vigilan el trafico para demostrar
+ * la propiedad que resuelve el bloqueo:
  *
- *   NINGUNA peticion al origen de la aplicacion supera los 4,5 MB de Vercel,
- *   y los bytes del archivo aparecen en un PUT dirigido al ALMACENAMIENTO.
+ *   NINGUNA peticion mutadora al origen de la aplicacion supera los 4,5 MB de
+ *   Vercel, NINGUNA de ellas usa multipart/form-data (que es como viajaria el
+ *   archivo si volviera a pasar por la funcion), y los bytes del archivo
+ *   aparecen en un POST dirigido al ALMACENAMIENTO.
  *
- * Si alguien volviera a hacer pasar el archivo por la funcion, esa vigilancia
- * lo caza aunque la subida siga «funcionando» en local.
+ * FALLA EN CERRADO, NO EN ABIERTO
+ * ---------------------------------
+ * Una version anterior de esta vigilancia atrapaba en silencio los fallos de
+ * `postDataBuffer()`, asi que "ninguna peticion supero el limite" podia
+ * cumplirse sin haber observado el cuerpo de ninguna peticion. Ahora un cuerpo
+ * no observable en una peticion mutadora del mismo origen hace FALLAR la
+ * prueba de inmediato, con su URL y metodo: la ausencia de evidencia no cuenta
+ * como evidencia de ausencia.
  *
  * BYTES DE ARCHIVO, NO BYTES DE SOBRE
  * -----------------------------------
@@ -83,38 +92,94 @@ function pdfDe(bytes: number): Buffer {
   return b;
 }
 
+const ORIGEN_APP = "http://127.0.0.1:3000";
+
 interface Vigilancia {
-  /** PUT dirigidos al almacenamiento. */
+  /** POST dirigidos al almacenamiento (la politica de subida, no un PUT desnudo). */
   escriturasEnAlmacen: string[];
-  /** Mayor cuerpo enviado al origen de la APLICACION. */
+  /** Mayor cuerpo OBSERVADO entre las peticiones mutadoras del mismo origen. */
   mayorCuerpoALaApp: number;
+  /**
+   * Peticiones mutadoras del mismo origen cuyo cuerpo NO se pudo observar.
+   * Si esta lista no esta vacia al terminar la prueba, la vigilancia no puede
+   * responder por esa peticion: falla en CERRADO, no en abierto.
+   */
+  cuerposNoObservables: string[];
+  /** Peticiones del mismo origen que viajaron como multipart/form-data. */
+  multipartEnLaApp: string[];
 }
 
 /**
  * Anota el trafico para poder demostrar por donde van los bytes.
  *
- * Solo se mide el cuerpo de las peticiones a la aplicacion: leer el de un PUT
- * de 20 MiB al almacenamiento no aporta nada y cuesta memoria.
+ * TODA peticion mutadora (POST/PUT/PATCH) al origen de la APLICACION se
+ * registra, y su cuerpo se intenta leer. Si Playwright no puede exponerlo, la
+ * peticion se apunta en `cuerposNoObservables` en vez de ignorarse en
+ * silencio: quien llama a esta funcion tiene que comprobar esa lista antes de
+ * dar la prueba por buena, porque un cuerpo no observado no es un cuerpo
+ * pequeno.
  */
 function vigilarTrafico(page: Page): Vigilancia {
-  const v: Vigilancia = { escriturasEnAlmacen: [], mayorCuerpoALaApp: 0 };
+  const v: Vigilancia = {
+    escriturasEnAlmacen: [],
+    mayorCuerpoALaApp: 0,
+    cuerposNoObservables: [],
+    multipartEnLaApp: [],
+  };
 
   page.on("request", (peticion: Request) => {
     const url = peticion.url();
+    const metodo = peticion.method();
+
     if (url.startsWith(ALMACEN)) {
-      if (peticion.method() === "PUT") v.escriturasEnAlmacen.push(url);
+      // La politica de subida es un POST con campos, no un PUT desnudo: es lo
+      // que demuestra que el almacen —no la aplicacion— impone el tamano.
+      if (metodo === "POST") v.escriturasEnAlmacen.push(url);
       return;
     }
-    if (!url.startsWith("http://127.0.0.1:3000")) return;
+
+    if (!url.startsWith(ORIGEN_APP)) return;
+    if (metodo === "GET" || metodo === "HEAD" || metodo === "OPTIONS") return;
+
+    const tipo = peticion.headers()["content-type"] ?? "";
+    if (tipo.includes("multipart/form-data")) v.multipartEnLaApp.push(`${metodo} ${url}`);
+
     try {
       const cuerpo = peticion.postDataBuffer();
-      if (cuerpo && cuerpo.length > v.mayorCuerpoALaApp) v.mayorCuerpoALaApp = cuerpo.length;
+      if (cuerpo === null) {
+        // `null` es una respuesta valida de Playwright para "sin cuerpo": una
+        // peticion JSON pequena sin postData ya se conto por su Content-Length
+        // si lo tuviera, pero aqui no hay nada que medir y no es un fallo de
+        // observacion.
+        return;
+      }
+      if (cuerpo.length > v.mayorCuerpoALaApp) v.mayorCuerpoALaApp = cuerpo.length;
     } catch {
-      // Playwright no siempre expone el cuerpo. No se inventa un tamano.
+      // Aqui es donde la version anterior tragaba el fallo en silencio. Ahora
+      // se dice explicitamente que esta peticion no se pudo observar.
+      v.cuerposNoObservables.push(`${metodo} ${url}`);
     }
   });
 
   return v;
+}
+
+/**
+ * Falla la prueba en CERRADO si queda alguna peticion mutadora sin observar.
+ * Se llama SIEMPRE antes de leer `mayorCuerpoALaApp`, para que un hueco de
+ * observacion no pueda disfrazarse de "cuerpo pequeno".
+ */
+function exigirTraficoObservado(trafico: Vigilancia) {
+  expect(
+    trafico.cuerposNoObservables,
+    "toda peticion mutadora del mismo origen debe tener un cuerpo observable; " +
+      "una peticion sin observar no puede contar como 'dentro del limite'",
+  ).toEqual([]);
+  expect(
+    trafico.multipartEnLaApp,
+    "ninguna peticion al origen de la aplicacion puede viajar como multipart/form-data: " +
+      "asi es como viajaria el archivo si volviera a pasar por la funcion",
+  ).toEqual([]);
 }
 
 /** Lo que hay en el expediente antes de intentar la subida. */
@@ -199,6 +264,11 @@ test.describe("Limite de subida: ficha del expediente", () => {
           trafico.escriturasEnAlmacen,
           "un archivo por encima del maximo no debe escribirse en el almacen",
         ).toHaveLength(0);
+        exigirTraficoObservado(trafico);
+        expect(
+          trafico.mayorCuerpoALaApp,
+          `un rechazo tampoco puede mandar mas de ${LIMITE_VERCEL} bytes a la aplicacion`,
+        ).toBeLessThan(LIMITE_VERCEL);
         return;
       }
 
@@ -219,9 +289,10 @@ test.describe("Limite de subida: ficha del expediente", () => {
       expect(guardado.equals(contenido), "los bytes guardados son los enviados").toBe(true);
 
       // LA PROPIEDAD QUE RESUELVE EL BLOQUEO DE PRODUCCION.
+      exigirTraficoObservado(trafico);
       expect(
         trafico.escriturasEnAlmacen.length,
-        "el archivo debe escribirse directamente en el almacenamiento",
+        "el archivo debe escribirse directamente en el almacenamiento, en un POST con la politica firmada",
       ).toBeGreaterThanOrEqual(1);
       expect(
         trafico.mayorCuerpoALaApp,
@@ -310,6 +381,11 @@ test.describe("Limite de subida: portal familiar", () => {
         expect(despues.documentos).toBe(antes.documentos);
         expect(despues.claves, "no deja ningun objeto nuevo").toEqual(antes.claves);
         expect(trafico.escriturasEnAlmacen).toHaveLength(0);
+        exigirTraficoObservado(trafico);
+        expect(
+          trafico.mayorCuerpoALaApp,
+          `un rechazo tampoco puede mandar mas de ${LIMITE_VERCEL} bytes a la aplicacion`,
+        ).toBeLessThan(LIMITE_VERCEL);
         return;
       }
 
@@ -334,9 +410,10 @@ test.describe("Limite de subida: portal familiar", () => {
       expect(guardado.length).toBe(tamano.bytes);
       expect(guardado.equals(contenido)).toBe(true);
 
+      exigirTraficoObservado(trafico);
       expect(
         trafico.escriturasEnAlmacen.length,
-        "el archivo debe escribirse directamente en el almacenamiento",
+        "el archivo debe escribirse directamente en el almacenamiento, en un POST con la politica firmada",
       ).toBeGreaterThanOrEqual(1);
       expect(
         trafico.mayorCuerpoALaApp,

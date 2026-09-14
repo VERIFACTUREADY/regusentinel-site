@@ -6,6 +6,16 @@ vi.mock("../src/lib/prisma", () => ({
     organization: { findMany: vi.fn(), findUnique: vi.fn() },
     case: { updateMany: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), delete: vi.fn() },
     promptLog: { findMany: vi.fn(), deleteMany: vi.fn() },
+    // Subidas directas sin confirmar: `purgeCase` las resuelve antes de borrar
+    // el Case (la FK es RESTRICT). Ninguna prueba de este fichero ejercita ese
+    // camino a proposito, asi que por defecto no hay ninguna pendiente.
+    pendingUpload: {
+      findMany: vi.fn().mockResolvedValue([]),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      delete: vi.fn(),
+      update: vi.fn(),
+    },
     $transaction: vi.fn(),
     membership: { findMany: vi.fn() },
     user: { findUnique: vi.fn() },
@@ -159,6 +169,7 @@ describe("cron /retention-cleanup", () => {
         // la misma transaccion que el borrado: la fila `Case` desaparece, asi
         // que no puede registrar su propia purga.
         purgeEvidence: { create: vi.fn() },
+        pendingUpload: { deleteMany: vi.fn() },
         case: { delete: vi.fn() },
       }),
     );

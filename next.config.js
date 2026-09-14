@@ -1,58 +1,26 @@
 /*
- * LIMITE DEL CUERPO DE PETICION: EL MAXIMO DE SUBIDA TIENE QUE CABER.
+ * SIN TECHO DE CUERPO GLOBAL A PROPOSITO.
  *
- * EL DEFECTO QUE CORRIGE
- * ----------------------
- * Next 15 trae un limite propio para el cuerpo de la peticion —10 MB— que
- * Next 14 no tenia (`DEFAULT_BODY_CLONE_SIZE_LIMIT` en
- * `next/dist/server/body-streams.js`). Al superarlo NO responde un error: TRUNCA
- * el cuerpo y sigue, avisando por consola «Request body exceeded 10MB. Only the
- * first 10MB will be available». `req.formData()` recibe entonces un multipart
- * cortado por la mitad y lanza «Failed to parse body as FormData».
+ * Aqui habia `experimental.middlewareClientMaxBodySize = MAX_FILE_BYTES + 1 MiB`
+ * (22 020 096 bytes) para que un multipart de 20 MiB cupiera en las rutas de
+ * subida. Esas rutas ya no reciben archivos: el navegador escribe directamente
+ * en el almacen con una politica POST y la aplicacion solo recibe JSON pequeno
+ * (`upload-url` y `complete`). Mantener el techo ampliaba para TODAS las rutas
+ * el cuerpo que Next acepta clonar, sin que ninguna lo necesitara.
  *
- * Consecuencia medida sobre las rutas reales, con la aplicacion construida:
- *   - 19,9 MiB → 500 «Error al subir archivo» (el parseo falla y no es
- *     cuestion de tamano, asi que la excepcion sigue su camino).
- *   - 20 MiB EXACTOS → 413 «El archivo supera el maximo de 20 MB», es decir,
- *     se rechazaba un archivo que esta JUSTO en el limite permitido.
+ * Inventario de rutas comprobado al retirarlo: ninguna llama a `formData()`,
+ * `arrayBuffer()` ni `blob()`; la unica que lee el cuerpo en crudo es el webhook
+ * de Stripe (`req.text()`, cuerpos de kilobytes). La mayor entrada JSON legitima
+ * es la importacion de expedientes, acotada por la propia ruta a ~4 MB de
+ * base64. Queda el valor por defecto de Next (10 MB) y, en Vercel, el limite de
+ * 4,5 MB de la plataforma.
  *
- * O sea: la aplicacion prometia 20 MB y en la practica no admitia nada por
- * encima de 10 MB. Entre 10 y 20 MB mentia con un 500 generico, y en el limite
- * exacto mentia con un 413.
- *
- * POR QUE AQUI Y NO EN LA RUTA
- * ----------------------------
- * El truncamiento ocurre ANTES de que el handler exista; desde la ruta no hay
- * nada que interceptar. Este es el unico punto donde se puede subir el techo.
- *
- * POR QUE ESTE VALOR Y NO «SIN LIMITE»
- * ------------------------------------
- * Se deja el maximo real de archivo MAS un margen de 1 MiB para el armazon del
- * multipart (cabeceras, separadores y nombre del campo), que viaja con el
- * archivo y no cuenta como archivo. Asi:
- *   - un archivo de exactamente el maximo cabe y se acepta;
- *   - uno por encima del maximo se sigue rechazando con 413 y su mensaje real,
- *     ya sea por la comprobacion de `file.size` o por lo declarado;
- *   - el techo sigue acotado: no se pasa a almacenar peticiones sin limite.
- *
- * La aritmetica replica a proposito la de `src/lib/file-policy.ts` (que es
- * TypeScript y no se puede importar desde aqui). `__tests__/file-policy.test.ts`
- * comprueba que ambos siguen de acuerdo; si alguien cambia uno y no el otro,
- * esa prueba falla.
+ * `__tests__/file-policy.test.ts` falla si alguien vuelve a subir el techo o a
+ * recibir archivos por una ruta de la aplicacion.
  */
-const MB = 1024 * 1024;
-const maxSubidaMb = Number.parseInt(process.env.MAX_UPLOAD_MB ?? "", 10);
-const MAX_ARCHIVO_BYTES =
-  (Number.isFinite(maxSubidaMb) && maxSubidaMb > 0 && maxSubidaMb <= 200 ? maxSubidaMb : 20) * MB;
-
-/** Techo del cuerpo: el archivo mas el armazon del multipart. */
-const LIMITE_CUERPO_BYTES = MAX_ARCHIVO_BYTES + MB;
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    middlewareClientMaxBodySize: LIMITE_CUERPO_BYTES,
-  },
   images: {
     remotePatterns: [
       { protocol: 'http', hostname: 'localhost' },

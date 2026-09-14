@@ -23,19 +23,28 @@ vi.mock("../src/lib/prisma", () => {
       updateMany: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   };
   prisma.$transaction = vi.fn(async (fn: any) => fn(prisma));
   return { prisma };
 });
-vi.mock("../src/lib/s3", () => ({
-  uploadFile: vi.fn().mockResolvedValue(undefined),
-  getPresignedUrl: vi.fn().mockResolvedValue("https://signed"),
-  getPresignedUploadUrl: vi.fn().mockResolvedValue("https://signed-put"),
-  headObject: vi.fn(),
-  downloadHead: vi.fn(),
-  deleteFile: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock("../src/lib/s3", () => {
+  class ErrorDePrecondicion extends Error {}
+  return {
+    uploadFile: vi.fn().mockResolvedValue(undefined),
+    getPresignedUrl: vi.fn().mockResolvedValue("https://signed"),
+    crearPoliticaDeSubida: vi.fn().mockResolvedValue({
+      url: "https://signed-post",
+      fields: { key: "clave-firmada" },
+    }),
+    inspeccionarObjeto: vi.fn(),
+    leerObjetoSiCoincide: vi.fn(),
+    crearObjetoSiNoExiste: vi.fn().mockResolvedValue(undefined),
+    deleteFile: vi.fn().mockResolvedValue(undefined),
+    ErrorDePrecondicion,
+  };
+});
 vi.mock("../src/lib/audit", () => ({ logAudit: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../src/lib/doc-task-matching", () => ({ matchDocumentToTag: vi.fn(() => null) }));
 vi.mock("../src/lib/workflow-engine", () => ({ triggerWorkflow: vi.fn().mockResolvedValue(undefined) }));
@@ -78,6 +87,7 @@ function portalCase(over: Record<string, unknown> = {}) {
 
 function withConsent() {
   consentFindFirst.mockResolvedValue({
+    id: "consent-vigente-1",
     version: PORTAL_CONSENT_VERSION,
     textHash: "h",
     acceptedAt: new Date("2026-01-01"),
@@ -140,8 +150,8 @@ describe("Consentimiento como requisito", () => {
       params: Promise.resolve({ token: "tok" }),
     });
     expect(res.status).toBe(403);
-    const { getPresignedUploadUrl } = await import("../src/lib/s3");
-    expect(getPresignedUploadUrl).not.toHaveBeenCalled();
+    const { crearPoliticaDeSubida } = await import("../src/lib/s3");
+    expect(crearPoliticaDeSubida).not.toHaveBeenCalled();
     expect(prisma.document.create).not.toHaveBeenCalled();
   });
 
@@ -230,14 +240,17 @@ describe("Politica de archivos aplicada en el portal", () => {
    * que el objeto no se queda en el bucket. Lo que se puede decidir sin bytes
    * —la extension— se sigue cortando antes de firmar nada.
    */
+  const STAGING_KEY = "org-1/case-1/preparacion/" + "b".repeat(32) + ".pdf";
   const PENDIENTE = {
     id: "pu_1",
     orgId: "org-1",
     caseId: "case-1",
-    fileKey: "org-1/case-1/portal/" + "b".repeat(32) + ".pdf",
+    stagingKey: STAGING_KEY,
+    finalKey: null,
     fileName: "factura.pdf",
     expectedSize: 8,
     uploadedBy: null,
+    portalConsentId: "consent-vigente-1",
     isPortalUpload: true,
     taskId: null,
     status: "PENDING",
@@ -245,38 +258,46 @@ describe("Politica de archivos aplicada en el portal", () => {
     failureReason: null,
     expiresAt: new Date(Date.now() + 60_000),
     createdAt: new Date(),
+    completedAt: null,
+    stagingDeletedAt: null,
+    claimedAt: null,
   };
 
   async function confirmarCon(bytes: Uint8Array) {
-    const { headObject, downloadHead } = await import("../src/lib/s3");
+    const { inspeccionarObjeto, leerObjetoSiCoincide, crearObjetoSiNoExiste } = await import(
+      "../src/lib/s3"
+    );
     (prisma as any).pendingUpload.findUnique.mockResolvedValue(PENDIENTE);
     (prisma as any).pendingUpload.update.mockResolvedValue({});
-    (headObject as any).mockResolvedValue({ contentLength: bytes.length });
-    (downloadHead as any).mockResolvedValue(Buffer.from(bytes));
+    (inspeccionarObjeto as any).mockResolvedValue({ tamano: bytes.length, etag: '"etag"' });
+    (leerObjetoSiCoincide as any).mockResolvedValue(Buffer.from(bytes));
+    (crearObjetoSiNoExiste as any).mockResolvedValue(undefined);
     return confirmarPOST(req({ uploadId: "pu_1" }), {
       params: Promise.resolve({ token: "tok" }),
     });
   }
 
-  it("rechaza un MIME falsificado y BORRA el objeto del bucket", async () => {
+  it("rechaza un MIME falsificado, BORRA la preparacion y NO copia nada a la clave final", async () => {
     // PNG dentro de un .pdf. El cliente ya no declara tipo: deciden los bytes.
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     const res = await confirmarCon(png);
 
     expect(res.status).toBe(400);
     expect(prisma.document.create).not.toHaveBeenCalled();
-    const { deleteFile } = await import("../src/lib/s3");
-    expect(deleteFile).toHaveBeenCalledWith(PENDIENTE.fileKey);
+    const { deleteFile, crearObjetoSiNoExiste } = await import("../src/lib/s3");
+    expect(deleteFile).toHaveBeenCalledWith(STAGING_KEY);
+    expect(crearObjetoSiNoExiste).not.toHaveBeenCalled();
   });
 
-  it("rechaza un ejecutable renombrado y BORRA el objeto del bucket", async () => {
+  it("rechaza un ejecutable renombrado, BORRA la preparacion y NO copia nada a la clave final", async () => {
     const exe = new Uint8Array([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00]);
     const res = await confirmarCon(exe);
 
     expect(res.status).toBe(400);
     expect(prisma.document.create).not.toHaveBeenCalled();
-    const { deleteFile } = await import("../src/lib/s3");
-    expect(deleteFile).toHaveBeenCalledWith(PENDIENTE.fileKey);
+    const { deleteFile, crearObjetoSiNoExiste } = await import("../src/lib/s3");
+    expect(deleteFile).toHaveBeenCalledWith(STAGING_KEY);
+    expect(crearObjetoSiNoExiste).not.toHaveBeenCalled();
   });
 
   it("una extension no admitida no llega ni a recibir permiso de escritura", async () => {
@@ -285,7 +306,7 @@ describe("Politica de archivos aplicada en el portal", () => {
     });
 
     expect(res.status).toBe(400);
-    const { getPresignedUploadUrl } = await import("../src/lib/s3");
-    expect(getPresignedUploadUrl).not.toHaveBeenCalled();
+    const { crearPoliticaDeSubida } = await import("../src/lib/s3");
+    expect(crearPoliticaDeSubida).not.toHaveBeenCalled();
   });
 });

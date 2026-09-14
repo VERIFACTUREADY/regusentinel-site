@@ -291,10 +291,10 @@ export default function PortalPage() {
         const cuerpo = await auth.json().catch(() => null);
         throw new Error(cuerpo?.error || `El servidor ha respondido ${auth.status}.`);
       }
-      const { uploadId, uploadUrl } = await auth.json();
+      const { uploadId, uploadUrl, fields } = await auth.json();
 
       // 2. El documento va directo al almacenamiento, sin pasar por la función.
-      await subirAlAlmacen(uploadUrl, file, { onProgreso: setProgreso });
+      await subirAlAlmacen({ url: uploadUrl, fields }, file, { onProgreso: setProgreso });
 
       // 3. Confirmación: hasta aquí NO se le dice a la familia que ha llegado.
       const fin = await fetch(`/api/portal/${token}/documents/complete`, {

@@ -7,10 +7,9 @@ import { autorizarSubida } from "@/lib/subida-directa";
  * Paso 1 de la subida interna: autorizar.
  *
  * No recibe el archivo. Recibe su nombre y su tamaño, comprueba permisos,
- * tenencia y política, y devuelve una URL prefirmada para que el navegador
- * escriba DIRECTAMENTE en el almacenamiento. El motivo está en
- * `src/lib/subida-directa.ts`: una función de Vercel admite 4,5 MB de cuerpo y
- * el producto promete 20 MiB.
+ * tenencia y política, y devuelve una política de subida firmada para que el
+ * navegador escriba DIRECTAMENTE en el almacenamiento —a una clave de
+ * PREPARACIÓN, no a la que usará el documento; ver `subida-directa.ts`—.
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -48,6 +47,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     {
       uploadId: resultado.uploadId,
       uploadUrl: resultado.uploadUrl,
+      fields: resultado.fields,
       fileName: resultado.fileName,
       expiresAt: resultado.expiresAt,
     },

@@ -21,20 +21,29 @@ vi.mock("../src/lib/prisma", () => {
       updateMany: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   };
   prisma.$transaction = vi.fn(async (fn: any) => fn(prisma));
   return { prisma };
 });
 
-vi.mock("../src/lib/s3", () => ({
-  uploadFile: vi.fn().mockResolvedValue(undefined),
-  getPresignedUrl: vi.fn().mockResolvedValue("https://signed-url"),
-  getPresignedUploadUrl: vi.fn().mockResolvedValue("https://signed-put-url"),
-  headObject: vi.fn(),
-  downloadHead: vi.fn(),
-  deleteFile: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock("../src/lib/s3", () => {
+  class ErrorDePrecondicion extends Error {}
+  return {
+    uploadFile: vi.fn().mockResolvedValue(undefined),
+    getPresignedUrl: vi.fn().mockResolvedValue("https://signed-url"),
+    crearPoliticaDeSubida: vi.fn().mockResolvedValue({
+      url: "https://signed-post",
+      fields: { key: "clave-firmada" },
+    }),
+    inspeccionarObjeto: vi.fn(),
+    leerObjetoSiCoincide: vi.fn(),
+    crearObjetoSiNoExiste: vi.fn().mockResolvedValue(undefined),
+    deleteFile: vi.fn().mockResolvedValue(undefined),
+    ErrorDePrecondicion,
+  };
+});
 
 vi.mock("../src/lib/audit", () => ({
   logAudit: vi.fn().mockResolvedValue(undefined),
@@ -59,10 +68,12 @@ import { prisma } from "../src/lib/prisma";
 import {
   uploadFile,
   getPresignedUrl,
-  getPresignedUploadUrl,
-  headObject,
-  downloadHead,
+  crearPoliticaDeSubida,
+  inspeccionarObjeto,
+  leerObjetoSiCoincide,
+  crearObjetoSiNoExiste,
   deleteFile,
+  ErrorDePrecondicion,
 } from "../src/lib/s3";
 import { logAudit } from "../src/lib/audit";
 import { matchDocumentToTag } from "../src/lib/doc-task-matching";
@@ -101,14 +112,16 @@ const pendingFindUnique = (prisma as any).pendingUpload.findUnique as ReturnType
 const pendingFindMany = (prisma as any).pendingUpload.findMany as ReturnType<typeof vi.fn>;
 const pendingUpdateMany = (prisma as any).pendingUpload.updateMany as ReturnType<typeof vi.fn>;
 const pendingUpdate = (prisma as any).pendingUpload.update as ReturnType<typeof vi.fn>;
-const firmaSubidaMock = getPresignedUploadUrl as unknown as ReturnType<typeof vi.fn>;
-const headMock = headObject as unknown as ReturnType<typeof vi.fn>;
-const headBytesMock = downloadHead as unknown as ReturnType<typeof vi.fn>;
+const politicaMock = crearPoliticaDeSubida as unknown as ReturnType<typeof vi.fn>;
+const inspeccionarMock = inspeccionarObjeto as unknown as ReturnType<typeof vi.fn>;
+const leerCondicionalMock = leerObjetoSiCoincide as unknown as ReturnType<typeof vi.fn>;
+const crearFinalMock = crearObjetoSiNoExiste as unknown as ReturnType<typeof vi.fn>;
 const borrarMock = deleteFile as unknown as ReturnType<typeof vi.fn>;
 
 /** Consentimiento vigente: lo exigen subida, descarga y mensajes. */
 function grantConsent() {
   consentFindFirst.mockResolvedValue({
+    id: "consent-vigente-1",
     version: PORTAL_CONSENT_VERSION,
     textHash: "hash",
     acceptedAt: new Date("2026-02-01"),
@@ -166,12 +179,13 @@ function fakeCase(overrides: any = {}) {
 }
 
 function resetAll() {
-  for (const m of [caseFindFirst, caseUpdate, msgFindMany, msgCreate, docFindMany, docCreate, docFindUnique, taskFindFirst, taskFindUnique, taskFindMany, taskUpdate, uploadMock, presignedMock, auditMock, matchMock, workflowMock, consentFindFirst, consentCreate, pendingCreate, pendingFindUnique, pendingFindMany, pendingUpdateMany, pendingUpdate, firmaSubidaMock, headMock, headBytesMock, borrarMock]) {
+  for (const m of [caseFindFirst, caseUpdate, msgFindMany, msgCreate, docFindMany, docCreate, docFindUnique, taskFindFirst, taskFindUnique, taskFindMany, taskUpdate, uploadMock, presignedMock, auditMock, matchMock, workflowMock, consentFindFirst, consentCreate, pendingCreate, pendingFindUnique, pendingFindMany, pendingUpdateMany, pendingUpdate, politicaMock, inspeccionarMock, leerCondicionalMock, crearFinalMock, borrarMock]) {
     m.mockReset();
   }
   uploadMock.mockResolvedValue(undefined);
   presignedMock.mockResolvedValue("https://signed-url");
-  firmaSubidaMock.mockResolvedValue("https://signed-put-url");
+  politicaMock.mockResolvedValue({ url: "https://signed-post", fields: { key: "clave-firmada" } });
+  crearFinalMock.mockResolvedValue(undefined);
   borrarMock.mockResolvedValue(undefined);
   // El barrido oportunista de caducadas no debe estorbar a ninguna prueba.
   pendingFindMany.mockResolvedValue([]);
@@ -429,30 +443,38 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
   beforeEach(resetAll);
 
   /*
-   * POR QUE DOS PASOS
-   * -----------------
+   * POR QUE DOS PASOS, Y POR QUE DOS CLAVES
+   * -----------------------------------------
    * El archivo ya no atraviesa la funcion: una funcion de Vercel admite 4,5 MB
    * de cuerpo y el maximo del producto son 20 MiB. El navegador escribe directo
-   * en el almacenamiento con una URL prefirmada, asi que estas pruebas cubren
-   * AUTORIZAR (permisos, tenencia, politica de nombre y tamano) y CONFIRMAR
-   * (objeto real, contenido real, creacion de la fila).
+   * en el almacenamiento con una POLITICA de subida firmada (no una URL PUT
+   * desnuda: esa version dejaba que el almacen aceptara cualquier tamano,
+   * reproducido contra MinIO real). Estas pruebas cubren AUTORIZAR (permisos,
+   * tenencia, politica de nombre y tamano) y CONFIRMAR (objeto real inspeccionado
+   * de forma condicionada, copia a una clave FINAL nueva, creacion de la fila).
    *
-   * Lo que se exige aqui es lo mismo que se exigia al multipart; lo unico que
-   * cambia es donde ocurre.
+   * La clave que el navegador escribe (`stagingKey`) y la que usa el documento
+   * (`finalKey`) son DISTINTAS a proposito: reutilizar la politica despues de
+   * confirmar solo puede reescribir la preparacion, nunca el objeto ya
+   * verificado.
    */
 
   const CABECERA_PDF = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a]);
   const TAMANO = 1024;
+  const STAGING_KEY = "org1/case_abc/preparacion/" + "a".repeat(32) + ".pdf";
+  const FINAL_KEY = "org1/case_abc/portal/" + "f".repeat(32) + ".pdf";
 
   function pendiente(overrides: any = {}) {
     return {
       id: "pu_1",
       orgId: "org1",
       caseId: "case_abc",
-      fileKey: "org1/case_abc/portal/" + "a".repeat(32) + ".pdf",
+      stagingKey: STAGING_KEY,
+      finalKey: null,
       fileName: "dni.pdf",
       expectedSize: TAMANO,
       uploadedBy: null,
+      portalConsentId: "consent-vigente-1",
       isPortalUpload: true,
       taskId: null,
       status: "PENDING",
@@ -460,6 +482,9 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
       failureReason: null,
       expiresAt: new Date(Date.now() + 60_000),
       createdAt: new Date(),
+      completedAt: null,
+      stagingDeletedAt: null,
+      claimedAt: null,
       ...overrides,
     };
   }
@@ -468,8 +493,9 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
   function prepararConfirmacion(overrides: any = {}) {
     caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
     pendingFindUnique.mockResolvedValue(pendiente(overrides));
-    headMock.mockResolvedValue({ contentLength: TAMANO });
-    headBytesMock.mockResolvedValue(CABECERA_PDF);
+    inspeccionarMock.mockResolvedValue({ tamano: TAMANO, etag: '"etag-vigente"' });
+    leerCondicionalMock.mockResolvedValue(CABECERA_PDF);
+    crearFinalMock.mockResolvedValue(undefined);
     pendingUpdateMany.mockResolvedValue({ count: 1 });
     pendingUpdate.mockResolvedValue({});
     taskFindMany.mockResolvedValue([]);
@@ -485,11 +511,11 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
     });
   }
 
-  it("404 si el expediente no existe: no se firma ninguna URL de escritura", async () => {
+  it("404 si el expediente no existe: no se firma ninguna politica de escritura", async () => {
     caseFindFirst.mockResolvedValueOnce(null);
     const res = await autorizar({ fileName: "dni.pdf", size: TAMANO });
     expect(res.status).toBe(404);
-    expect(firmaSubidaMock).not.toHaveBeenCalled();
+    expect(politicaMock).not.toHaveBeenCalled();
     expect(pendingCreate).not.toHaveBeenCalled();
   });
 
@@ -497,45 +523,51 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
     caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
     const res = await autorizar({});
     expect(res.status).toBe(400);
-    expect(firmaSubidaMock).not.toHaveBeenCalled();
+    expect(politicaMock).not.toHaveBeenCalled();
   });
 
-  it("la clave la genera el servidor y no lleva el nombre del usuario", async () => {
+  it("la clave de preparacion la genera el servidor, va en su propio segmento y no lleva el nombre del usuario", async () => {
     caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
     pendingCreate.mockImplementation(async ({ data }: any) => ({ id: "pu_1", ...data }));
 
     const res = await autorizar({ fileName: "dni.pdf", size: TAMANO });
     expect(res.status).toBe(201);
 
-    const clave = pendingCreate.mock.calls[0][0].data.fileKey;
-    // Aleatoria y dentro del ambito: ni adivinable ni con el nombre dentro.
-    expect(clave).toMatch(/^org1\/case_abc\/portal\/[0-9a-f]{32}\.pdf$/);
+    const clave = pendingCreate.mock.calls[0][0].data.stagingKey;
+    expect(clave).toMatch(/^org1\/case_abc\/preparacion\/[0-9a-f]{32}\.pdf$/);
     expect(clave).not.toContain("dni.pdf");
-    expect(firmaSubidaMock).toHaveBeenCalledWith(clave, expect.anything());
+    expect(politicaMock).toHaveBeenCalledWith(clave, TAMANO, expect.any(Number));
+  });
+
+  it("la autorizacion guarda el consentimiento vigente para atar la confirmacion despues", async () => {
+    caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
+    pendingCreate.mockImplementation(async ({ data }: any) => ({ id: "pu_1", ...data }));
+
+    await autorizar({ fileName: "dni.pdf", size: TAMANO });
+
+    expect(pendingCreate.mock.calls[0][0].data.portalConsentId).toBe("consent-vigente-1");
   });
 
   it("un formato no admitido no llega a recibir permiso de escritura", async () => {
     caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
     const res = await autorizar({ fileName: "programa.exe", size: TAMANO });
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/Formato no admitido/);
-    expect(firmaSubidaMock).not.toHaveBeenCalled();
+    expect(politicaMock).not.toHaveBeenCalled();
   });
 
-  it("un tamano por encima del maximo se rechaza con 413 antes de firmar", async () => {
+  it("un tamano por encima del maximo se rechaza con 413 antes de firmar politica alguna", async () => {
     caseFindFirst.mockResolvedValueOnce({ id: "case_abc", orgId: "org1" });
     const res = await autorizar({ fileName: "dni.pdf", size: 21 * 1024 * 1024 });
     expect(res.status).toBe(413);
     expect((await res.json()).error).toBe("El archivo supera el máximo de 20 MB.");
-    expect(firmaSubidaMock).not.toHaveBeenCalled();
+    expect(politicaMock).not.toHaveBeenCalled();
   });
 
-  it("happy path: verifica el objeto, crea Document, vincula tarea y audita", async () => {
+  it("happy path: inspecciona, lee de forma condicionada, copia a clave final y crea Document", async () => {
     prepararConfirmacion();
     matchMock.mockReturnValueOnce("DNI");
-    // 1a: la busqueda por docTag. 2a: la relectura de findTaskInCase.
     taskFindFirst.mockResolvedValueOnce({ id: "t1", title: "Subir DNI heredero" });
-    docCreate.mockResolvedValueOnce({ id: "doc_new", fileName: "dni.pdf" });
+    docCreate.mockResolvedValueOnce({ id: "doc_new", fileName: "dni.pdf", fileKey: FINAL_KEY });
     taskFindFirst.mockResolvedValueOnce({ id: "t1", title: "Subir DNI heredero", status: "PENDING" });
     taskUpdate.mockResolvedValueOnce({});
 
@@ -545,32 +577,29 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
     expect(res.status).toBe(201);
     expect(body.id).toBe("doc_new");
 
-    // El tamano se comprueba contra el objeto REAL, no contra lo declarado.
-    expect(headMock).toHaveBeenCalledOnce();
+    // El tamano y el ETag se comprueban contra el objeto REAL, no contra lo declarado.
+    expect(inspeccionarMock).toHaveBeenCalledWith(STAGING_KEY);
+    expect(leerCondicionalMock).toHaveBeenCalledWith(STAGING_KEY, '"etag-vigente"', expect.any(Number));
+
+    // El Document referencia una clave FINAL, nunca la de preparacion.
+    expect(crearFinalMock).toHaveBeenCalledOnce();
+    const claveFinalUsada = crearFinalMock.mock.calls[0][0];
+    expect(claveFinalUsada).not.toBe(STAGING_KEY);
 
     expect(docCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         caseId: "case_abc",
         taskId: "t1",
         fileName: "dni.pdf",
+        fileKey: claveFinalUsada,
         isPortalUpload: true,
         visibleToFamily: true,
         fileSize: TAMANO,
       }),
     });
 
-    expect(taskUpdate).toHaveBeenCalledWith({
-      where: { id: "t1" },
-      data: { status: "READY" },
-    });
-
-    // Dos audits: la tarea auto-actualizada y la subida.
+    expect(taskUpdate).toHaveBeenCalledWith({ where: { id: "t1" }, data: { status: "READY" } });
     expect(auditMock).toHaveBeenCalledTimes(2);
-    /*
-     * El evento lleva la identidad DEL DOCUMENTO. Sin ella la clave del motor
-     * era `(org, regla, expediente, tipo, ventana de 5 min)`, asi que dos
-     * documentos seguidos del mismo expediente contaban como un solo hecho.
-     */
     expect(workflowMock).toHaveBeenCalledWith({
       type: "DOCUMENT_UPLOADED",
       orgId: "org1",
@@ -606,10 +635,10 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
     expect(taskUpdate).not.toHaveBeenCalled();
   });
 
-  it("un fallo del almacenamiento devuelve 500 generico y no filtra el motivo", async () => {
+  it("un fallo del almacenamiento al inspeccionar devuelve 500 generico y no filtra el motivo", async () => {
     caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
     pendingFindUnique.mockResolvedValue(pendiente());
-    headMock.mockRejectedValueOnce(new Error("S3 quota exceeded"));
+    inspeccionarMock.mockRejectedValueOnce(new Error("S3 quota exceeded"));
 
     const res = await confirmar();
     const body = await res.json();
@@ -620,36 +649,38 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
     expect(docCreate).not.toHaveBeenCalled();
   });
 
-  it("si el objeto no esta, no se inventa un documento", async () => {
+  it("si el objeto de preparacion no esta, no se inventa un documento", async () => {
     caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
     pendingFindUnique.mockResolvedValue(pendiente());
-    headMock.mockResolvedValue(null); // 404 real del almacenamiento
+    inspeccionarMock.mockResolvedValue(null); // 404 real del almacenamiento
 
     const res = await confirmar();
     expect(res.status).toBe(400);
     expect(docCreate).not.toHaveBeenCalled();
+    expect(crearFinalMock).not.toHaveBeenCalled();
   });
 
-  it("un objeto de tamano distinto al autorizado se descarta y se borra", async () => {
+  it("un objeto de tamano distinto al autorizado se descarta y se borra, sin copiar nada a la clave final", async () => {
     prepararConfirmacion();
     // Se autorizo 1024 y se ha escrito otra cosa: no es la operacion permitida.
-    headMock.mockResolvedValue({ contentLength: TAMANO + 1 });
+    inspeccionarMock.mockResolvedValue({ tamano: TAMANO + 1, etag: '"otro-etag"' });
 
     const res = await confirmar();
 
     expect(res.status).toBe(400);
     expect(docCreate).not.toHaveBeenCalled();
-    expect(borrarMock).toHaveBeenCalledWith(pendiente().fileKey);
+    expect(crearFinalMock).not.toHaveBeenCalled();
+    expect(borrarMock).toHaveBeenCalledWith(STAGING_KEY);
     expect(pendingUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) }),
     );
   });
 
-  it("un contenido que no corresponde a la extension se descarta y se borra", async () => {
+  it("un contenido que no corresponde a la extension se descarta y se borra, sin copiar nada a la clave final", async () => {
     prepararConfirmacion();
     // Bytes de PNG dentro de un .pdf: lo delata el contenido, no la cabecera
     // declarada, que aqui ya no la pone nadie.
-    headBytesMock.mockResolvedValue(
+    leerCondicionalMock.mockResolvedValue(
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     );
 
@@ -657,14 +688,37 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
 
     expect(res.status).toBe(400);
     expect(docCreate).not.toHaveBeenCalled();
-    expect(borrarMock).toHaveBeenCalledWith(pendiente().fileKey);
+    expect(crearFinalMock).not.toHaveBeenCalled();
+    expect(borrarMock).toHaveBeenCalledWith(STAGING_KEY);
+  });
+
+  it("si el objeto cambio entre inspeccionar y leer, se rechaza con 409 SIN marcar la subida como fallida", async () => {
+    /*
+     * TOCTOU: alguien reescribio la preparacion (reutilizando la politica)
+     * justo entre el HeadObject y el GET condicionado. `leerObjetoSiCoincide`
+     * lo detecta por ETag y lanza `ErrorDePrecondicion`. No se descarta la
+     * subida entera -podria ser un reintento legitimo en vuelo-, solo se pide
+     * reintentar.
+     */
+    prepararConfirmacion();
+    leerCondicionalMock.mockRejectedValueOnce(new ErrorDePrecondicion("cambio"));
+
+    const res = await confirmar();
+
+    expect(res.status).toBe(409);
+    expect(docCreate).not.toHaveBeenCalled();
+    expect(crearFinalMock).not.toHaveBeenCalled();
+    // No se marca FAILED: sigue PENDING para poder reintentar.
+    expect(pendingUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) }),
+    );
   });
 
   it("confirmar dos veces no crea dos documentos", async () => {
     caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
     // Ya confirmada: la segunda llamada devuelve el mismo documento.
     pendingFindUnique.mockResolvedValue(
-      pendiente({ status: "COMPLETED", documentId: "doc_new" }),
+      pendiente({ status: "COMPLETED", documentId: "doc_new", finalKey: FINAL_KEY }),
     );
     docFindUnique.mockResolvedValue({ id: "doc_new", fileName: "dni.pdf" });
 
@@ -674,6 +728,7 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
     expect(res.status).toBe(200);
     expect(body.id).toBe("doc_new");
     expect(docCreate).not.toHaveBeenCalled();
+    expect(inspeccionarMock).not.toHaveBeenCalled();
   });
 
   it("una subida de OTRO expediente no se puede confirmar desde este portal", async () => {
@@ -698,6 +753,25 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
     expect(docCreate).not.toHaveBeenCalled();
   });
 
+  it("una subida autorizada bajo OTRO consentimiento no se puede confirmar con el actual", async () => {
+    /*
+     * ATADURA DEL ACTOR EN EL PORTAL. El portal no distingue personas -el
+     * enlace es compartido por la familia-, asi que la atadura mas fuerte
+     * disponible es la aceptacion de consentimiento vigente al autorizar. Si
+     * el consentimiento se retiro y se volvio a aceptar (nuevo id) entre
+     * autorizar y confirmar, la subida vieja no debe poder completarse con la
+     * identidad nueva.
+     */
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
+    pendingFindUnique.mockResolvedValue(pendiente({ portalConsentId: "consent-anterior-999" }));
+
+    const res = await confirmar(); // el mock de consentimiento activo es "consent-vigente-1"
+
+    expect(res.status).toBe(404);
+    expect(docCreate).not.toHaveBeenCalled();
+    expect(inspeccionarMock).not.toHaveBeenCalled();
+  });
+
   it("una subida caducada se descarta y no crea documento", async () => {
     caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
     pendingFindUnique.mockResolvedValue(
@@ -708,6 +782,17 @@ describe("Subida del portal en dos pasos (autorizar y confirmar)", () => {
 
     expect(res.status).toBe(410);
     expect(docCreate).not.toHaveBeenCalled();
-    expect(borrarMock).toHaveBeenCalledWith(pendiente().fileKey);
+    expect(borrarMock).toHaveBeenCalledWith(STAGING_KEY);
+  });
+
+  it("una subida en limpieza (CLEANING) no se puede confirmar", async () => {
+    caseFindFirst.mockResolvedValue({ id: "case_abc", orgId: "org1" });
+    pendingFindUnique.mockResolvedValue(pendiente({ status: "CLEANING" }));
+
+    const res = await confirmar();
+
+    expect(res.status).toBe(410);
+    expect(docCreate).not.toHaveBeenCalled();
+    expect(inspeccionarMock).not.toHaveBeenCalled();
   });
 });

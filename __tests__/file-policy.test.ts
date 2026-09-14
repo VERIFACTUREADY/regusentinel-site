@@ -190,43 +190,34 @@ describe("Cabeceras de descarga", () => {
 });
 
 /**
- * EL TECHO DEL CUERPO DE LA PETICION TIENE QUE DEJAR PASAR EL MAXIMO DE ARCHIVO.
+ * EL ARCHIVO YA NO VIAJA POR NINGUNA RUTA DE LA APLICACION: SIN TECHO GLOBAL.
  *
- * Next 15 trunca el cuerpo a 10 MB por defecto y no avisa con un error: el
- * multipart llega cortado y `req.formData()` lanza. Con eso, la promesa de
- * «maximo 20 MB» era falsa por encima de 10 MB, y un archivo de exactamente el
- * maximo se rechazaba con un 413 que no le correspondia.
+ * ESTADO ANTERIOR (fase previa)
+ * -------------------------------
+ * `next.config.js` fijaba `experimental.middlewareClientMaxBodySize` a
+ * MAX_FILE_BYTES + 1 MiB, para que un multipart de 20 MiB cupiera en las rutas
+ * de subida (que entonces recibian el archivo entero). Esta suite comprobaba
+ * esa aritmetica.
  *
- * `next.config.js` sube ese techo, pero su aritmetica esta escrita aparte
- * porque es CommonJS y no puede importar este modulo de TypeScript. Esta prueba
- * es la costura: si alguien cambia MAX_UPLOAD_MB, el margen o el techo y los
- * dos dejan de estar de acuerdo, falla aqui en vez de fallar en produccion con
- * una subida perdida.
+ * ESTADO ACTUAL
+ * -------------
+ * El navegador escribe DIRECTAMENTE en el almacenamiento con una politica de
+ * subida firmada (ver `src/lib/subida-directa.ts` y `src/lib/s3.ts`); las
+ * rutas `upload-url` y `complete` solo reciben JSON pequeño. Ninguna ruta de la
+ * aplicacion necesita ya un techo de cuerpo ampliado, asi que se ha retirado de
+ * `next.config.js` y esta prueba —que exigia que existiera— queda obsoleta.
+ *
+ * Se sustituye por la comprobacion inversa: que el techo NO vuelva a
+ * reintroducirse por error. Si alguien lo reintroduce sin querer —por ejemplo
+ * copiando codigo de una version anterior—, esta prueba lo detecta.
  */
-describe("Techo del cuerpo de la peticion (next.config.js)", () => {
+describe("Sin techo de cuerpo global en next.config.js", () => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const nextConfig = require("../next.config.js") as {
     experimental?: { middlewareClientMaxBodySize?: number };
   };
-  const techo = nextConfig.experimental?.middlewareClientMaxBodySize;
 
-  it("esta configurado de forma explicita", () => {
-    // Sin esto vuelve el defecto de 10 MB de Next y la politica deja de ser real.
-    expect(typeof techo, "next.config.js debe fijar middlewareClientMaxBodySize").toBe("number");
-  });
-
-  it("deja sitio al archivo maximo MAS el armazon del multipart", () => {
-    /*
-     * Estrictamente mayor, no «mayor o igual»: un archivo de exactamente
-     * MAX_FILE_BYTES viaja con separadores y cabeceras encima, asi que el
-     * cuerpo pesa mas que el archivo. Si el techo fuera igual al maximo, el
-     * archivo que la politica permite no cabria.
-     */
-    expect(techo!).toBeGreaterThan(MAX_FILE_BYTES);
-  });
-
-  it("sigue acotado: no se aceptan peticiones sin limite", () => {
-    // El margen es para el sobre del multipart, no una puerta abierta.
-    expect(techo!).toBeLessThanOrEqual(MAX_FILE_BYTES + 1024 * 1024);
+  it("no fija middlewareClientMaxBodySize: ninguna ruta recibe ya el archivo", () => {
+    expect(nextConfig.experimental?.middlewareClientMaxBodySize).toBeUndefined();
   });
 });

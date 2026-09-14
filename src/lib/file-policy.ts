@@ -342,6 +342,26 @@ export function buildFileKey(params: {
   return `${params.orgId}/${params.caseId}/${scope}/${random}${suffix}`;
 }
 
+/**
+ * Clave de PREPARACIÓN de una subida directa: la única en la que el navegador
+ * puede escribir.
+ *
+ * Va en su propio segmento (`preparacion/`) para que nunca pueda confundirse con
+ * la clave de un documento: la política de subida es reutilizable hasta que
+ * caduca, así que lo que haya aquí puede reescribirse y ningún documento debe
+ * apuntar a ello.
+ */
+export function buildStagingKey(params: {
+  orgId: string;
+  caseId: string;
+  fileName: string;
+}): string {
+  const ext = extensionOf(params.fileName);
+  const suffix = ext ? `.${ext}` : "";
+  const random = randomBytes(16).toString("hex");
+  return `${params.orgId}/${params.caseId}/preparacion/${random}${suffix}`;
+}
+
 /** Cabeceras de descarga que impiden que el navegador ejecute el contenido. */
 export function downloadHeaders(fileName: string, mimeType?: string | null) {
   const safe = sanitizeFileName(fileName);

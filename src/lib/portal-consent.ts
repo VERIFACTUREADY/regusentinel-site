@@ -46,6 +46,12 @@ export interface ConsentStatus {
   outdated: boolean;
   acceptedAt: Date | null;
   version: string | null;
+  /**
+   * Fila de consentimiento que habilita el acceso ahora mismo. Es la identidad
+   * estable de la autorización del portal: la subida la guarda al autorizar y
+   * exige la misma al confirmar.
+   */
+  consentId: string | null;
 }
 
 /**
@@ -59,11 +65,11 @@ export async function getConsentStatus(
   const latest = await db.portalConsent.findFirst({
     where: { caseId, purpose: "PORTAL_FAMILIA", withdrawnAt: null },
     orderBy: { acceptedAt: "desc" },
-    select: { version: true, acceptedAt: true, textHash: true },
+    select: { id: true, version: true, acceptedAt: true, textHash: true },
   });
 
   if (!latest) {
-    return { valid: false, outdated: false, acceptedAt: null, version: null };
+    return { valid: false, outdated: false, acceptedAt: null, version: null, consentId: null };
   }
 
   // Las filas heredadas de la migración se aceptan como válidas: cortarle el
@@ -77,6 +83,7 @@ export async function getConsentStatus(
     outdated: !isCurrent && !isLegacy,
     acceptedAt: latest.acceptedAt,
     version: latest.version,
+    consentId: latest.id ?? null,
   };
 }
 

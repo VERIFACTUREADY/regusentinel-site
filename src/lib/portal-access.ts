@@ -18,6 +18,12 @@ export interface PortalCase {
   orgId: string;
   ref: string;
   portalEnabled: boolean;
+  /**
+   * Generación del enlace: cambia al rotarlo. Junto con `consentId` identifica
+   * la autorización concreta bajo la que actúa la familia, sin guardar nunca el
+   * token.
+   */
+  tokenRotatedAt: Date | null;
 }
 
 export type PortalDenial =
@@ -28,7 +34,12 @@ export type PortalDenial =
   | "consent_outdated";
 
 export type PortalAccess =
-  | { ok: true; case: PortalCase }
+  | {
+      ok: true;
+      case: PortalCase;
+      /** Consentimiento vigente. Sólo se resuelve con `requireConsent`. */
+      consentId: string | null;
+    }
   | { ok: false; reason: PortalDenial; response: NextResponse };
 
 function deny(reason: PortalDenial, status: number, error: string, extra?: Record<string, unknown>): PortalAccess {
@@ -56,6 +67,7 @@ export async function resolvePortalAccess(
       portalEnabled: true,
       portalTokenRevokedAt: true,
       portalTokenExpiresAt: true,
+      portalTokenRotatedAt: true,
     },
   });
 
@@ -81,8 +93,10 @@ export async function resolvePortalAccess(
     );
   }
 
+  let consentId: string | null = null;
   if (options.requireConsent) {
     const consent = await getConsentStatus(c.id);
+    consentId = consent.consentId;
     if (!consent.valid) {
       return deny(
         consent.outdated ? "consent_outdated" : "consent_required",
@@ -97,6 +111,13 @@ export async function resolvePortalAccess(
 
   return {
     ok: true,
-    case: { id: c.id, orgId: c.orgId, ref: c.ref, portalEnabled: c.portalEnabled },
+    case: {
+      id: c.id,
+      orgId: c.orgId,
+      ref: c.ref,
+      portalEnabled: c.portalEnabled,
+      tokenRotatedAt: c.portalTokenRotatedAt ?? null,
+    },
+    consentId,
   };
 }

@@ -10,6 +10,11 @@ import { confirmarSubida } from "@/lib/subida-directa";
  * comprueba el objeto REAL en el almacenamiento antes de crear la fila. Es
  * idempotente: reintentar tras un corte de red devuelve el mismo documento en
  * lugar de crear otro.
+ *
+ * `userId` viaja aquí y `confirmarSubida` exige que coincida con el que
+ * autorizó: otro usuario de la misma organización y expediente —con el mismo
+ * permiso `documents.create`— no puede confirmar una subida ajena ni hacer
+ * que la auditoría se la atribuya a quien no la hizo.
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;

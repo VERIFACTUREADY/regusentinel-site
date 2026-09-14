@@ -8,8 +8,12 @@ import { autorizarSubida } from "@/lib/subida-directa";
  *
  * El consentimiento sigue siendo obligatorio (`requireConsent: true`) y el
  * límite de subidas sigue vivo: se cuenta aquí, que es donde se entrega el
- * permiso de escritura. Ponerlo sólo en la confirmación dejaría emitir URLs sin
- * freno.
+ * permiso de escritura. Ponerlo sólo en la confirmación dejaría emitir
+ * políticas sin freno.
+ *
+ * `consentId` viaja al autorizar y se exige de nuevo, idéntico, al confirmar
+ * (ver `subida-directa.ts` — atadura del actor). El portal no distingue
+ * personas; esto ata la operación a la aceptación de consentimiento vigente.
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ token: string }> }) {
   const params = await props.params;
@@ -31,6 +35,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ token: s
       // en la subida multipart que esto sustituye.
       userId: null,
       isPortalUpload: true,
+      portalConsentId: access.consentId,
     },
     fileName: (body as { fileName?: unknown }).fileName,
     size: (body as { size?: unknown }).size,
@@ -44,6 +49,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ token: s
     {
       uploadId: resultado.uploadId,
       uploadUrl: resultado.uploadUrl,
+      fields: resultado.fields,
       fileName: resultado.fileName,
       expiresAt: resultado.expiresAt,
     },

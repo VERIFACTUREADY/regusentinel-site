@@ -861,6 +861,33 @@ la misma versión fijada que usa el job de integración. Que la fila exista en l
 base de datos no se acepta como prueba de que el archivo esté: se comprueba el
 objeto en el bucket y se comparan los bytes.
 
+**Arquitectura de la subida (desde 2026-09-09, revisada 2026-09-10).** El
+archivo no pasa por la función: el navegador escribe DIRECTAMENTE en el
+almacenamiento con una política de subida firmada. La función sólo autoriza
+(JSON pequeño) y confirma (JSON pequeño), tras inspeccionar el objeto real. El
+navegador escribe en una clave de **preparación**; el `Document` sólo llega a
+referenciar una clave **final**, nueva y aleatoria, que el navegador nunca ve —
+ver `SECURITY_HARDENING_STATUS.md` para el porqué y los defectos reproducidos y
+cerrados. Esto se verifica contra Next local + PostgreSQL real + MinIO real; NO
+se ha verificado contra un bucket S3 de producción ni contra Vercel real.
+
+#### Integridad de la subida directa (staging → final)
+
+| Elemento | Estado | Prueba |
+|---|---|---|
+| El almacén impone el tamaño EXACTO autorizado (no sólo la confirmación) | ✅ | `subida-directa-db.test.ts` — política POST con `content-length-range`; 1 KB declarado + 21 MiB reales → rechazado por MinIO sin llamar a confirmar |
+| Reutilizar la autorización tras confirmar no altera el objeto final | ✅ | `subida-directa-db.test.ts` — reescribe la preparación con la misma política tras confirmar; el objeto final no cambia |
+| Cambio de objeto entre inspeccionar y leer (TOCTOU) no se copia a la clave final | ✅ | `subida-directa-db.test.ts` — intercepta el `HeadObjectCommand` real; 409, sin `Document`, sin objeto final |
+| Limpieza y confirmación concurrentes: nunca documento sin objeto ni objeto huérfano | ✅ | `subida-directa-db.test.ts` — barrera determinista sobre `DeleteObjectCommand` real, sin sleeps |
+| Reclamación de limpieza (CLEANING) abandonada se recupera tras un margen | ✅ | `subida-directa-db.test.ts` |
+| Purgar un expediente con subida sin confirmar no deja objeto huérfano | ✅ | `subida-directa-db.test.ts` — RESTRICT en la FK, verificado con `case.delete()` directo fallando en PostgreSQL real |
+| Fallo del almacén al purgar detiene la purga sin perder el puntero | ✅ | `subida-directa-db.test.ts` — fallo inyectado en `DeleteObjectCommand` |
+| Usuario distinto de la misma organización no puede confirmar la subida de otro | ✅ | `subida-directa-db.test.ts` |
+| Consentimiento del portal distinto del vigente al autorizar no puede confirmar | ✅ | `subida-directa-db.test.ts` — limitación documentada: el portal no distingue personas, sólo sesiones de consentimiento |
+| Tarea borrada entre autorizar y confirmar: sin 500, sin huérfano, sin vínculo fantasma | ✅ | `subida-directa-db.test.ts` |
+| Retención acotada de filas `PendingUpload` completadas, sin tocar el `Document` | ✅ | `subida-directa-db.test.ts` |
+| Confirmaciones simultáneas crean un único documento y no dejan objeto final huérfano | ✅ | `subida-directa-db.test.ts` |
+
 #### Subida (ficha del expediente)
 
 | Elemento | Estado | Prueba |

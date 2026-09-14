@@ -6,6 +6,7 @@ import {
   HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 
 const S3_ENDPOINT = process.env.S3_ENDPOINT!;
 const S3_ACCESS_KEY = process.env.S3_ACCESS_KEY!;
@@ -81,85 +82,190 @@ export async function getPresignedUrl(
   return getSignedUrl(s3Client, command, { expiresIn });
 }
 
+/** Lo que el navegador necesita para escribir: dónde y con qué campos firmados. */
+export interface PoliticaDeSubida {
+  url: string;
+  fields: Record<string, string>;
+}
+
 /**
- * URL prefirmada de SUBIDA. El navegador manda el archivo aquí, no a la
- * función.
+ * Permiso de escritura para UNA clave y UN tamaño exacto, impuesto por el
+ * ALMACÉN, no por la aplicación.
  *
- * POR QUÉ EXISTE
- * --------------
- * Una función de Vercel admite 4,5 MB de cuerpo como máximo. El producto
- * promete 20 MiB, así que el archivo no puede pasar por ella. Con esta URL el
- * navegador escribe directamente en el almacenamiento y la función sólo maneja
- * JSON pequeño: autorizar antes, verificar después.
+ * POR QUÉ UNA POLÍTICA POST Y NO UNA URL PUT
+ * ------------------------------------------
+ * La URL PUT prefirmada que había antes sólo firmaba bucket y clave. Con ella el
+ * almacén aceptaba cualquier cuerpo: se reprodujo contra MinIO real autorizando
+ * 1 KB y escribiendo 22 020 096 bytes, con respuesta 200 y sin que nadie llamara
+ * a la confirmación. Que la confirmación lo rechazara después no evitaba nada:
+ * el objeto ya estaba escrito, y si el cliente no confirmaba, se quedaba ahí.
  *
- * POR QUÉ NO SE FIRMA EL `Content-Type`
- * -------------------------------------
- * Si se firmara, el navegador tendría que enviar exactamente el mismo valor y
- * cualquier diferencia —que las hay, según el sistema operativo y la extensión—
- * rompería la firma con un error que el usuario no puede entender ni arreglar.
- * No se pierde nada: el tipo declarado por el cliente NUNCA se ha creído aquí.
- * Quien decide es `validateFile` sobre los bytes reales en la confirmación, y
- * la descarga siempre reescribe `Content-Type` y `Content-Disposition` en la
- * propia firma (ver `getPresignedUrl`).
+ * Una política POST lleva condiciones que el almacén evalúa ANTES de guardar.
+ * `content-length-range` con mínimo y máximo iguales exige el tamaño exacto
+ * autorizado, que a su vez nunca supera `MAX_FILE_BYTES` porque se comprueba al
+ * autorizar. Comprobado contra MinIO real (la versión fijada en la CI): un byte
+ * de menos da `400 EntityTooSmall`, uno de más `400 EntityTooLarge`, y 21 MiB con
+ * 1 KB autorizado `400 EntityTooLarge`; en los tres casos no queda objeto. Una
+ * clave distinta o un campo que la política no nombra dan `403 AccessDenied`. Es
+ * el mecanismo estándar de S3 para formularios del navegador.
  *
- * `expiresIn` corto a propósito: la URL es un permiso de escritura.
+ * LO QUE ESTO NO CUBRE, DICHO CLARO
+ * ---------------------------------
+ * La política es REUTILIZABLE hasta que caduca: quien la tenga puede volver a
+ * escribir la misma clave con otros bytes del mismo tamaño. Por eso esta clave
+ * es sólo de PREPARACIÓN y el documento nunca la referencia (ver
+ * `subida-directa.ts`).
  */
-export async function getPresignedUploadUrl(
+export async function crearPoliticaDeSubida(
   key: string,
-  opciones: { expiresIn?: number } = {},
-): Promise<string> {
-  const { expiresIn = 900 } = opciones;
-  return getSignedUrl(
-    s3Client,
-    new PutObjectCommand({ Bucket: S3_BUCKET, Key: key }),
-    { expiresIn },
+  tamano: number,
+  expiresInSegundos: number,
+): Promise<PoliticaDeSubida> {
+  const { url, fields } = await createPresignedPost(s3Client, {
+    Bucket: S3_BUCKET,
+    Key: key,
+    Conditions: [["content-length-range", tamano, tamano]],
+    Expires: expiresInSegundos,
+  });
+  return { url, fields };
+}
+
+/** El almacén ha rechazado una operación condicional: el objeto no es el esperado. */
+export class ErrorDePrecondicion extends Error {
+  constructor(mensaje: string) {
+    super(mensaje);
+    this.name = "ErrorDePrecondicion";
+  }
+}
+
+function estadoHttp(err: unknown): number | undefined {
+  return (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+}
+
+function esNoEncontrado(err: unknown): boolean {
+  const nombre = (err as { name?: string })?.name ?? "";
+  return nombre === "NotFound" || nombre === "NoSuchKey" || estadoHttp(err) === 404;
+}
+
+function esPrecondicion(err: unknown): boolean {
+  const nombre = (err as { name?: string })?.name ?? "";
+  const estado = estadoHttp(err);
+  return (
+    nombre === "PreconditionFailed" ||
+    nombre === "ConditionalRequestConflict" ||
+    estado === 412 ||
+    estado === 409
   );
 }
 
 /**
- * Tamaño real del objeto, o `null` si no existe.
+ * Tamaño y ETag del objeto, o `null` si no existe.
  *
  * Se distingue "no está" de "no se ha podido preguntar": un fallo de red o de
  * credenciales LANZA. Tratar un error de consulta como "no existe" es
  * exactamente la confusión que deja documentos fantasma en la base.
+ *
+ * El ETag sólo se usa por IGUALDAD, como identidad del objeto inspeccionado. No
+ * se interpreta como hash de nada.
  */
-export async function headObject(
+export async function inspeccionarObjeto(
   key: string,
-): Promise<{ contentLength: number } | null> {
+): Promise<{ tamano: number; etag: string } | null> {
+  try {
+    const res = await s3Client.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+    if (!res.ETag) {
+      throw new Error("El almacenamiento no ha devuelto la identidad del objeto (ETag).");
+    }
+    return { tamano: Number(res.ContentLength ?? 0), etag: res.ETag };
+  } catch (err) {
+    if (esNoEncontrado(err)) return null;
+    throw err;
+  }
+}
+
+/** Compatibilidad: sólo el tamaño. */
+export async function headObject(key: string): Promise<{ contentLength: number } | null> {
+  const r = await inspeccionarObjeto(key);
+  return r ? { contentLength: r.tamano } : null;
+}
+
+/**
+ * Lee el objeto ENTERO, pero sólo si sigue siendo el que se inspeccionó.
+ *
+ * `If-Match` hace que el almacén responda `412` si entre la inspección y la
+ * lectura alguien ha reescrito la clave. Comprobado contra MinIO real. Así los
+ * bytes que se validan son exactamente los del objeto inspeccionado, y no los
+ * de una escritura posterior.
+ *
+ * Se lee entero, no sólo la cabecera, porque son estos mismos bytes —ya
+ * validados y en poder del servidor— los que se escriben en la clave final.
+ * Esto NO pasa por el límite de 4,5 MB de Vercel: ese techo es del cuerpo de la
+ * petición y de la respuesta de la función, no de las conexiones que la función
+ * abre hacia el almacén.
+ */
+export async function leerObjetoSiCoincide(
+  key: string,
+  etag: string,
+  maxBytes: number,
+): Promise<Buffer> {
   try {
     const res = await s3Client.send(
-      new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }),
+      new GetObjectCommand({ Bucket: S3_BUCKET, Key: key, IfMatch: etag }),
     );
-    return { contentLength: Number(res.ContentLength ?? 0) };
+    if (res.ETag && res.ETag !== etag) {
+      throw new ErrorDePrecondicion("El objeto ha cambiado desde que se inspeccionó.");
+    }
+    if (Number(res.ContentLength ?? 0) > maxBytes) {
+      throw new ErrorDePrecondicion("El objeto supera el tamaño permitido.");
+    }
+    if (!res.Body) throw new Error(`El objeto ${key} no tiene contenido`);
+    const bytes = await (
+      res.Body as { transformToByteArray: () => Promise<Uint8Array> }
+    ).transformToByteArray();
+    return Buffer.from(bytes);
   } catch (err) {
-    const nombre = (err as { name?: string })?.name ?? "";
-    const estado = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata
-      ?.httpStatusCode;
-    if (nombre === "NotFound" || nombre === "NoSuchKey" || estado === 404) return null;
+    if (err instanceof ErrorDePrecondicion) throw err;
+    if (esPrecondicion(err)) {
+      throw new ErrorDePrecondicion("El objeto ha cambiado desde que se inspeccionó.");
+    }
     throw err;
   }
 }
 
 /**
- * Primeros bytes del objeto, para comprobar el contenido REAL.
+ * Crea el objeto sólo si la clave NO existe.
  *
- * Se pide un rango en vez del objeto entero: la validación por firma sólo mira
- * la cabecera, y traerse 20 MiB a la función para leer 4 KB reintroduciría por
- * la puerta de atrás justo el problema que esta arquitectura evita.
+ * `If-None-Match: *` hace que el almacén responda `412` en vez de sobrescribir.
+ * Comprobado contra MinIO real en `PutObject`.
+ *
+ * POR QUÉ NO `CopyObject`
+ * -----------------------
+ * La copia en servidor sería más barata, pero la versión de MinIO fijada en la
+ * CI IGNORA `If-None-Match` en `CopyObject` y sobrescribe el destino
+ * (reproducido). Con copia no habría forma de impedir en el almacén que se
+ * pisara una clave final existente. Con `PutObject` sí la hay.
  */
-export async function downloadHead(key: string, bytes: number): Promise<Buffer> {
-  const res = await s3Client.send(
-    new GetObjectCommand({
-      Bucket: S3_BUCKET,
-      Key: key,
-      Range: `bytes=0-${Math.max(0, bytes - 1)}`,
-    }),
-  );
-  if (!res.Body) throw new Error(`El objeto ${key} no tiene contenido`);
-  const arr = await (
-    res.Body as { transformToByteArray: () => Promise<Uint8Array> }
-  ).transformToByteArray();
-  return Buffer.from(arr);
+export async function crearObjetoSiNoExiste(
+  key: string,
+  cuerpo: Buffer,
+  contentType: string,
+): Promise<void> {
+  try {
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: key,
+        Body: cuerpo,
+        ContentType: contentType,
+        IfNoneMatch: "*",
+      }),
+    );
+  } catch (err) {
+    if (esPrecondicion(err)) {
+      throw new ErrorDePrecondicion("La clave de destino ya existe.");
+    }
+    throw err;
+  }
 }
 
 /**

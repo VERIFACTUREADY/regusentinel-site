@@ -1765,3 +1765,243 @@ desarrollo y CI con `AllowedOrigins: *`.
 en el bucket real limitado al dominio de la aplicación, y el endpoint de
 almacenamiento tiene que ser alcanzable desde el navegador del usuario. Queda
 anotado como requisito pendiente.
+
+## 2026-09-10 — Siete defectos de integridad en la subida directa, cerrados
+
+### Alcance de esta revisión
+
+La fase anterior (2026-09-09) resolvió el bloqueo de producción: el archivo deja
+de pasar por la función. Una revisión independiente encontró que la
+implementación resultante tenía siete huecos de integridad, todos **reproducidos
+contra MinIO y PostgreSQL reales antes de corregirlos**, no sólo razonados.
+
+**Lo que esta fase demuestra**: el código se ha verificado contra Next.js local,
+PostgreSQL real y una instalación de MinIO real (la misma versión fijada que usa
+la CI). **Lo que esta fase NO demuestra**: que el bucket S3 real de producción
+tenga configurado CORS —eso sigue pendiente de verificación independiente,
+explícitamente marcado abajo—, ni que Amazon S3 (u otro proveedor real) se
+comporte de forma idéntica a MinIO en cada detalle. Que MinIO acepte una
+operación no es prueba de que S3 real la acepte igual.
+
+### A. URL reutilizable: separación STAGING / FINAL
+
+**Reproducido contra MinIO real**: con el diseño anterior (una URL PUT desnuda
+firmada directamente sobre la clave que el `Document` iba a usar), confirmar una
+subida y después reutilizar la misma URL con bytes distintos **sobrescribía el
+objeto que el documento ya referenciaba** — la fila seguía diciendo "PDF
+verificado, 1024 bytes" mientras el bucket servía un ejecutable.
+
+**Corrección**: el navegador escribe en una clave de **preparación**
+(`stagingKey`, en su propio segmento `preparacion/`). Sólo tras verificar el
+objeto, el servidor copia esos bytes exactos a una clave **final** nueva y
+aleatoria (`finalKey`) que el navegador nunca ve. El `Document` sólo referencia
+`finalKey`. Reutilizar la política tras confirmar sólo puede reescribir la
+preparación, que ya no le importa a nadie.
+
+**Prueba**: `subida-directa-db.test.ts` — "reescribir la preparacion despues de
+confirmar NO puede alterar el objeto final" — confirma, reutiliza la política
+con bytes distintos, y comprueba que el objeto final (y los bytes que devuelve
+una segunda confirmación) no han cambiado.
+
+### B. El almacén, no la aplicación, impone el tamaño exacto
+
+**Reproducido contra MinIO real**: con una URL PUT desnuda, declarar 1 KB al
+autorizar y escribir 21 MiB de verdad daba 200 OK. La única barrera era
+`confirmarSubida`, que llegaba **después** de que el objeto ya estuviera
+escrito.
+
+**Corrección**: se firma una **política POST** (`createPresignedPost`, del
+paquete oficial `@aws-sdk/s3-presigned-post`) con la condición
+`content-length-range` fijada al tamaño exacto autorizado. Verificado contra
+MinIO real (versión fijada en la CI): un byte de menos da 400 EntityTooSmall;
+uno de más, 400 EntityTooLarge; 21 MiB con 1 KB autorizado, 400 EntityTooLarge.
+**En los tres casos no se escribe ningún objeto.**
+
+**Prueba**: `subida-directa-db.test.ts` — "declarar 1 KB y enviar 21 MiB es
+rechazado por el ALMACEN, SIN llamar a confirmar" — nunca invoca
+`confirmarSubida`: la propiedad se demuestra en el propio POST al almacén.
+
+### C. Integridad entre inspeccionar y copiar (TOCTOU)
+
+**Reproducido**: entre el HeadObject inicial y la lectura del contenido, la
+clave de preparación seguía siendo escribible mientras la política no caducara.
+
+**Corrección**: `leerObjetoSiCoincide` lee el objeto con `If-Match` sobre el
+ETag exacto que se acaba de inspeccionar. Si el objeto cambió entre medias, el
+almacén responde 412 y la confirmación aborta con 409 **sin marcar la subida
+como fallida** (puede ser un reintento legítimo en vuelo) y **sin copiar nada**
+a la clave final. La escritura de la clave final usa `IfNoneMatch: "*"`
+(`crearObjetoSiNoExiste`), así que tampoco puede pisar un final ya existente.
+
+Se comprobó también contra MinIO real que `CopyObject` con `IfNoneMatch: "*"`
+**no** respeta la condición (sobrescribe el destino) en la versión fijada —por
+eso la copia final se hace con `PutObject` de los bytes ya leídos en el
+servidor, no con `CopyObjectCommand`.
+
+**Prueba**: `subida-directa-db.test.ts` — "si el objeto cambia entre
+inspeccionar y leer, no se copia nada a la clave final" — intercepta el
+`HeadObjectCommand` real (no se reasigna el export nombrado del módulo: sus
+bindings son de sólo lectura) para reescribir la preparación justo después de
+inspeccionar.
+
+### D. Limpieza y confirmación: máquina de estados con reclamación CAS
+
+**Antes**: la limpieza hacía "buscar fila expirada → borrar objeto → borrar
+fila", sin reclamar nada primero. Una confirmación que llegaba entre el
+`findMany` y el `deleteFile` de la limpieza podía crear un `Document` justo
+cuando su objeto estaba a punto de borrarse.
+
+**Corrección**: se añade el estado `CLEANING`. La limpieza reclama con
+compare-and-swap (`updateMany({ where: { id, status: candidato.status } })`)
+antes de tocar nada; si el CAS no encuentra fila que actualizar (porque una
+confirmación ganó la carrera), no borra ningún objeto. Una reclamación
+abandonada (el proceso se cayó entre reclamar y borrar) se reintenta pasados 10
+minutos (`claimedAt`).
+
+**Prueba real, con barrera determinista (sin sleeps)**: se intercepta el primer
+`DeleteObjectCommand` real que la limpieza emite, se le hace esperar a que la
+confirmación termine su propio intento, y se comprueba que el resultado es
+**siempre** uno de los dos válidos: documento con objeto, o sin documento y sin
+objeto huérfano — nunca la combinación contradictoria.
+
+### E. Purga de expediente: RESTRICT, no Cascade
+
+**Reproducido**: con `PendingUpload.caseId` en cascada, purgar un expediente con
+una subida sin confirmar borraba la única fila que apuntaba a un objeto que
+podía seguir en el bucket, dejándolo huérfano sin que nada lo mencionara.
+
+**Corrección**: la relación pasa a ON DELETE RESTRICT. Verificado contra
+PostgreSQL real: intentar `case.delete()` a pelo con una fila `PendingUpload`
+viva **falla en la base de datos** (violación de clave foránea), no en
+silencio. `purgeCase` resuelve explícitamente las subidas sin confirmar del
+expediente —borra su objeto de preparación y, sólo si eso funciona, la fila—
+**antes** de borrar el `Case`; si el almacén falla al borrar, la purga entera se
+detiene (mismo criterio fail-closed que ya regía para los documentos
+confirmados) y ni el `Case` ni el `PendingUpload` desaparecen.
+
+### F. Atadura del actor
+
+**El hueco**: `confirmarSubida` comprobaba organización y expediente, pero no
+quién había autorizado. Cualquier usuario con permiso `documents.create` en el
+mismo expediente podía confirmar el `uploadId` de otro, y la auditoría atribuía
+el documento a quien nunca lo subió.
+
+**Corrección — interno**: se exige que `actor.userId` coincida exactamente con
+`PendingUpload.uploadedBy`.
+
+**Corrección — portal, con su límite honesto**: el portal **no tiene identidad
+por persona** — el enlace lo comparte la familia entera, y el modelo de datos
+actual no distingue quién de ellos actúa. La atadura disponible es la
+**aceptación de consentimiento vigente** (`PortalConsent.id`, nunca el token en
+crudo): se guarda al autorizar y se exige idéntica al confirmar. Esto no
+distingue entre miembros de la misma familia; sí impide confirmar con el
+`uploadId` de una sesión de consentimiento distinta (por ejemplo, tras retirar y
+volver a aceptar). Esta limitación se documenta aquí en vez de fingir una
+identidad que el producto no tiene.
+
+Ambos casos responden el mismo 404 que "no existe": distinguir la respuesta
+convertiría el endpoint en un oráculo.
+
+### G. Tarea borrada entre autorizar y confirmar
+
+**El hueco**: si la tarea vinculada se borraba después de autorizar, la
+creación del documento podía violar la clave foránea `taskId` a mitad de la
+transacción.
+
+**Corrección**: la vinculación se **revalida** al confirmar (no se confía en lo
+decidido al autorizar). Si aun así la tarea desaparece en la ventana exacta
+entre la revalidación y el INSERT, se captura específicamente la violación de
+clave foránea sobre `taskId` (código Prisma P2003) y se reintenta **sin
+vincular** — nunca a una tarea distinta. Respuesta honesta: sin 500, sin objeto
+huérfano (el documento se crea igual, con `taskId: null`), sin vínculo
+fantasma.
+
+### H. Retención acotada de PendingUpload completadas
+
+**El hueco**: las filas COMPLETED se conservaban para siempre, acumulando
+nombre de archivo y usuario de cada subida ya resuelta.
+
+**Corrección**: `completedAt` se fija al confirmar. `limpiarSubidasCaducadas`
+borra las filas COMPLETED con más de 7 días — **sólo la fila**; el `Document`
+y su objeto final no dependen de esta tabla y no se tocan. Reintentar la
+confirmación dentro de la ventana sigue siendo idempotente (misma fila, mismo
+documento devuelto).
+
+### I. Retirado el techo global de cuerpo en next.config.js
+
+El archivo ya no atraviesa ninguna ruta de la aplicación (sólo JSON pequeño en
+`upload-url` y `complete`), así que `experimental.middlewareClientMaxBodySize`
+—que existía únicamente para dejar pasar el multipart de 20 MiB— se retira.
+Inventario comprobado: ninguna ruta llama a `formData()`, `arrayBuffer()` ni
+`blob()`; la única que lee el cuerpo en crudo es el webhook de Stripe
+(`req.text()`, kilobytes). Vuelve el límite por defecto de Next (10 MB) y, en
+Vercel, el de la plataforma (4,5 MB) — ninguno de los dos afecta ya a la subida
+de documentos.
+
+### J. La aserción de tráfico del E2E deja de fallar en abierto
+
+`vigilarTrafico()` (en `e2e/subida-limites.spec.ts`) atrapaba los fallos de
+`postDataBuffer()` en silencio, así que "ninguna petición superó el límite de
+Vercel" podía pasar sin haber observado ningún cuerpo. Se hace fallar en
+cerrado: un cuerpo no observable en una petición mutadora del mismo origen hace
+fallar la prueba explícitamente, en vez de contar como cero. Se sigue
+exigiendo, además, que el archivo llegue al origen del almacenamiento en un
+POST con campos acotados, y que upload-url/complete reciban sólo JSON pequeño.
+
+### CORS: script de preparación corregido, y una herramienta nueva de sólo lectura
+
+`scripts/init-bucket.mjs` aplicaba `AllowedOrigins: ["*"]` a **cualquier**
+bucket al que se apuntara, sin distinguir desarrollo de producción, y contaba
+un `NotImplemented` del proveedor como "aviso" sin más. Ahora exige un origen
+explícito (`S3_CORS_ORIGINS`, sin comodín) y, si el proveedor no aplica la
+regla, lo dice sin ambigüedad: **CORS NO configurado**, no "probablemente
+vale".
+
+`scripts/verificar-cors-almacen.mjs` es nueva: una comprobación de **sólo
+lectura** para el bucket real, pensada para el checklist de release. Exige
+HTTPS en el endpoint y en el origen de la aplicación, lanza un preflight real
+con el origen de la aplicación (debe autorizar POST) y otro con un origen
+inventado (NO debe autorizarse — si lo hace, la CORS es permisiva, no una
+configuración para la aplicación), y lee la configuración CORS si hay
+credenciales. No firma nada, no crea objetos, no imprime credenciales.
+
+**Esto no se ha ejecutado contra ningún bucket de producción en esta fase.**
+Sigue siendo un requisito de release explícito, no verificado aquí.
+
+### Migración
+
+`20260910163000_subidas_staging_y_clave_final` — aditiva y segura sobre datos
+existentes. `fileKey` se **renombra** a `stagingKey` (no se borra y recrea: las
+filas de la fase anterior conservan su valor íntegro). Backfill explícito para
+filas COMPLETED heredadas (en el diseño anterior, `fileKey` era la clave final
+que el `Document` ya usaba): `finalKey = stagingKey`, `completedAt = createdAt`,
+y **crucialmente** `stagingDeletedAt = createdAt` —para que la nueva limpieza
+de "preparación sin borrar" nunca intente borrar el objeto real de un documento
+ya vivo—. Verificado con filas sintéticas en los tres estados heredados
+(PENDING, COMPLETED, FAILED) sobre PostgreSQL real: backfill correcto, sin
+drift posterior, Document heredado intacto.
+
+El camino de actualización histórico (`scripts/verify-upgrade-path.sh`) no se ha
+podido ejecutar en este puesto de trabajo Windows: el binario `psql.exe` de esta
+máquina malinterpreta los argumentos cuando la cadena de conexión llega como
+primer parámetro posicional seguido de flags (reproducido de forma aislada,
+ajeno a este cambio). El script en sí no se ha tocado y correrá tal cual en el
+job "Migraciones" de la CI de Linux, que es la comprobación que cuenta para el
+cierre de esta fase. Como evidencia adicional —y más específica que la del
+script genérico— se hizo la verificación equivalente a mano: aplicar las
+migraciones hasta d899d2d, sembrar filas PendingUpload sintéticas en sus tres
+estados, aplicar la migración nueva y comprobar el backfill campo a campo.
+
+### Lo que esta fase NO afirma
+
+No se afirma entrega exactamente-una-vez de correo ni de webhooks. No se afirma
+atomicidad transaccional completa entre PostgreSQL y S3 —la copia a la clave
+final ocurre fuera de la transacción de base de datos, por diseño: no puede
+haber una transacción distribuida real entre ambos sistemas; lo que se
+garantiza es que un fallo en cualquier punto deja o bien un documento con su
+objeto verificado, o bien ningún documento y ningún objeto huérfano, nunca la
+combinación contradictoria—. No se afirma que S3 real sea idéntico a MinIO en
+cada comportamiento de borde: donde importaba, se probó contra MinIO real y se
+dejó anotado. No se afirma CORS configurado en el bucket de producción. No se
+afirma cero vulnerabilidades: xlsx sigue siendo un bloqueo de producción aparte,
+deliberadamente fuera del alcance de esta fase.

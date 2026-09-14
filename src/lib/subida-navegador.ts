@@ -1,21 +1,29 @@
 /**
  * Envío del archivo del NAVEGADOR al almacenamiento, sin pasar por la función.
  *
+ * QUÉ SE ENVÍA
+ * ------------
+ * Un formulario POST con los campos firmados que devolvió la autorización y el
+ * archivo al final. El almacén evalúa la política ANTES de guardar: si el
+ * tamaño no es exactamente el autorizado, o la clave no es la firmada, rechaza
+ * y no escribe nada. Ver `crearPoliticaDeSubida` en `s3.ts`.
+ *
+ * El `Content-Type` del formulario lo pone el navegador (`multipart/form-data`)
+ * y no se añade ningún campo por cuenta propia: la política sólo admite los que
+ * firmó el servidor, y cualquier otro se rechaza con `403`.
+ *
  * POR QUÉ `XMLHttpRequest` Y NO `fetch`
  * -------------------------------------
  * `fetch` no informa del progreso de SUBIDA. Sin progreso, un archivo de 20 MiB
  * en una conexión lenta deja la pantalla parada varios minutos y la persona no
- * puede distinguir "va" de "se ha colgado", así que cierra la pestaña y pierde
- * el trabajo. `XMLHttpRequest` sí publica `upload.onprogress`, y es la única
- * razón por la que se usa aquí.
- *
- * NO SE MANDA `Content-Type` A PROPÓSITO
- * --------------------------------------
- * La URL se firma sin esa cabecera (ver `getPresignedUploadUrl`). Si el
- * navegador la enviara firmada de otra forma, la firma no cuadraría y el
- * usuario vería un error de almacenamiento que no puede entender ni arreglar.
- * El tipo real lo decide el servidor con los bytes, al confirmar.
+ * puede distinguir "va" de "se ha colgado". `XMLHttpRequest` sí publica
+ * `upload.onprogress`, y es la única razón por la que se usa aquí.
  */
+
+export interface DestinoDeSubida {
+  url: string;
+  fields: Record<string, string>;
+}
 
 export class ErrorDeSubida extends Error {
   constructor(
@@ -28,16 +36,39 @@ export class ErrorDeSubida extends Error {
   }
 }
 
+/** Código de error S3 del cuerpo XML, si el navegador deja leerlo. */
+function codigoDeError(texto: string): string | null {
+  const m = /<Code>([^<]+)<\/Code>/.exec(texto);
+  return m ? m[1] : null;
+}
+
+function mensajePara(estado: number, codigo: string | null): string {
+  if (codigo === "EntityTooLarge" || codigo === "EntityTooSmall") {
+    return "el archivo no tiene el tamaño que se autorizó; vuelve a seleccionarlo";
+  }
+  if (estado === 403) {
+    return "el permiso de subida ha caducado o no es válido; vuelve a intentarlo";
+  }
+  return `el almacenamiento ha respondido ${estado}`;
+}
+
 export function subirAlAlmacen(
-  url: string,
+  destino: DestinoDeSubida,
   file: File,
   opciones: { onProgreso?: (porcentaje: number) => void; signal?: AbortSignal } = {},
 ): Promise<void> {
   const { onProgreso, signal } = opciones;
 
   return new Promise<void>((resolve, reject) => {
+    const formulario = new FormData();
+    for (const [nombre, valor] of Object.entries(destino.fields)) {
+      formulario.append(nombre, valor);
+    }
+    // El archivo va el ÚLTIMO: el almacén ignora los campos que vienen detrás.
+    formulario.append("file", file);
+
     const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url, true);
+    xhr.open("POST", destino.url, true);
 
     if (onProgreso) {
       xhr.upload.onprogress = (e) => {
@@ -54,11 +85,7 @@ export function subirAlAlmacen(
         resolve();
         return;
       }
-      reject(
-        new ErrorDeSubida(
-          `el almacenamiento ha respondido ${xhr.status}`,
-        ),
-      );
+      reject(new ErrorDeSubida(mensajePara(xhr.status, codigoDeError(xhr.responseText ?? ""))));
     };
 
     /*
@@ -80,6 +107,6 @@ export function subirAlAlmacen(
       signal.addEventListener("abort", () => xhr.abort(), { once: true });
     }
 
-    xhr.send(file);
+    xhr.send(formulario);
   });
 }

@@ -438,54 +438,103 @@ model Document {
 /// --------------
 /// Una función de Vercel admite como máximo 4,5 MB de cuerpo de petición. El
 /// contrato del producto son 20 MiB, así que el archivo no puede atravesarla:
-/// el navegador lo sube directamente al almacenamiento con una URL prefirmada.
-/// Eso parte la operación en dos viajes (autorizar y confirmar) y deja un hueco
-/// entre ambos. Esta tabla es lo que vive en ese hueco.
+/// el navegador lo sube directamente al almacenamiento con una política de
+/// subida firmada. Eso parte la operación en dos viajes (autorizar y
+/// confirmar) y deja un hueco entre ambos. Esta tabla es lo que vive en ese
+/// hueco.
 ///
-/// QUÉ SOSTIENE
-/// ------------
-///   - La AUTORIZACIÓN: la clave, el expediente, la organización y el actor los
-///     fija el servidor al autorizar. En la confirmación no se vuelve a creer
-///     nada de lo que diga el cliente: se lee de aquí.
-///   - La IDEMPOTENCIA: `status` se reclama en la misma transacción que crea el
-///     documento, y `documentId` es único. Dos confirmaciones simultáneas de la
-///     misma subida no pueden crear dos filas.
-///   - La LIMPIEZA: `expiresAt` permite localizar y borrar los objetos de las
-///     subidas que se autorizaron y nunca se confirmaron, que si no se
-///     quedarían en el bucket para siempre sin que ninguna fila los mencione.
+/// STAGING Y FINAL, CLAVES DISTINTAS
+/// ----------------------------------
+/// El navegador escribe en `stagingKey`, una clave de preparación. Esa clave
+/// es intrínsecamente reutilizable mientras la política no caduque: cualquiera
+/// con la URL puede volver a escribir ahí. Por eso NINGÚN `Document` referencia
+/// jamás `stagingKey`. Sólo tras verificar el objeto (tamaño exacto, contenido
+/// real, sin que haya cambiado entre la inspección y la lectura) el servidor
+/// copia esos bytes exactos —comprobados por ETag— a `finalKey`, una clave
+/// nueva y aleatoria que el navegador nunca ha visto y no puede volver a
+/// escribir. Reutilizar la política tras confirmar sólo puede reescribir el
+/// staging, que ya no le importa a nadie.
+///
+/// LA MÁQUINA DE ESTADOS
+/// ----------------------
+///   PENDING   — autorizada, esperando confirmación o caducidad.
+///   CLEANING  — una pasada de limpieza la ha reclamado (CAS: sólo si seguía
+///               PENDING). Mientras esté aquí, confirmar ya no puede ganarla.
+///   COMPLETED — verificada y con `Document` creado. `documentId` es único:
+///               barrera final contra duplicados.
+///   FAILED    — descartada (tamaño, contenido o caducidad) y su staging
+///               borrado o en vías de estarlo.
+///
+/// `claimedAt` es el reloj de la reclamación: si un proceso se cae justo
+/// después de reclamar (CLEANING) sin llegar a borrar, la siguiente pasada
+/// puede volver a reclamarla pasado un margen, en vez de dejarla huérfana para
+/// siempre.
+///
+/// RETENCIÓN DE LAS COMPLETADAS
+/// ------------------------------
+/// `completedAt` acota cuánto tiempo se conserva la fila una vez confirmada.
+/// Sirve sólo para que un reintento tras un corte de red sea idempotente; pasado
+/// el plazo se borra la FILA —nunca el `Document` ni su objeto, que viven aparte
+/// y no dependen de esta tabla—. `stagingDeletedAt` registra si el objeto de
+/// preparación ya se borró tras confirmar, para poder reintentarlo sin volver a
+/// tocar el objeto final.
 model PendingUpload {
   id     String @id @default(cuid())
   orgId  String
   caseId String
 
-  /// Clave en el bucket. La genera el servidor; el cliente nunca la propone.
-  fileKey String @unique
+  /// Clave de preparación. La genera el servidor; el cliente nunca la propone.
+  /// NUNCA la referencia un `Document`.
+  stagingKey String @unique
+  /// Clave definitiva, asignada sólo al confirmar. La referencia el `Document`.
+  finalKey   String? @unique
+
   /// Nombre ya saneado en la autorización.
   fileName String
-  /// Tamaño declarado al autorizar. En la confirmación se compara con el
-  /// tamaño REAL del objeto: si no coinciden, no se crea documento.
+  /// Tamaño declarado al autorizar. En la confirmación se exige tanto en la
+  /// política de subida (el almacén la rechaza si no coincide) como contra el
+  /// tamaño REAL del objeto inspeccionado.
   expectedSize Int
 
-  /// Contexto del actor, fijado al autorizar.
-  uploadedBy     String?
-  isPortalUpload Boolean @default(false)
-  /// Vinculación manual a tarea, ya validada contra expediente y organización.
+  /// Actor interno que autorizó, cuando no es del portal. La confirmación
+  /// exige que sea el MISMO usuario autenticado, no sólo alguien de la misma
+  /// organización y expediente.
+  uploadedBy String?
+  /// Identidad estable del consentimiento del portal vigente al autorizar. El
+  /// portal no tiene identidad por persona —el enlace es compartido por la
+  /// familia—: esto es lo más cercano a una atadura estable que ofrece el
+  /// modelo de datos actual. Nunca se guarda el token en crudo.
+  portalConsentId String?
+  isPortalUpload  Boolean @default(false)
+  /// Vinculación manual a tarea, ya validada contra expediente y organización
+  /// al autorizar. Se revalida otra vez al confirmar, porque pudo borrarse
+  /// entre medias.
   taskId String?
 
-  /// PENDING | COMPLETED | FAILED
-  status String @default("PENDING")
+  /// PENDING | CLEANING | COMPLETED | FAILED
+  status    String    @default("PENDING")
+  claimedAt DateTime?
+
   /// Documento creado. Único: es la barrera final contra duplicados.
   documentId String? @unique
   /// Motivo del descarte, para poder explicar por qué no se guardó.
   failureReason String?
 
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  expiresAt        DateTime
+  createdAt        DateTime  @default(now())
+  completedAt      DateTime?
+  stagingDeletedAt DateTime?
 
-  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  /// RESTRICT, no Cascade: un expediente con subidas pendientes no puede
+  /// desaparecer sin que antes se resuelva su almacenamiento. `purgeCase` borra
+  /// estas filas explícitamente —y su objeto de preparación si lo hay— ANTES
+  /// de borrar el expediente, y se detiene si el almacenamiento falla, igual
+  /// que ya hace con los documentos confirmados.
+  case Case @relation(fields: [caseId], references: [id], onDelete: Restrict)
 
   /// Lo consulta la limpieza de caducadas.
   @@index([status, expiresAt])
+  @@index([status, completedAt])
   @@index([caseId])
 }
 

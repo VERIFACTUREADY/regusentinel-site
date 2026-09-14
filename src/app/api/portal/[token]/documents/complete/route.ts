@@ -27,7 +27,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ token: s
 
   try {
     const resultado = await confirmarSubida({
-      actor: { orgId: c.orgId, caseId: c.id, userId: null, isPortalUpload: true },
+      actor: {
+        orgId: c.orgId,
+        caseId: c.id,
+        userId: null,
+        isPortalUpload: true,
+        portalConsentId: access.consentId,
+      },
       uploadId: (body as { uploadId?: unknown }).uploadId,
     });
 

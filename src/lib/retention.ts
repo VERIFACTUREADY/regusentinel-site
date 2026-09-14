@@ -23,6 +23,54 @@ import { logAudit } from "./audit";
 import { sendEmail } from "./email";
 
 /**
+ * Purga primero las subidas SIN confirmar del expediente: borra su objeto de
+ * preparación y, sólo si eso funciona, su fila.
+ *
+ * POR QUÉ ES OBLIGATORIO ANTES DE BORRAR EL CASE
+ * ------------------------------------------------
+ * `PendingUpload.caseId` es `ON DELETE RESTRICT`, no `Cascade` (a propósito,
+ * desde la revisión de seguridad posterior a d899d2d): si se dejara en cascada,
+ * borrar el expediente se llevaría por delante la fila que es el ÚNICO rastro
+ * en base de datos de un objeto de preparación que puede seguir en el bucket
+ * —el navegador pudo escribirlo y nunca confirmar—. Con `RESTRICT`, intentar
+ * borrar el `Case` con filas `PendingUpload` vivas falla en la base de datos
+ * ANTES de perder nada; esta función es la que las resuelve primero.
+ *
+ * Si el borrado del objeto en S3 falla, se detiene aquí —fail-closed, igual
+ * que ya hacía la purga con los documentos confirmados— y la purga del
+ * expediente NO continúa: mejor un expediente que tarda en purgarse que un
+ * puntero perdido.
+ */
+async function purgarSubidasSinConfirmar(
+  caseId: string,
+  db: PrismaClient,
+): Promise<{ ok: boolean; borradas: number; fallidas: number }> {
+  const pendientes = await db.pendingUpload.findMany({
+    where: { caseId, status: { not: "COMPLETED" } },
+    select: { id: true, stagingKey: true },
+  });
+
+  let borradas = 0;
+  const fallidas: string[] = [];
+
+  for (const p of pendientes) {
+    try {
+      // Borrar una clave que nunca llegó a escribirse no es un error: S3
+      // trata el borrado como idempotente.
+      await deleteFile(p.stagingKey);
+    } catch (err) {
+      fallidas.push(p.stagingKey);
+      console.error(`Purga: no se pudo borrar la preparación ${p.stagingKey}`, err);
+      continue;
+    }
+    await db.pendingUpload.delete({ where: { id: p.id } });
+    borradas++;
+  }
+
+  return { ok: fallidas.length === 0, borradas, fallidas: fallidas.length };
+}
+
+/**
  * Reintentos automáticos rápidos antes de exigir intervención humana.
  *
  * Superarlo NO detiene la purga: cambia el estado a NEEDS_INTERVENTION, genera
@@ -97,6 +145,19 @@ export async function purgeCase(
     }
   }
 
+  /*
+   * Subidas directas SIN confirmar. `PendingUpload.caseId` es `ON DELETE
+   * RESTRICT`: si quedara una fila viva —su objeto de preparación pudo
+   * escribirse y nunca confirmarse—, `tx.case.delete()` de abajo fallaría en la
+   * base de datos. Se resuelve ANTES, con el mismo criterio fail-closed que los
+   * documentos: si el almacén no borra, la purga no continúa.
+   */
+  const subidasSinConfirmar = await purgarSubidasSinConfirmar(caseId, db);
+  s3Deleted += subidasSinConfirmar.borradas;
+  if (!subidasSinConfirmar.ok) {
+    fallidos.push(`${subidasSinConfirmar.fallidas} subida(s) sin confirmar`);
+  }
+
   // Si algún objeto sigue en S3, NO marcamos el expediente como purgado: sería
   // afirmar que el dato está eliminado cuando su contenido sigue almacenado.
   if (fallidos.length > 0) {
@@ -150,6 +211,13 @@ export async function purgeCase(
 
     // Las notificaciones guardan el email del destinatario.
     await tx.notificationLog.deleteMany({ where: { caseId } });
+
+    /*
+     * Lo que queda son filas COMPLETED: su objeto vive en la clave FINAL del
+     * Document (que la cascada de arriba ya se ha llevado) y no depende de
+     * esta fila. Borrarla aquí no toca ningún objeto de almacenamiento.
+     */
+    await tx.pendingUpload.deleteMany({ where: { caseId } });
 
     // EVIDENCIA SIN PII, en la misma transacción que el borrado: o quedan las
     // dos cosas o no queda ninguna. Sin esto, completar la purga no dejaba
