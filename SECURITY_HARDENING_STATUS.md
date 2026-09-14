@@ -2057,3 +2057,98 @@ Ninguna de las dos correcciones toca los diez defectos A–J de la subida
 directa ni cambia su lógica; son requisitos de la propia puerta de entrega de
 esta fase (los cinco jobs no-auditoría deben quedar en verde; la auditoría
 solo puede seguir en rojo por xlsx) que no se podían cumplir sin ellas.
+
+## 2026-09-14 (2) — Revisión de fiabilidad de `confirmarSubida`: la garantía exacta, ventana por ventana
+
+Revisión acotada (no un refactor) de una afirmación concreta: *"todo fallo deja
+o un `Document` válido con su objeto verificado, o ningún `Document` y ningún
+objeto huérfano"*. Se analizaron seis ventanas de fallo contra la
+implementación real y, donde aplicaba, se reprodujeron contra MinIO y
+PostgreSQL reales.
+
+**Lo que ya estaba cerrado, y se demuestra con pruebas dirigidas**:
+
+- **Ventana 1** (`GetObject` con `If-Match` falla tras inspeccionar): ya
+  probado (`subida-directa-db.test.ts`, "si el objeto cambia entre
+  inspeccionar y leer"). No se escribe la clave final, no se crea `Document`.
+- **Ventana 2, caso simple** (la transacción falla tras escribir el objeto
+  final, y el borrado compensatorio del propio `catch` funciona): el borrado
+  es **SÍNCRONO e INMEDIATO** — ya lo hacía el código. Nueva prueba dirigida
+  que lo demuestra contra MinIO real: "ventana 2 (fallo simple)".
+
+**El hueco real que se encontró, y la corrección**:
+
+Antes de esta revisión, `finalKey` sólo se guardaba en la fila **dentro** de la
+transacción que crea el `Document`. Dos combinaciones de fallo quedaban sin
+ninguna vía de recuperación:
+
+- **Ventana 2, doble fallo**: el objeto final se escribe bien, la transacción
+  falla, Y el borrado compensatorio de ese mismo `catch` **también** falla (dos
+  fallos de almacén distintos, no uno). El objeto quedaba huérfano y **nada**
+  en la fila decía que esa clave se había intentado: ninguna limpieza
+  posterior podía encontrarlo.
+- **Ventana 4**: el proceso se cae entre escribir el objeto final y que la
+  transacción llegue siquiera a ejecutarse. Ningún `catch` llega a correr. Sin
+  reproducir literalmente una caída del proceso (no se puede en una prueba),
+  se reconstruyó a mano el estado EXACTO que deja —con las mismas primitivas
+  que usa `confirmarSubida`— y se comprobó que, antes de la corrección, nada lo
+  recuperaba.
+
+**La corrección** (`src/lib/subida-directa.ts`, sin migración: `finalKey` ya
+existía en el esquema desde la fase anterior): `confirmarSubida` ahora deja
+constancia de la clave final en la fila **antes** de escribir el objeto en el
+almacén, con una escritura llana (no una reclamación que pueda hacer perder la
+carrera a una confirmación concurrente legítima — se comprobó con la prueba de
+concurrencia real que una versión con CAS aquí SÍ rompía "confirmación
+concurrente crea exactamente uno", y se corrigió antes de seguir). Con eso, dos
+redes de seguridad, ninguna nueva migración:
+
+1. **Reintento secuencial** (el cliente vuelve a llamar tras un fallo): si la
+   fila ya trae una clave final de un intento anterior, se borra ANTES de
+   escribir la nueva — recuperación **inmediata**, no hace falta esperar a la
+   limpieza. Probado contra MinIO real.
+2. **Nadie vuelve a llamar** (caída del proceso, cliente que abandona):
+   `limpiarSubidasCaducadas` (pasada 1) ahora también borra la clave final de
+   una fila que caduca sin confirmar, con la misma reclamación CAS que ya
+   protegía la clave de preparación. Recuperación **eventual**, acotada por
+   `VALIDEZ_REGISTRO_MS` (1 hora) más la cadencia del cron — no instantánea, y
+   así se documenta. Probado contra MinIO real (ventana 2 doble fallo, ventana
+   4), incluida su idempotencia (ventana 6: repetir la limpieza tras recuperar
+   un huérfano no falla ni encuentra nada que rehacer).
+
+`descartar()` —la función que marca una subida `FAILED` cuando la validación
+falla antes de escribir el objeto final— recibió el mismo tratamiento: si la
+fila ya traía una clave final huérfana de un intento anterior cuando se
+descarta por otro motivo (caducidad, tamaño, contenido), también se borra ahí;
+si no, un `FAILED` no pasa por ninguna limpieza periódica y ese huérfano
+quedaría sin ninguna vía de recuperación para siempre.
+
+**Corrección de lenguaje, no sólo de código**: la cabecera de
+`subida-directa.ts` y el comentario de `limpiarSubidasCaducadas` se
+reescribieron para distinguir explícitamente **inmediato** de **eventual** en
+cada caso, en vez de afirmar "sin huérfanos" sin más. La preparación sobrante
+tras un `complete` que sí tuvo éxito (ventana 3, `stagingKey`) **ya** se
+documentaba como recuperación eventual antes de esta revisión — se añadió una
+prueba dirigida explícita contra MinIO real que lo demuestra (Document válido
+al instante; preparación sobrante recuperada eventualmente por la pasada 3).
+La ventana 5 (caída tras comprometer la transacción, antes de borrar la
+preparación) se reconstruyó también a mano y se comprobó que la pasada 3 ya la
+cubre, sin ningún cambio de código: mismo mecanismo que la ventana 3.
+
+**Pruebas nuevas**: 7 pruebas dirigidas en
+`__tests__/integration/subida-directa-db.test.ts`, contra MinIO y PostgreSQL
+reales, sin mocks de almacenamiento (sólo inyección determinista de fallos en
+`s3Client.send` y en `prisma.$transaction`, igual que el resto del archivo).
+Las 40 pruebas ya existentes en ese archivo se repitieron intactas: la primera
+versión de la corrección (una reclamación CAS antes de escribir el objeto
+final) rompía "dos confirmaciones simultáneas crean un documento y no dejan un
+objeto huérfano" — se detectó por la propia prueba existente, no se debilitó
+ni se excluyó esa prueba: se corrigió el diseño de la corrección hasta que
+volvió a pasar.
+
+**Alcance respetado**: ningún cambio en `xlsx`, en los umbrales de `npm audit`,
+en `CORS`, en `main`, en protección de rama, en credenciales de producción, ni
+en dependencias no relacionadas. Aislamiento por tenant, atadura del actor,
+idempotencia, reclamación CAS existente y el diseño de la migración de
+`20260910163000` quedan intactos — no se tocó `prisma/schema.prisma` ni se creó
+ninguna migración nueva: `finalKey` ya existía.

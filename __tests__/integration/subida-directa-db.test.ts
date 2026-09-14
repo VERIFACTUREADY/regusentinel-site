@@ -36,12 +36,22 @@ const CABECERA_MZ = Buffer.from([0x4d, 0x5a, 0x90, 0x00]);
 let s3: typeof import("../../src/lib/s3");
 let subidas: typeof import("../../src/lib/subida-directa");
 let retencion: typeof import("../../src/lib/retention");
+/**
+ * El `prisma` de `./helpers/db` es OTRA instancia de `PrismaClient` —conecta
+ * a la misma base real, pero es un objeto distinto—. `subida-directa.ts`
+ * importa el singleton de `src/lib/prisma.ts`: para inyectar un fallo
+ * determinista en `$transaction` hay que interceptar ESE objeto, no el de los
+ * helpers, o la intercepcion no tiene ningun efecto sobre el codigo bajo
+ * prueba (se confirmó exactamente así al escribir estas pruebas).
+ */
+let prismaReal: typeof import("../../src/lib/prisma");
 
 beforeAll(async () => {
   if (!hayMinio) return;
   s3 = await import("../../src/lib/s3");
   subidas = await import("../../src/lib/subida-directa");
   retencion = await import("../../src/lib/retention");
+  prismaReal = await import("../../src/lib/prisma");
 
   await s3.s3Client
     .send(new CreateBucketCommand({ Bucket: BUCKET! }))
@@ -873,4 +883,323 @@ describeSiHayMinio("Purga de expediente con subida sin confirmar: sin huerfanos"
     expect(await prisma.case.findUnique({ where: { id: expediente.id } })).not.toBeNull();
     expect(await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } })).not.toBeNull();
   }, 90_000);
+});
+
+/**
+ * LA GARANTÍA EXACTA: "todo fallo deja o un Document valido con su objeto
+ * verificado, o ningun Document y ningun objeto huerfano", ventana por
+ * ventana, contra MinIO y PostgreSQL reales.
+ *
+ * Las ventanas 4 y 5 (el proceso se cae de verdad) no se pueden reproducir
+ * matando el proceso de pruebas: se reconstruye a mano, con las MISMAS
+ * primitivas que usa `confirmarSubida` (`crearObjetoSiNoExiste`,
+ * `uploadFile`, las mismas escrituras en la fila), el estado EXACTO que una
+ * caida en ese punto deja. Es la unica forma honesta de probarlo sin mocks:
+ * el objeto huerfano y la fila que se construyen son reales.
+ */
+describeSiHayMinio("Subida directa: la garantia tras un fallo, ventana por ventana", () => {
+  it("ventana 2 (fallo simple) — la transaccion falla tras escribir el objeto final: se borra SINCRONAMENTE, sin huerfano y sin Document", async () => {
+    const { org, owner } = await createOrg();
+    const expediente = await createCase(org.id, "EXP-VENTANA-2");
+    const actor = await actorInterno(org.id, expediente.id, owner.id);
+
+    const autorizacion = await subidas.autorizarSubida({ actor, fileName: "tx-falla.pdf", size: 1024 });
+    if (!autorizacion.ok) throw new Error("la autorizacion deberia concederse");
+    await escribirEnAlmacen({ url: autorizacion.uploadUrl, fields: autorizacion.fields }, pdfDe(1024));
+
+    // El objeto final se escribe de verdad (antes de `prisma.$transaction`);
+    // solo la transaccion se inyecta para que falle.
+    const transaccionOriginal = prismaReal.prisma.$transaction.bind(prismaReal.prisma);
+    (prismaReal.prisma as unknown as { $transaction: unknown }).$transaction = async () => {
+      throw new Error("base de datos caida (inyectado)");
+    };
+
+    let lanzo = false;
+    try {
+      await subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId });
+    } catch {
+      lanzo = true;
+    } finally {
+      (prismaReal.prisma as unknown as { $transaction: unknown }).$transaction = transaccionOriginal;
+    }
+
+    expect(lanzo, "el fallo operativo se propaga, no se disfraza de ok:false").toBe(true);
+    expect(await prisma.document.count({ where: { caseId: expediente.id } })).toBe(0);
+
+    const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+    const claves = await s3.s3Client.send(
+      new ListObjectsV2Command({ Bucket: BUCKET!, Prefix: `${org.id}/${expediente.id}/interno/` }),
+    );
+    expect((claves.Contents ?? []).length, "sin objeto final huerfano: se borro sincronamente").toBe(0);
+
+    const pendiente = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+    expect(pendiente!.status, "sigue PENDING: el cliente puede reintentar").toBe("PENDING");
+  }, 30_000);
+
+  it("ventana 2 (doble fallo) — si el borrado compensatorio TAMBIEN falla, el huerfano no queda para siempre: la limpieza lo recupera al caducar", async () => {
+    const { org, owner } = await createOrg();
+    const expediente = await createCase(org.id, "EXP-VENTANA-2B");
+    const actor = await actorInterno(org.id, expediente.id, owner.id);
+
+    const autorizacion = await subidas.autorizarSubida({ actor, fileName: "doble-fallo.pdf", size: 1024 });
+    if (!autorizacion.ok) throw new Error("la autorizacion deberia concederse");
+    await escribirEnAlmacen({ url: autorizacion.uploadUrl, fields: autorizacion.fields }, pdfDe(1024));
+
+    const transaccionOriginal = prismaReal.prisma.$transaction.bind(prismaReal.prisma);
+    (prismaReal.prisma as unknown as { $transaction: unknown }).$transaction = async () => {
+      throw new Error("base de datos caida (inyectado)");
+    };
+    const { DeleteObjectCommand, ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+    const enviarOriginal = s3.s3Client.send.bind(s3.s3Client);
+    (s3.s3Client as { send: unknown }).send = async (cmd: unknown, ...resto: unknown[]) => {
+      if (cmd instanceof DeleteObjectCommand) throw new Error("almacen caido para el borrado (inyectado)");
+      return (enviarOriginal as (...a: unknown[]) => unknown)(cmd, ...resto);
+    };
+
+    let lanzo = false;
+    try {
+      await subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId });
+    } catch {
+      lanzo = true;
+    } finally {
+      (prismaReal.prisma as unknown as { $transaction: unknown }).$transaction = transaccionOriginal;
+      (s3.s3Client as { send: unknown }).send = enviarOriginal;
+    }
+    expect(lanzo).toBe(true);
+
+    // Justo tras el doble fallo: el objeto final SIGUE en el almacen. Este es
+    // el hueco que se documenta como recuperacion EVENTUAL, no instantanea.
+    const prefijo = `${org.id}/${expediente.id}/interno/`;
+    let claves = await s3.s3Client.send(new ListObjectsV2Command({ Bucket: BUCKET!, Prefix: prefijo }));
+    expect((claves.Contents ?? []).length, "el huerfano existe de verdad justo tras el doble fallo").toBe(1);
+
+    const pendiente = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+    expect(pendiente!.status).toBe("PENDING");
+    expect(pendiente!.finalKey, "la fila recuerda la clave huerfana").not.toBeNull();
+
+    // Se envejece como cualquier otra preparacion abandonada.
+    await prisma.pendingUpload.update({
+      where: { id: autorizacion.uploadId },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    const resumen = await subidas.limpiarSubidasCaducadas();
+    expect(resumen.errores).toBe(0);
+
+    claves = await s3.s3Client.send(new ListObjectsV2Command({ Bucket: BUCKET!, Prefix: prefijo }));
+    expect((claves.Contents ?? []).length, "la limpieza recupera el huerfano final al caducar").toBe(0);
+    expect(await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } })).toBeNull();
+    expect(await prisma.document.count({ where: { caseId: expediente.id } })).toBe(0);
+  }, 30_000);
+
+  it("un reintento SECUENCIAL borra la clave final huerfana del intento anterior antes de escribir la suya (recuperacion INMEDIATA, no hace falta esperar a la limpieza)", async () => {
+    const { org, owner } = await createOrg();
+    const expediente = await createCase(org.id, "EXP-VENTANA-2-REINTENTO");
+    const actor = await actorInterno(org.id, expediente.id, owner.id);
+
+    const autorizacion = await subidas.autorizarSubida({ actor, fileName: "reintento.pdf", size: 1024 });
+    if (!autorizacion.ok) throw new Error("la autorizacion deberia concederse");
+    await escribirEnAlmacen({ url: autorizacion.uploadUrl, fields: autorizacion.fields }, pdfDe(1024));
+
+    // Primer intento: doble fallo, igual que arriba, deja un huerfano.
+    const transaccionOriginal = prismaReal.prisma.$transaction.bind(prismaReal.prisma);
+    (prismaReal.prisma as unknown as { $transaction: unknown }).$transaction = async () => {
+      throw new Error("caida (inyectado)");
+    };
+    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+    const enviarOriginal = s3.s3Client.send.bind(s3.s3Client);
+    (s3.s3Client as { send: unknown }).send = async (cmd: unknown, ...resto: unknown[]) => {
+      if (cmd instanceof DeleteObjectCommand) throw new Error("borrado caido (inyectado)");
+      return (enviarOriginal as (...a: unknown[]) => unknown)(cmd, ...resto);
+    };
+    try {
+      await expect(subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId })).rejects.toThrow();
+    } finally {
+      (prismaReal.prisma as unknown as { $transaction: unknown }).$transaction = transaccionOriginal;
+      (s3.s3Client as { send: unknown }).send = enviarOriginal;
+    }
+
+    const filaTrasFallo = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+    const claveHuerfana = filaTrasFallo!.finalKey!;
+    expect(claveHuerfana).not.toBeNull();
+    expect(await s3.inspeccionarObjeto(claveHuerfana), "el huerfano del primer intento existe de verdad").not.toBeNull();
+
+    // Segundo intento, sin nada inyectado: el flujo normal.
+    const segundo = await subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId });
+    expect(segundo.ok, JSON.stringify(segundo)).toBe(true);
+    if (!segundo.ok) throw new Error("inalcanzable");
+
+    expect(
+      await s3.inspeccionarObjeto(claveHuerfana),
+      "el reintento borro el huerfano del primer intento antes de escribir el suyo",
+    ).toBeNull();
+    expect(segundo.documento.fileKey).not.toBe(claveHuerfana);
+    expect(await s3.inspeccionarObjeto(segundo.documento.fileKey)).not.toBeNull();
+    expect(await prisma.document.count({ where: { caseId: expediente.id } })).toBe(1);
+  }, 30_000);
+
+  it("ventana 3 — si el borrado de la preparacion falla tras confirmar, el Document es valido AL INSTANTE; la preparacion sobrante desaparece EVENTUALMENTE, no al instante", async () => {
+    const { org, owner } = await createOrg();
+    const expediente = await createCase(org.id, "EXP-VENTANA-3");
+    const actor = await actorInterno(org.id, expediente.id, owner.id);
+
+    const autorizacion = await subidas.autorizarSubida({ actor, fileName: "staging-no-borra.pdf", size: 1024 });
+    if (!autorizacion.ok) throw new Error("la autorizacion deberia concederse");
+    await escribirEnAlmacen({ url: autorizacion.uploadUrl, fields: autorizacion.fields }, pdfDe(1024));
+
+    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+    const enviarOriginal = s3.s3Client.send.bind(s3.s3Client);
+    (s3.s3Client as { send: unknown }).send = async (cmd: unknown, ...resto: unknown[]) => {
+      if (cmd instanceof DeleteObjectCommand) throw new Error("almacen caido para el borrado (inyectado)");
+      return (enviarOriginal as (...a: unknown[]) => unknown)(cmd, ...resto);
+    };
+
+    let confirmacion;
+    try {
+      confirmacion = await subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId });
+    } finally {
+      (s3.s3Client as { send: unknown }).send = enviarOriginal;
+    }
+
+    // INMEDIATO: el Document y su objeto final son validos ya, aunque el
+    // borrado de la preparacion haya fallado.
+    expect(confirmacion.ok, JSON.stringify(confirmacion)).toBe(true);
+    if (!confirmacion.ok) throw new Error("inalcanzable");
+    expect(await s3.inspeccionarObjeto(confirmacion.documento.fileKey)).not.toBeNull();
+
+    const pendiente = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+    expect(pendiente!.status).toBe("COMPLETED");
+    expect(pendiente!.stagingDeletedAt).toBeNull();
+    expect(
+      await s3.inspeccionarObjeto(pendiente!.stagingKey),
+      "la preparacion sigue ahi justo tras el fallo: NO es un borrado instantaneo",
+    ).not.toBeNull();
+
+    const resumen = await subidas.limpiarSubidasCaducadas();
+    expect(resumen.errores).toBe(0);
+    expect(
+      await s3.inspeccionarObjeto(pendiente!.stagingKey),
+      "la limpieza borra la preparacion sobrante EVENTUALMENTE",
+    ).toBeNull();
+    const pendienteTrasLimpieza = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+    expect(pendienteTrasLimpieza!.stagingDeletedAt).not.toBeNull();
+    expect(
+      await s3.inspeccionarObjeto(confirmacion.documento.fileKey),
+      "el objeto final del Document sigue intacto: la limpieza nunca toca la clave FINAL de un COMPLETED",
+    ).not.toBeNull();
+  }, 30_000);
+
+  it("ventana 4 — el proceso se cae tras escribir el objeto final y antes de comprometer la transaccion: la limpieza recupera el huerfano y la fila", async () => {
+    const { org, owner } = await createOrg();
+    const expediente = await createCase(org.id, "EXP-VENTANA-4");
+    const actor = await actorInterno(org.id, expediente.id, owner.id);
+
+    const autorizacion = await subidas.autorizarSubida({ actor, fileName: "caida-antes-commit.pdf", size: 1024 });
+    if (!autorizacion.ok) throw new Error("la autorizacion deberia concederse");
+    await escribirEnAlmacen({ url: autorizacion.uploadUrl, fields: autorizacion.fields }, pdfDe(1024));
+
+    const filaAntes = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+    const stagingKey = filaAntes!.stagingKey;
+
+    /*
+     * Se reconstruye a mano lo que deja una caida EXACTAMENTE en ese punto:
+     * el objeto final ya escrito de verdad (misma primitiva que usa
+     * `confirmarSubida`) y la fila apuntandolo (la misma escritura previa a
+     * la transaccion que la hace sobrevivir a la caida) — pero SIN que la
+     * transaccion llegue a ejecutarse nunca.
+     */
+    const { buildFileKey } = await import("../../src/lib/file-policy");
+    const finalKey = buildFileKey({ orgId: org.id, caseId: expediente.id, fileName: "caida-antes-commit.pdf" });
+    await s3.crearObjetoSiNoExiste(finalKey, pdfDe(1024), "application/pdf");
+    await prisma.pendingUpload.update({ where: { id: autorizacion.uploadId }, data: { finalKey } });
+
+    expect(await s3.inspeccionarObjeto(finalKey), "el objeto final huerfano existe de verdad").not.toBeNull();
+
+    await prisma.pendingUpload.update({
+      where: { id: autorizacion.uploadId },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    const resumen = await subidas.limpiarSubidasCaducadas();
+
+    expect(resumen.errores).toBe(0);
+    expect(await s3.inspeccionarObjeto(finalKey), "el objeto final huerfano desaparece").toBeNull();
+    expect(await s3.inspeccionarObjeto(stagingKey), "la preparacion tambien desaparece").toBeNull();
+    expect(await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } })).toBeNull();
+    expect(await prisma.document.count({ where: { caseId: expediente.id } })).toBe(0);
+  }, 30_000);
+
+  it("ventana 5 — el proceso se cae tras comprometer la transaccion y antes de borrar la preparacion: la limpieza la recupera sin tocar el Document", async () => {
+    const { org, owner } = await createOrg();
+    const expediente = await createCase(org.id, "EXP-VENTANA-5");
+    const actor = await actorInterno(org.id, expediente.id, owner.id);
+
+    const autorizacion = await subidas.autorizarSubida({ actor, fileName: "caida-tras-commit.pdf", size: 1024 });
+    if (!autorizacion.ok) throw new Error("la autorizacion deberia concederse");
+    await escribirEnAlmacen({ url: autorizacion.uploadUrl, fields: autorizacion.fields }, pdfDe(1024));
+
+    const confirmacion = await subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId });
+    if (!confirmacion.ok) throw new Error("la confirmacion deberia funcionar");
+
+    const filaConfirmada = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+    expect(filaConfirmada!.status).toBe("COMPLETED");
+
+    /*
+     * `confirmarSubida` ya borro la preparacion (caso normal, sin fallo). Para
+     * reproducir el estado EXACTO que deja una caida justo ANTES de ese
+     * borrado —Document y COMPLETED ya comprometidos, preparacion todavia en
+     * el almacen—, se vuelve a escribir el mismo objeto de preparacion (misma
+     * primitiva, `uploadFile`, que usa el resto del modulo) y se revierte
+     * `stagingDeletedAt`, sin tocar nada del lado del Document.
+     */
+    await s3.uploadFile(filaConfirmada!.stagingKey, pdfDe(1024), "application/pdf");
+    await prisma.pendingUpload.update({
+      where: { id: autorizacion.uploadId },
+      data: { stagingDeletedAt: null },
+    });
+    expect(await s3.inspeccionarObjeto(filaConfirmada!.stagingKey)).not.toBeNull();
+
+    const resumen = await subidas.limpiarSubidasCaducadas();
+
+    expect(resumen.errores).toBe(0);
+    expect(
+      await s3.inspeccionarObjeto(filaConfirmada!.stagingKey),
+      "la preparacion sobrante desaparece",
+    ).toBeNull();
+    expect(
+      await s3.inspeccionarObjeto(confirmacion.documento.fileKey),
+      "el objeto final del Document sigue intacto",
+    ).not.toBeNull();
+    const doc = await prisma.document.findUnique({ where: { id: confirmacion.documento.id } });
+    expect(doc).not.toBeNull();
+  }, 30_000);
+
+  it("ventana 6 — repetir la limpieza tras recuperar un huerfano final es idempotente: la segunda pasada no encuentra nada que hacer ni falla", async () => {
+    const { org, owner } = await createOrg();
+    const expediente = await createCase(org.id, "EXP-VENTANA-6");
+    const actor = await actorInterno(org.id, expediente.id, owner.id);
+
+    const autorizacion = await subidas.autorizarSubida({ actor, fileName: "idempotencia.pdf", size: 1024 });
+    if (!autorizacion.ok) throw new Error("la autorizacion deberia concederse");
+    await escribirEnAlmacen({ url: autorizacion.uploadUrl, fields: autorizacion.fields }, pdfDe(1024));
+
+    const { buildFileKey } = await import("../../src/lib/file-policy");
+    const finalKey = buildFileKey({ orgId: org.id, caseId: expediente.id, fileName: "idempotencia.pdf" });
+    await s3.crearObjetoSiNoExiste(finalKey, pdfDe(1024), "application/pdf");
+    await prisma.pendingUpload.update({ where: { id: autorizacion.uploadId }, data: { finalKey } });
+    await prisma.pendingUpload.update({
+      where: { id: autorizacion.uploadId },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    const primera = await subidas.limpiarSubidasCaducadas();
+    expect(primera.errores).toBe(0);
+    expect(await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } })).toBeNull();
+    expect(await s3.inspeccionarObjeto(finalKey)).toBeNull();
+
+    // Repetir de inmediato: la fila ya no existe, no hay nada que reclamar, y
+    // no debe fallar ni contar nada de mas.
+    const segunda = await subidas.limpiarSubidasCaducadas();
+    expect(segunda.errores).toBe(0);
+  }, 30_000);
 });

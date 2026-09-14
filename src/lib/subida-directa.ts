@@ -63,6 +63,44 @@
  * confirma dejaría un objeto sin ninguna fila útil que lo mencione: de eso se
  * ocupa `limpiarSubidasCaducadas`, con reclamación explícita (CAS) para que una
  * limpieza y una confirmación que llegan a la vez no puedan pisarse.
+ *
+ * LA GARANTÍA EXACTA TRAS UN FALLO, Y CÓMO SE SOSTIENE
+ * -------------------------------------------------------
+ * La afirmación es: todo fallo deja o un `Document` válido con su objeto
+ * verificado, o ningún `Document` y ningún objeto huérfano. Nunca la
+ * combinación contradictoria. Para que eso sea cierto hace falta más que
+ * borrar el objeto final cuando la transacción falla EN CALIENTE —eso ya
+ * estaba—: la fila tiene que recordar QUÉ clave final se intentó ANTES de que
+ * exista nada que borrar, porque el proceso puede caerse entre escribir ese
+ * objeto y comprometer la transacción, y en ese instante no hay ningún `catch`
+ * que pueda ejecutarse. Por eso `confirmarSubida` apunta la clave final en la
+ * fila con una escritura llana —a propósito NO una reclamación que pueda
+ * hacer perder la carrera a una confirmación concurrente legítima, ver el
+ * comentario junto a esa escritura— ANTES de llamar a `crearObjetoSiNoExiste`,
+ * no después. Con eso, tres mecanismos —no uno solo— cubren las tres formas de
+ * fallar:
+ *
+ *   - FALLO EN CALIENTE (la misma llamada sigue viva): el `catch` que envuelve
+ *     la transacción borra el objeto final ya mismo, de forma síncrona. Es
+ *     INMEDIATO: quien llama nunca ve un huérfano.
+ *   - REINTENTO DEL CLIENTE tras un fallo (mismo `uploadId`, otra llamada): si
+ *     el borrado síncrono de arriba también falló, la clave sigue en la fila;
+ *     el intento siguiente la ve —es DISTINTA de la que él mismo genera— y la
+ *     borra antes de escribir la suya. Es INMEDIATO en cuanto el cliente
+ *     reintenta, no hace falta esperar a la limpieza.
+ *   - NADIE VUELVE A LLAMAR (caída del proceso, o el cliente abandona): la fila
+ *     sigue `PENDING` con esa clave. `limpiarSubidasCaducadas` la alcanza como
+ *     a cualquier preparación caducada, pasado `VALIDEZ_REGISTRO_MS`, y borra
+ *     también la clave final ahí. Esto SÍ es recuperación EVENTUAL, acotada
+ *     por ese plazo más la cadencia del cron de limpieza —no inmediata—, y así
+ *     queda dicho: no se afirma ausencia instantánea del huérfano en este
+ *     caso, sólo su desaparición garantizada dentro de ese plazo.
+ *
+ * El mismo razonamiento cubre la preparación que queda sin borrar tras un
+ * `complete` que sí tuvo éxito (pasada 3 de `limpiarSubidasCaducadas`): el
+ * `Document` ya es válido y su objeto FINAL ya está verificado en ese momento;
+ * lo único pendiente es un objeto de PREPARACIÓN sobrante, y su desaparición
+ * también es eventual, no instantánea, tal como se documenta en esa función.
  */
 
 import type { Document } from "@prisma/client";
@@ -249,12 +287,36 @@ export async function autorizarSubida(params: {
   };
 }
 
-/** Borra el objeto de preparación y marca el motivo, sin lanzar. */
-async function descartar(pendienteId: string, stagingKey: string, motivo: string): Promise<void> {
+/**
+ * Borra el objeto de preparación y marca el motivo, sin lanzar.
+ *
+ * `finalKeyHuerfano`: si un intento ANTERIOR de esta misma subida llegó a
+ * reclamar y quizá escribir una clave final antes de fallar —la fila lo
+ * recuerda en `finalKey` aunque la transacción de ese intento nunca
+ * comprometiera nada—, hay que borrarla AQUÍ. Esta función deja la fila en
+ * `FAILED`, el único estado final que no pasa por la limpieza periódica de
+ * `PENDING`/`CLEANING` (ver `limpiarSubidasCaducadas`): si no se borra ahora,
+ * nada volverá a intentarlo nunca.
+ */
+async function descartar(
+  pendienteId: string,
+  stagingKey: string,
+  motivo: string,
+  finalKeyHuerfano?: string | null,
+): Promise<void> {
   try {
     await deleteFile(stagingKey);
   } catch (err) {
     console.error("No se pudo borrar el objeto de preparación descartado:", stagingKey, err);
+  }
+  if (finalKeyHuerfano) {
+    await deleteFile(finalKeyHuerfano).catch((err) =>
+      console.error(
+        "No se pudo borrar el objeto final huérfano de un intento anterior descartado:",
+        finalKeyHuerfano,
+        err,
+      ),
+    );
   }
   await prisma.pendingUpload
     .update({ where: { id: pendienteId }, data: { status: "FAILED", failureReason: motivo } })
@@ -340,7 +402,7 @@ export async function confirmarSubida(params: {
   }
 
   if (pu.expiresAt.getTime() < Date.now()) {
-    await descartar(pu.id, pu.stagingKey, "La subida ha caducado.");
+    await descartar(pu.id, pu.stagingKey, "La subida ha caducado.", pu.finalKey);
     return { ok: false, status: 410, error: "La subida ha caducado. Vuelve a intentarlo." };
   }
 
@@ -354,7 +416,12 @@ export async function confirmarSubida(params: {
   const tamanoReal = cabecera.tamano;
 
   if (tamanoReal > MAX_FILE_BYTES) {
-    await descartar(pu.id, pu.stagingKey, `El archivo supera el máximo de ${MAX_FILE_MB} MB.`);
+    await descartar(
+      pu.id,
+      pu.stagingKey,
+      `El archivo supera el máximo de ${MAX_FILE_MB} MB.`,
+      pu.finalKey,
+    );
     return { ok: false, status: 413, error: `El archivo supera el máximo de ${MAX_FILE_MB} MB.` };
   }
   if (tamanoReal !== pu.expectedSize) {
@@ -362,6 +429,7 @@ export async function confirmarSubida(params: {
       pu.id,
       pu.stagingKey,
       "El archivo recibido no coincide con el que se autorizó.",
+      pu.finalKey,
     );
     return {
       ok: false,
@@ -390,7 +458,7 @@ export async function confirmarSubida(params: {
 
   const veredicto = validateFile({ fileName: pu.fileName, size: tamanoReal, head: bytes });
   if (!veredicto.ok) {
-    await descartar(pu.id, pu.stagingKey, veredicto.message!);
+    await descartar(pu.id, pu.stagingKey, veredicto.message!, pu.finalKey);
     return {
       ok: false,
       status: veredicto.reason === "too_large" ? 413 : 400,
@@ -422,6 +490,66 @@ export async function confirmarSubida(params: {
     fileName: pu.fileName,
     fromPortal: pu.isPortalUpload,
   });
+
+  /*
+   * DEJA CONSTANCIA DE LA CLAVE FINAL EN LA FILA ANTES DE ESCRIBIR NADA EN EL
+   * ALMACÉN — pero SIN convertirlo en una reclamación que pueda hacer perder
+   * la carrera a una confirmación concurrente legítima.
+   *
+   * EL HUECO QUE CIERRA
+   * --------------------
+   * Antes, `finalKey` sólo se guardaba DENTRO de la transacción de más abajo,
+   * junto con `documentId`. Dos fallos quedaban sin ninguna forma de
+   * recuperarse:
+   *
+   *   - el objeto final se escribe bien, pero la transacción falla Y el
+   *     borrado compensatorio del `catch` de más abajo TAMBIÉN falla (dos
+   *     fallos de almacén seguidos, en vez de uno);
+   *   - el proceso se cae justo después de escribir el objeto final y antes
+   *     de que la transacción llegue siquiera a empezar.
+   *
+   * En los dos casos, nada en la fila decía que esa clave se había intentado:
+   * ninguna limpieza posterior podía encontrarla ni borrarla. Ahora la fila lo
+   * sabe ANTES de que se escriba el objeto, así que sobrevive a la caída.
+   *
+   * POR QUÉ NO ES UN CAS QUE PUEDA HACER ABORTAR AQUÍ
+   * -----------------------------------------------------
+   * Dos confirmaciones SIMULTÁNEAS para el mismo `uploadId` —doble clic,
+   * reintento del cliente que se cruza con el original— tienen que poder
+   * escribir CADA UNA su propio objeto final y disputar el resultado DESPUÉS,
+   * en la transacción de más abajo (que ya lo hace bien: la perdedora borra su
+   * objeto y devuelve el documento de la ganadora). Convertir este apunte en
+   * una reclamación que aborta con `count === 0` haría perder la carrera a la
+   * perdedora ANTES de que la ganadora haya llegado a crear el `Document` —se
+   * comprobó con la prueba de concurrencia real: la perdedora encontraba la
+   * fila todavía sin `documentId` y devolvía un 409 en vez del documento ya
+   * creado, una regresión de "confirmación concurrente crea exactamente uno".
+   * Por eso es una escritura llana, sin condición de carrera que arbitrar
+   * aquí: la única disputa real sigue siendo la de la transacción.
+   */
+  await prisma.pendingUpload
+    .update({ where: { id: pu.id }, data: { finalKey } })
+    .catch((e) => console.error("No se pudo apuntar la clave final antes de escribirla:", finalKey, e));
+
+  /*
+   * Si la fila ya traía una clave final DISTINTA de un intento ANTERIOR de
+   * esta MISMA subida que nunca llegó a confirmarse —no de una confirmación
+   * concurrente: ésas parten de `pu.finalKey === null`, igual que ésta—, ese
+   * objeto anterior, si se llegó a escribir, está huérfano: ningún `Document`
+   * lo referencia y nunca lo hará. Se borra ya, en vez de esperar a la
+   * limpieza periódica. Borrar una clave que nunca llegó a escribirse (la
+   * transacción anterior falló ANTES del `PutObject`) no es un error: el
+   * almacén lo trata como éxito.
+   */
+  if (pu.finalKey && pu.finalKey !== finalKey) {
+    await deleteFile(pu.finalKey).catch((e) =>
+      console.error(
+        "No se pudo borrar el objeto final huérfano de un intento anterior de la misma subida:",
+        pu.finalKey,
+        e,
+      ),
+    );
+  }
 
   // Escribe el final SÓLO si no existe ya (If-None-Match: *). Con clave
   // aleatoria la colisión es prácticamente imposible; la comprobación es la
@@ -621,7 +749,12 @@ export interface ResumenLimpieza {
  *     de tocar nada. Si una confirmación gana la carrera —ya reclamó a
  *     `COMPLETED`—, la reclamación de limpieza no encuentra fila que actualizar
  *     y se salta esa subida sin haber borrado su objeto. Sólo tras reclamar se
- *     borra el objeto y, si eso funciona, la fila.
+ *     borra el objeto de preparación y, si la fila trae una clave FINAL de un
+ *     intento que nunca llegó a comprometerse (`confirmarSubida` la reclama en
+ *     la fila ANTES de escribir el objeto: ver el comentario de esa función),
+ *     se borra también — es la red de seguridad EVENTUAL para un objeto final
+ *     huérfano que ninguna caída del proceso puede dejar sin recuperación. Sólo
+ *     si ambos borrados funcionan se borra la fila.
  *
  *  2. RECLAMACIONES ABANDONADAS: una reclamación (`CLEANING`) de la que nadie
  *     volvió a saber —el proceso se cayó entre reclamar y borrar— vuelve a
@@ -655,7 +788,7 @@ export async function limpiarSubidasCaducadas(
       ],
     },
     take: limite,
-    select: { id: true, stagingKey: true, status: true },
+    select: { id: true, stagingKey: true, finalKey: true, status: true },
   });
   resumen.revisadas += candidatas.length;
 
@@ -685,6 +818,37 @@ export async function limpiarSubidasCaducadas(
       // Se queda en CLEANING: la próxima pasada, pasado el margen, la reintenta.
       continue;
     }
+
+    /*
+     * RED DE SEGURIDAD PARA LA CLAVE FINAL, NO SÓLO LA DE PREPARACIÓN.
+     *
+     * `confirmarSubida` reclama la clave final en esta misma fila ANTES de
+     * escribir el objeto (ver el comentario en esa función). Si un intento se
+     * cayó o falló por completo —la transacción no llegó a comprometerse Y el
+     * cliente nunca reintentó dentro de `VALIDEZ_REGISTRO_MS`—, la fila sigue
+     * PENDING con `finalKey` apuntando a un objeto que, si se llegó a
+     * escribir, no tiene ni tendrá nunca ningún `Document` que lo reclame: la
+     * reclamación CAS de arriba ya demostró que ninguna confirmación en curso
+     * lo necesita. Se borra aquí, con la misma tolerancia a clave inexistente
+     * que la de preparación.
+     */
+    if (candidata.finalKey) {
+      try {
+        await deleteFile(candidata.finalKey);
+        resumen.objetosBorrados++;
+      } catch (err) {
+        resumen.errores++;
+        console.error(
+          "No se pudo borrar el objeto final huérfano de una subida caducada:",
+          candidata.finalKey,
+          err,
+        );
+        // Igual que arriba: se queda en CLEANING para reintentarlo despues,
+        // en vez de borrar la fila y perder el único puntero a ese objeto.
+        continue;
+      }
+    }
+
     try {
       await prisma.pendingUpload.delete({ where: { id: candidata.id } });
       resumen.filasBorradas++;

@@ -887,6 +887,13 @@ se ha verificado contra un bucket S3 de producción ni contra Vercel real.
 | Tarea borrada entre autorizar y confirmar: sin 500, sin huérfano, sin vínculo fantasma | ✅ | `subida-directa-db.test.ts` |
 | Retención acotada de filas `PendingUpload` completadas, sin tocar el `Document` | ✅ | `subida-directa-db.test.ts` |
 | Confirmaciones simultáneas crean un único documento y no dejan objeto final huérfano | ✅ | `subida-directa-db.test.ts` |
+| Fallo simple de la transacción tras escribir el objeto final: borrado SÍNCRONO, sin huérfano | ✅ | `subida-directa-db.test.ts` — "ventana 2 (fallo simple)", `prisma.$transaction` inyectado |
+| Fallo doble (transacción Y borrado compensatorio): huérfano recuperado EVENTUALMENTE al caducar, no al instante | ✅ | `subida-directa-db.test.ts` — "ventana 2 (doble fallo)"; documentado como eventual, no inmediato |
+| Reintento secuencial tras un fallo borra la clave final huérfana del intento anterior antes de escribir la suya | ✅ | `subida-directa-db.test.ts` — recuperación inmediata, sin esperar a la limpieza |
+| Preparación sobrante tras un `complete` con éxito: `Document` válido al instante, preparación recuperada eventualmente | ✅ | `subida-directa-db.test.ts` — "ventana 3" |
+| Caída del proceso entre escribir el objeto final y comprometer la transacción: la limpieza recupera huérfano y fila | ✅ | `subida-directa-db.test.ts` — "ventana 4", estado reconstruido con las mismas primitivas que `confirmarSubida` |
+| Caída del proceso tras comprometer la transacción y antes de borrar la preparación: recuperada sin tocar el `Document` | ✅ | `subida-directa-db.test.ts` — "ventana 5" |
+| Repetir la limpieza tras recuperar un huérfano final es idempotente | ✅ | `subida-directa-db.test.ts` — "ventana 6" |
 
 #### Subida (ficha del expediente)
 
