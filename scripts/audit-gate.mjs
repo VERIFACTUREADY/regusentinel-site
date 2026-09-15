@@ -17,9 +17,9 @@
  *
  * Aquí:
  *   1. El árbol de PRODUCCIÓN debe tener CERO críticas. Sin excepciones.
- *   2. En desarrollo, cada crítica debe estar aceptada de forma explícita, con
- *      su identificador de aviso y el motivo. Una crítica nueva que no esté en
- *      la lista hace fallar el pipeline.
+ *   2. En desarrollo, cada CRÍTICA o ALTA debe estar aceptada de forma
+ *      explícita, con su identificador de aviso y el motivo. Un aviso nuevo
+ *      que no esté en la lista hace fallar el pipeline.
  *
  * Uso: node scripts/audit-gate.mjs
  */
@@ -85,6 +85,18 @@ const BLOQUEOS_DECLARADOS = {};
  *
  * Añadir una entrada aquí es una decisión que queda escrita, con fecha y
  * motivo. No vale "es de dev": hay que explicar por qué no nos alcanza.
+ *
+ * Cubre tanto CRÍTICAS como ALTAS del árbol completo que no aparecen en el
+ * árbol de producción (`--omit=dev`). Hasta el 2026-09-15 esta puerta sólo
+ * miraba CRÍTICAS aquí: `browserslist` (GHSA-c83g-rgw3-j3cx,
+ * GHSA-73wf-gq98-2v4g) y `vite` (GHSA-fx2h-pf6j-xcff) son ALTAS de
+ * desarrollo, real y reproduciblemente invisibles para la puerta —ni se
+ * registraban, ni podían hacerla fallar— mientras que `npm audit --json`
+ * (árbol completo) sí las reportaba. El defecto no era teórico: se
+ * reprodujo comparando la salida real de `node scripts/audit-gate.mjs`
+ * contra `npm audit --json` para el mismo árbol instalado. Corregido
+ * ampliando la severidad vigilada en la sección 3 de ["critical"] a
+ * ["critical", "high"].
  */
 const ACEPTADAS_EN_DESARROLLO = {
   "GHSA-5xrq-8626-4rwp": {
@@ -96,6 +108,36 @@ const ACEPTADAS_EN_DESARROLLO = {
       "las 1.044 pruebas y que no procede hacer al cierre de una fase de " +
       "seguridad. Pendiente de planificar aparte.",
     revisadaEl: "2026-08-05",
+  },
+  "GHSA-c83g-rgw3-j3cx": {
+    paquete: "browserslist",
+    motivo:
+      "Crecimiento de memoria sin límite por consultas repetidas y distintas. " +
+      "`browserslist` sólo se invoca aquí desde `autoprefixer`/Tailwind durante " +
+      "`next build`, con la configuración estática del propio repositorio " +
+      "(no existe campo `browserslist` en package.json ni `.browserslistrc` " +
+      "personalizado, comprobado): no hay entrada de usuario que genere " +
+      "consultas distintas y repetidas en un proceso de build de un solo paso.",
+    revisadaEl: "2026-09-15",
+  },
+  "GHSA-73wf-gq98-2v4g": {
+    paquete: "browserslist",
+    motivo:
+      "Cuelgue/escritura de prototipo vía un `browserslist-stats.json` de " +
+      "estadísticas personalizadas no confiable. No existe ese fichero en " +
+      "este repositorio (comprobado) y nada en el build lo acepta desde una " +
+      "fuente externa: sólo se lee, si existe, del propio árbol del repositorio.",
+    revisadaEl: "2026-09-15",
+  },
+  "GHSA-fx2h-pf6j-xcff": {
+    paquete: "vite",
+    motivo:
+      "Bypass de `server.fs.deny` en el SERVIDOR DE DESARROLLO de Vite en " +
+      "Windows. Aquí `vite` sólo se usa como motor de `vitest run` (ver " +
+      "`package.json`: no hay script `vite`/`vite dev`); no se levanta un " +
+      "servidor HTTP de Vite expuesto ni en CI (Ubuntu) ni en el flujo normal " +
+      "de pruebas locales.",
+    revisadaEl: "2026-09-15",
   },
 };
 
@@ -301,19 +343,34 @@ if (altas.length === 0) {
   console.log("Produccion: 0 vulnerabilidades altas.");
 }
 
-// ── 3. Desarrollo: cada crítica debe estar aceptada por escrito ─────────────
+// ── 3. Desarrollo: cada CRÍTICA o ALTA debe estar aceptada por escrito ─────
+//
+// ANTES sólo se miraba severidad "critical" aquí (`criticasDe`). Una ALTA de
+// una herramienta de desarrollo —browserslist, vite— pasaba completamente
+// desapercibida: no se registraba, no podía hacer fallar la puerta, y ni
+// siquiera aparecía en el log. `npm audit --json` (árbol completo) SÍ la
+// reportaba; la puerta simplemente no miraba esa severidad en esa sección.
+// Reproducido con el árbol instalado real: el log de la puerta no
+// mencionaba `browserslist` ni `vite` en ningún punto pese a que ambos
+// traían avisos ALTOS reales. Corregido ampliando la severidad vigilada.
 let informeCompleto;
 try {
   informeCompleto = auditar([], "arbol completo (con desarrollo)");
 } catch (err) {
   // La segunda auditoria tampoco puede fallar en silencio: si no se ejecuta,
-  // las criticas de herramientas de desarrollo dejan de vigilarse.
+  // las criticas y altas de herramientas de desarrollo dejan de vigilarse.
   if (err instanceof ErrorDeAuditoria) abortarPorFalloOperativo(err);
   throw err;
 }
 
-const todas = criticasDe(informeCompleto);
-const soloDesarrollo = todas.filter((v) => !produccion.some((p) => p.nombre === v.nombre));
+const todas = porSeveridad(informeCompleto, ["critical", "high"]);
+// Se excluye lo que YA gestiona la producción (críticas de tolerancia cero Y
+// altas revisadas/bloqueantes de la sección 2) para no duplicar ni
+// reclasificar un mismo paquete —p. ej. `xlsx`— como si fuera "sólo de
+// desarrollo".
+const soloDesarrollo = todas.filter(
+  (v) => !produccion.some((p) => p.nombre === v.nombre) && !altas.some((p) => p.nombre === v.nombre),
+);
 
 const noAceptadas = [];
 for (const v of soloDesarrollo) {
@@ -329,7 +386,7 @@ for (const v of soloDesarrollo) {
 
 if (noAceptadas.length > 0) {
   fallo = true;
-  console.error("::error::Vulnerabilidades CRITICAS nuevas en herramientas de desarrollo:");
+  console.error("::error::Vulnerabilidades CRITICAS o ALTAS nuevas en herramientas de desarrollo:");
   for (const v of noAceptadas) {
     console.error(`  ${v.nombre}`);
     for (const a of v.avisos) console.error(`    ${a.id}  ${a.titulo}`);

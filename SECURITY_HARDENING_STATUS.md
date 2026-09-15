@@ -2284,3 +2284,101 @@ credenciales de producción ni dependencias no relacionadas. Aislamiento por
 tenant, atadura del actor y el diseño de la migración `20260910163000`
 quedan intactos — no se tocó `prisma/schema.prisma` ni se creó ninguna
 migración nueva: `finalKey` ya existía.
+
+## 2026-09-15 (3) — Cierre del bloqueador de `xlsx`, y un hueco real en la puerta de auditoría
+
+Revisión acotada a seguridad de dependencias. Tres hallazgos, uno de ellos
+un defecto genuino en `scripts/audit-gate.mjs` que no estaba en el alcance
+original pero se reprodujo con datos reales, no supuestos.
+
+**Inventario completo.** `npm audit --json` reportaba 8 vulnerabilidades
+(1 baja, 3 moderadas, 3 altas, 1 crítica) repartidas en 8 paquetes, no sólo
+`xlsx`: `baseline-browser-mapping` (moderada, GHSA-w5vr-8v7q-w6rv, vía
+`autoprefixer`), `browserslist` (alta ×2: GHSA-c83g-rgw3-j3cx,
+GHSA-73wf-gq98-2v4g, vía `autoprefixer`), `esbuild` (moderada+baja, vía
+`tsx` y `vitest`→`vite`), `postcss-selector-parser` (baja,
+GHSA-w9m9-85wc-3x92, vía `tailwindcss`), `vite`/`vite-node` (alta+moderada,
+GHSA-4w7w-66w2-5vf9, GHSA-v6wh-96g9-6wx3, GHSA-fx2h-pf6j-xcff, vía
+`vitest`), **`vitest` — la CRÍTICA, GHSA-5xrq-8626-4rwp, ya aceptada desde
+el 2026-08-05** con justificación explícita en `audit-gate.mjs` (sólo
+explotable con `vitest --ui`, que ni CI ni el desarrollo local levantan), y
+`xlsx` (alta ×2, GHSA-4r6h-8v6p-xvw6, GHSA-5pgg-2g8v-p4x9). El informe
+anterior (2026-09-15 (2)) sólo citaba las dos de `xlsx` y la crítica de
+`vitest`: no estaban ocultas —`npm audit --json` siempre las reportó—, pero
+tampoco se habían enumerado una a una hasta ahora. Con
+`--omit=dev`, **sólo `xlsx` aparecía**: las otras siete son enteramente de
+árbol de desarrollo (`autoprefixer`, `tailwindcss`, `tsx`, `vitest`), nunca
+viajan al artefacto desplegado.
+
+**Hueco real en la puerta, reproducido, no hipotético.** La sección 3 de
+`audit-gate.mjs` (avisos de desarrollo) sólo miraba severidad `"critical"`.
+`browserslist` y `vite` traían avisos **ALTOS** de solo-desarrollo que
+`npm audit --json` sí reportaba, pero que la puerta ni registraba ni podía
+hacer fallar: comparando la salida real de
+`node scripts/audit-gate.mjs` en CI contra `npm audit --json` para el mismo
+árbol, ninguna de las dos palabras `browserslist` ni `vite` aparecía en el
+log de la puerta. Corregido ampliando la severidad vigilada en esa sección
+de `["critical"]` a `["critical", "high"]`, y excluyendo explícitamente lo
+que ya gestiona la sección de producción (para no reclasificar `xlsx` como
+"de desarrollo" al aparecer también en el árbol completo). Los tres avisos
+que pasan a estar cubiertos —GHSA-c83g-rgw3-j3cx y GHSA-73wf-gq98-2v4g
+(`browserslist`, sin config personalizada de browserslist en el repo, sin
+`browserslist-stats.json`) y GHSA-fx2h-pf6j-xcff (`vite`, usado sólo como
+motor de `vitest run`, sin script `vite dev`)— se añadieron a
+`ACEPTADAS_EN_DESARROLLO` con motivo comprobado contra el código, igual que
+ya existía para `vitest`. Tres pruebas nuevas en `__tests__/audit-gate.test.ts`
+fijan el defecto: una ALTA de desarrollo sin aceptar hace fallar la puerta;
+una aceptada por su identificador exacto pasa; una ALTA que SÍ es de
+producción (`xlsx`) no se reclasifica como "de desarrollo" al aparecer
+también en el árbol completo.
+
+**`xlsx` resuelto — instalado desde el origen oficial de SheetJS, no un
+fork.** `xlsx@0.18.5` (paquete de npm, sin mantenimiento desde antes de
+esta fase) pasa a
+`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`: la distribución
+oficial de SheetJS para Node —el propio paquete de npm `xlsx` redirige a
+esa URL desde 2023, documentado en `https://cdn.sheetjs.com/xlsx/` y en
+`docs.sheetjs.com`—. Verificado antes de instalar: dominio oficial
+(`sheetjs.com`/`git.sheetjs.com`, mismo `repository` que el paquete de npm
+original), tarball descargado y su `package.json` interno inspeccionado
+(`name: "xlsx"`, `version: "0.20.3"`, `license: "Apache-2.0"`, sin cambio
+de nombre de paquete ni de import), instalado con
+`npm install --save-exact <url>` —nunca editando `package.json` ni
+`package-lock.json` a mano— de modo que `npm` calculó y fijó su propio
+`integrity` (sha512) sobre el contenido real descargado; `npm ci` desde
+cero lo verificó y lo reprodujo sin red adicional más que esa URL. 0.20.3
+corrige ambas: GHSA-4r6h-8v6p-xvw6 (arreglada en 0.19.3) y
+GHSA-5pgg-2g8v-p4x9 (arreglada en 0.20.2). Tras el cambio,
+`npm audit --omit=dev` da **0 vulnerabilidades de cualquier severidad**
+— por primera vez en esta fase, la puerta ya no depende de una excepción
+documentada para `xlsx`: no queda ningún hallazgo pendiente de revisión en
+producción. La API usada por `src/lib/case-import.ts`
+(`XLSX.read(buffer, {type:"buffer", cellDates:false})` y
+`XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:""})`) es
+idéntica entre 0.18.5 y 0.20.3, sin deprecaciones. Las 22 pruebas de
+`__tests__/case-import.test.ts` pasan sin cambios, incluido el bloque
+"Compatibilidad del parseador (línea base para sustituir SheetJS)" ya
+preparado en una sesión anterior específicamente para esta migración: BIFF8
+`.xls` legado, tildes/eñes, fechas como texto (no número de serie Excel),
+y celdas vacías intermedias sin desplazar columnas. No se tocó el soporte
+de `.xls`/CSV/TXT ni la semántica visible para el cliente.
+
+**Next.js.** Instalado: `15.5.25`, la última versión publicada de la línea
+15.5.x (verificado contra el registro de npm: no existe `15.5.26` ni
+superior en esa línea). Confirmado contra los avisos oficiales de
+`github.com/vercel/next.js/security/advisories`: las dos CRÍTICAS más
+recientes (GHSA-2xp9-vwfh-vxw4, RCE no autenticada en la API de
+optimización de imágenes con AVIF; GHSA-p293-qw3h-jr36, RCE no autenticada
+en servidores alojados en Windows, ambas publicadas 2026-08-25) están
+arregladas desde `15.5.24`; las cuatro ALTAS de 2026-07-21
+(GHSA-p9j2-gv94-2wf4, GHSA-89xv-2m56-2m9x, GHSA-m99w-x7hq-7vfj SSRF/DoS, y
+GHSA-6gpp-xcg3-4w24 que sólo afecta a la línea 16.x) están arregladas desde
+`15.5.21` o no aplican a 15.x. `15.5.25` las incluye todas: no hace falta
+ninguna actualización. No se ha planteado ni se plantea una migración a
+Next 16.
+
+No se ha tocado el umbral de auditoría, no se ha añadido ninguna exclusión
+sin motivo comprobado, no se ha usado `npm audit fix --force`, no se ha
+editado `package-lock.json` a mano, y no se ha usado un fork o mirror sin
+procedencia verificada. `main`, la protección de rama, CORS y las
+credenciales de producción no se han tocado.

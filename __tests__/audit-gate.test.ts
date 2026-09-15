@@ -61,6 +61,22 @@ const CRITICA = {
   },
 };
 
+/** Informe de un arbol completo con una ALTA en un paquete que NO existe en produccion. */
+function informeConAltaDeSoloDesarrollo(id: string, paquete = "paquete_dev_de_prueba") {
+  return informe({
+    [paquete]: {
+      severity: "high",
+      via: [
+        {
+          url: `https://github.com/advisories/${id}`,
+          title: "Alta de prueba en herramienta de desarrollo",
+          severity: "high",
+        },
+      ],
+    },
+  });
+}
+
 /**
  * Ejecuta la puerta con un `npm` de prueba que se comporta como diga `guion`.
  *
@@ -145,6 +161,64 @@ describe("Puerta de vulnerabilidades: lo que NO puede pasar en verde", () => {
     const r = ejecutarPuertaCon(`exit 127`);
     expect(r.salida).toBe(1);
     expect(r.texto).toContain("no ha devuelto ningun informe");
+  });
+
+  it("una ALTA nueva de una herramienta de SOLO desarrollo, sin aceptar, hace fallar la puerta", () => {
+    /*
+     * EL DEFECTO REPRODUCIDO CONTRA EL ARBOL REAL (2026-09-15): la seccion 3
+     * solo miraba severidad "critical" en el arbol completo. Una ALTA de una
+     * herramienta de desarrollo (p. ej. `browserslist`, `vite`) pasaba
+     * completamente desapercibida: no se registraba, no hacia fallar la
+     * puerta, y ni siquiera aparecia en el log — pese a que
+     * `npm audit --json` (arbol completo) SI la reportaba. Esta prueba fija
+     * que una ALTA de desarrollo desconocida hace fallar la puerta, tal como
+     * ya ocurria con las CRITICAS.
+     */
+    const r = ejecutarPuertaCon(
+      `if [ "$*" = "audit --json --omit=dev" ]; then echo '${informe({})}'; exit 0; ` +
+        `else echo '${informeConAltaDeSoloDesarrollo("GHSA-nueva-alta-0000")}'; exit 1; fi`,
+    );
+    expect(r.salida, r.texto).toBe(1);
+    expect(r.texto).toContain("CRITICAS o ALTAS nuevas en herramientas de desarrollo");
+    expect(r.texto).toContain("GHSA-nueva-alta-0000");
+  });
+
+  it("una ALTA de desarrollo ya aceptada con su identificador exacto pasa, igual que una CRITICA aceptada", () => {
+    const r = ejecutarPuertaCon(
+      `if [ "$*" = "audit --json --omit=dev" ]; then echo '${informe({})}'; exit 0; ` +
+        `else echo '${informeConAltaDeSoloDesarrollo("GHSA-fx2h-pf6j-xcff", "vite")}'; exit 1; fi`,
+    );
+    expect(r.salida, r.texto).toBe(0);
+    expect(r.texto).toContain("Desarrollo: GHSA-fx2h-pf6j-xcff (vite) aceptada");
+  });
+
+  it("una ALTA que SI es de produccion no se reclasifica como 'solo desarrollo' por aparecer tambien en el arbol completo", () => {
+    /*
+     * Regresion a vigilar: el mismo paquete de produccion (p. ej. `xlsx`)
+     * aparece tanto en el audit de produccion como en el de arbol completo.
+     * La seccion 3 debe excluirlo (ya lo gestiona la seccion 2) y no debe
+     * duplicarlo ni disfrazarlo de hallazgo "de desarrollo".
+     */
+    const altaDeProduccion = {
+      xlsx: {
+        severity: "high",
+        via: [
+          {
+            url: "https://github.com/advisories/GHSA-4r6h-8v6p-xvw6",
+            title: "Prototype Pollution in sheetJS",
+            severity: "high",
+          },
+        ],
+      },
+    };
+    const r = ejecutarPuertaCon(
+      `if [ "$*" = "audit --json --omit=dev" ]; then echo '${informe(altaDeProduccion)}'; exit 1; ` +
+        `else echo '${informe(altaDeProduccion)}'; exit 1; fi`,
+    );
+    expect(r.salida, r.texto).toBe(1);
+    expect(r.texto).toContain("ALTAS de produccion sin revisar");
+    expect(r.texto).toContain("GHSA-4r6h-8v6p-xvw6");
+    expect(r.texto).not.toContain("CRITICAS o ALTAS nuevas en herramientas de desarrollo");
   });
 
   it("un fallo en la SEGUNDA auditoria (arbol completo) tampoco pasa en silencio", () => {
