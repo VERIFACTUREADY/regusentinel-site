@@ -898,7 +898,19 @@ describeSiHayMinio("Purga de expediente con subida sin confirmar: sin huerfanos"
  * el objeto huerfano y la fila que se construyen son reales.
  */
 describeSiHayMinio("Subida directa: la garantia tras un fallo, ventana por ventana", () => {
-  it("ventana 2 (fallo simple) — la transaccion falla tras escribir el objeto final: se borra SINCRONAMENTE, sin huerfano y sin Document", async () => {
+  it("ventana 2 (fallo simple) — la transaccion falla tras escribir el objeto final: el objeto queda vivo (ya NO se borra sincronamente, para no arriesgar la clave de una rama concurrente); la fila lo sigue apuntando y puede reintentar", async () => {
+    /*
+     * Antes de la segunda revision de concurrencia, un fallo de transaccion
+     * SIN carrera de por medio borraba el objeto final de forma SINCRONA. Se
+     * retiro ese borrado: con clave compartida entre confirmaciones
+     * concurrentes, un borrado sincrono en CUALQUIER fallo de transaccion
+     * —no solo al perder explicitamente contra otra— podria acertar sobre el
+     * objeto que una rama concurrente esta a punto de comprometer. La
+     * garantia pasa a ser: el objeto queda vivo AL INSTANTE (no se pierde
+     * nada), la fila lo sigue apuntando (`finalKey`), y su recuperacion si
+     * nadie llega a confirmar nunca es EVENTUAL, vía `limpiarSubidasCaducadas`
+     * — la unica via, ya verificada aparte en "ventana 2 (doble fallo)".
+     */
     const { org, owner } = await createOrg();
     const expediente = await createCase(org.id, "EXP-VENTANA-2");
     const actor = await actorInterno(org.id, expediente.id, owner.id);
@@ -930,10 +942,30 @@ describeSiHayMinio("Subida directa: la garantia tras un fallo, ventana por venta
     const claves = await s3.s3Client.send(
       new ListObjectsV2Command({ Bucket: BUCKET!, Prefix: `${org.id}/${expediente.id}/interno/` }),
     );
-    expect((claves.Contents ?? []).length, "sin objeto final huerfano: se borro sincronamente").toBe(0);
+    expect(
+      (claves.Contents ?? []).length,
+      "el objeto sigue ahi AL INSTANTE: ya no hay borrado sincrono en ningun fallo de transaccion",
+    ).toBe(1);
 
     const pendiente = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
     expect(pendiente!.status, "sigue PENDING: el cliente puede reintentar").toBe("PENDING");
+    expect(pendiente!.finalKey, "la fila sigue apuntando al objeto que escribio").not.toBeNull();
+    expect(await s3.inspeccionarObjeto(pendiente!.finalKey!)).not.toBeNull();
+
+    // Recuperacion EVENTUAL: se envejece y se limpia, igual que en "ventana 2
+    // (doble fallo)" — aqui sin necesitar inyectar un SEGUNDO fallo, porque ya
+    // no hay ningun borrado sincrono que forzar a fallar.
+    await prisma.pendingUpload.update({
+      where: { id: autorizacion.uploadId },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const resumen = await subidas.limpiarSubidasCaducadas();
+    expect(resumen.errores).toBe(0);
+    expect(
+      await s3.inspeccionarObjeto(pendiente!.finalKey!),
+      "la limpieza recupera el objeto abandonado",
+    ).toBeNull();
+    expect(await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } })).toBeNull();
   }, 30_000);
 
   it("ventana 2 (doble fallo) — si el borrado compensatorio TAMBIEN falla, el huerfano no queda para siempre: la limpieza lo recupera al caducar", async () => {
@@ -992,7 +1024,15 @@ describeSiHayMinio("Subida directa: la garantia tras un fallo, ventana por venta
     expect(await prisma.document.count({ where: { caseId: expediente.id } })).toBe(0);
   }, 30_000);
 
-  it("un reintento SECUENCIAL borra la clave final huerfana del intento anterior antes de escribir la suya (recuperacion INMEDIATA, no hace falta esperar a la limpieza)", async () => {
+  it("un reintento SECUENCIAL REUTILIZA la MISMA clave final del intento anterior, no genera una nueva, y el objeto ya escrito se referencia directamente", async () => {
+    /*
+     * Con la clave compartida por fila (segunda revision de concurrencia), un
+     * reintento tras un fallo de transaccion YA NO genera una clave nueva ni
+     * necesita borrar nada "huerfano": la fila recuerda la UNICA clave que se
+     * le asigno, la reutiliza, y si el objeto ya estaba escrito desde el
+     * primer intento, `crearObjetoSiNoExiste` recibe una precondicion fallida
+     * (la clave ya existe) que se trata como exito, no como error.
+     */
     const { org, owner } = await createOrg();
     const expediente = await createCase(org.id, "EXP-VENTANA-2-REINTENTO");
     const actor = await actorInterno(org.id, expediente.id, owner.id);
@@ -1001,41 +1041,42 @@ describeSiHayMinio("Subida directa: la garantia tras un fallo, ventana por venta
     if (!autorizacion.ok) throw new Error("la autorizacion deberia concederse");
     await escribirEnAlmacen({ url: autorizacion.uploadUrl, fields: autorizacion.fields }, pdfDe(1024));
 
-    // Primer intento: doble fallo, igual que arriba, deja un huerfano.
+    // Primer intento: la transaccion falla tras escribir el objeto.
     const transaccionOriginal = prismaReal.prisma.$transaction.bind(prismaReal.prisma);
     (prismaReal.prisma as unknown as { $transaction: unknown }).$transaction = async () => {
       throw new Error("caida (inyectado)");
-    };
-    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
-    const enviarOriginal = s3.s3Client.send.bind(s3.s3Client);
-    (s3.s3Client as { send: unknown }).send = async (cmd: unknown, ...resto: unknown[]) => {
-      if (cmd instanceof DeleteObjectCommand) throw new Error("borrado caido (inyectado)");
-      return (enviarOriginal as (...a: unknown[]) => unknown)(cmd, ...resto);
     };
     try {
       await expect(subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId })).rejects.toThrow();
     } finally {
       (prismaReal.prisma as unknown as { $transaction: unknown }).$transaction = transaccionOriginal;
-      (s3.s3Client as { send: unknown }).send = enviarOriginal;
     }
 
     const filaTrasFallo = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
-    const claveHuerfana = filaTrasFallo!.finalKey!;
-    expect(claveHuerfana).not.toBeNull();
-    expect(await s3.inspeccionarObjeto(claveHuerfana), "el huerfano del primer intento existe de verdad").not.toBeNull();
+    const claveDelPrimerIntento = filaTrasFallo!.finalKey!;
+    expect(claveDelPrimerIntento).not.toBeNull();
+    expect(
+      await s3.inspeccionarObjeto(claveDelPrimerIntento),
+      "el objeto del primer intento existe de verdad",
+    ).not.toBeNull();
 
     // Segundo intento, sin nada inyectado: el flujo normal.
     const segundo = await subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId });
     expect(segundo.ok, JSON.stringify(segundo)).toBe(true);
     if (!segundo.ok) throw new Error("inalcanzable");
 
+    // MISMA clave, no una nueva: no hay "huerfano del primer intento" que
+    // borrar, porque nunca hubo una segunda clave que compitiera con ella.
     expect(
-      await s3.inspeccionarObjeto(claveHuerfana),
-      "el reintento borro el huerfano del primer intento antes de escribir el suyo",
-    ).toBeNull();
-    expect(segundo.documento.fileKey).not.toBe(claveHuerfana);
+      segundo.documento.fileKey,
+      "el reintento reutiliza la MISMA clave, no genera una segunda",
+    ).toBe(claveDelPrimerIntento);
     expect(await s3.inspeccionarObjeto(segundo.documento.fileKey)).not.toBeNull();
     expect(await prisma.document.count({ where: { caseId: expediente.id } })).toBe(1);
+
+    const filaFinal = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+    expect(filaFinal!.finalKey).toBe(claveDelPrimerIntento);
+    expect(filaFinal!.documentId).toBe(segundo.documento.id);
   }, 30_000);
 
   it("ventana 3 — si el borrado de la preparacion falla tras confirmar, el Document es valido AL INSTANTE; la preparacion sobrante desaparece EVENTUALMENTE, no al instante", async () => {
@@ -1351,6 +1392,216 @@ describeSiHayMinio("Subida directa: la garantia tras un fallo, ventana por venta
       expect(l2.errores).toBe(0);
       expect(await s3.inspeccionarObjeto(a.documento.fileKey), "la limpieza no toca el objeto final vivo").not.toBeNull();
       expect(await prisma.document.findUnique({ where: { id: a.documento.id } })).not.toBeNull();
+    },
+    30_000,
+  );
+
+  it(
+    "RACE COMPUESTA: dos confirmaciones RAPIDAS escriben cada una su propio objeto ANTES de disputar, y el borrado compensatorio de quien pierde TAMBIEN falla",
+    async () => {
+      /*
+       * Composicion de dos propiedades ya establecidas por separado, no una
+       * hipotesis nueva: (1) una carrera RAPIDA —dos confirmaciones que
+       * arrancan a la vez pueden ambas superar la asignacion de `finalKey`
+       * mientras `status` sigue PENDING—; (2) el `catch(YaReclamada)` de la
+       * perdedora puede toparse con un borrado compensatorio que falla (ya se
+       * probo aisladamente en la "ventana 2 (doble fallo)", antes de que
+       * existiera clave compartida). Ninguna prueba anterior compone las dos:
+       * si ambas ramas llegan a intentar escribir un objeto final ANTES de que
+       * la transaccion se resuelva, y el borrado compensatorio de quien pierde
+       * TAMBIEN falla, ¿queda algo sin rastro?
+       *
+       * Se fuerza con DOS BARRERAS DETERMINISTAS sobre `PutObjectCommand`
+       * real —no con `Promise.all` a pelo ni con sleeps—, para no depender de
+       * como el runtime decida entrelazar dos llamadas asincronas: se detiene
+       * la PRIMERA y la SEGUNDA vez que `confirmarSubida` llega al intento de
+       * escritura del objeto final (venga de quien venga), y sólo cuando
+       * AMBAS han llegado ahi —comprobado, no asumido— se liberan. Así se
+       * garantiza la precondicion exacta que pide la revision: las dos ramas
+       * pasan la asignacion de `finalKey` mientras la fila sigue PENDING y
+       * las dos intentan escribir, pase lo que pase despues con el orden de
+       * sus transacciones.
+       *
+       * Ademas, se intercepta TODO `DeleteObjectCommand` sobre una clave que
+       * NO sea de preparacion (la de preparacion tiene su propio mecanismo,
+       * ya probado aparte) y se le hace fallar: bajo el flujo normal, sólo la
+       * rama PERDEDORA llega a intentar ese borrado —la ganadora nunca borra
+       * su propia clave final—, así que esto ataca exactamente el borrado
+       * compensatorio de quien pierde, sea cual sea, sin necesidad de saber
+       * de antemano cuál de las dos lo es.
+       */
+      const { org, owner } = await createOrg();
+      const expediente = await createCase(org.id, "EXP-RACE-COMPUESTA-2");
+      const actor = await actorInterno(org.id, expediente.id, owner.id);
+
+      const autorizacion = await subidas.autorizarSubida({ actor, fileName: "compuesta-2.pdf", size: 1024 });
+      if (!autorizacion.ok) throw new Error("la autorizacion deberia concederse");
+      await escribirEnAlmacen({ url: autorizacion.uploadUrl, fields: autorizacion.fields }, pdfDe(1024));
+
+      const { PutObjectCommand, ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+
+      let intentosDeEscrituraFinal = 0;
+      let soltarPrimero!: () => void;
+      const barreraPrimero = new Promise<void>((r) => (soltarPrimero = r));
+      let soltarSegundo!: () => void;
+      const barreraSegundo = new Promise<void>((r) => (soltarSegundo = r));
+      let primeroAlcanzado!: () => void;
+      const primeroAlcanzadoP = new Promise<void>((r) => (primeroAlcanzado = r));
+      let segundoAlcanzado!: () => void;
+      const segundoAlcanzadoP = new Promise<void>((r) => (segundoAlcanzado = r));
+
+      const enviarOriginal = s3.s3Client.send.bind(s3.s3Client);
+      (s3.s3Client as { send: unknown }).send = async (cmd: unknown, ...resto: unknown[]) => {
+        if (cmd instanceof PutObjectCommand) {
+          intentosDeEscrituraFinal++;
+          if (intentosDeEscrituraFinal === 1) {
+            primeroAlcanzado();
+            await barreraPrimero;
+          } else if (intentosDeEscrituraFinal === 2) {
+            segundoAlcanzado();
+            await barreraSegundo;
+          }
+        }
+        if (cmd instanceof DeleteObjectCommand) {
+          const key = (cmd as unknown as { input?: { Key?: string } }).input?.Key;
+          if (key && !key.includes("/preparacion/")) {
+            throw new Error("almacen caido para el borrado compensatorio de la perdedora (inyectado)");
+          }
+        }
+        return (enviarOriginal as (...a: unknown[]) => unknown)(cmd, ...resto);
+      };
+
+      const promesaA = subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId });
+      const promesaB = subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId });
+
+      // Ninguna de las dos avanza mas alla de su propio intento de escritura
+      // hasta que AMBAS lo hayan alcanzado — comprobado, no asumido.
+      await primeroAlcanzadoP;
+      await segundoAlcanzadoP;
+      soltarPrimero();
+      soltarSegundo();
+
+      const [a, b] = await Promise.all([promesaA, promesaB]);
+
+      (s3.s3Client as { send: unknown }).send = enviarOriginal;
+
+      expect(
+        intentosDeEscrituraFinal,
+        "ambas ramas deben haber intentado escribir su objeto final",
+      ).toBe(2);
+
+      // ── Invariantes exigidos ─────────────────────────────────────────────
+      expect(a.ok, JSON.stringify(a)).toBe(true);
+      expect(b.ok, JSON.stringify(b)).toBe(true);
+      if (!a.ok || !b.ok) throw new Error("inalcanzable");
+
+      expect(a.documento.id).toBe(b.documento.id);
+      expect([a.yaConfirmada, b.yaConfirmada].filter(Boolean)).toHaveLength(1);
+
+      // Exactamente UN Document.
+      expect(await prisma.document.count({ where: { caseId: expediente.id } })).toBe(1);
+
+      // La fila apunta al Document ganador Y a su objeto final real.
+      const filaFinal = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+      expect(filaFinal!.documentId).toBe(a.documento.id);
+      expect(filaFinal!.finalKey).toBe(a.documento.fileKey);
+
+      // El objeto del GANADOR sigue vivo e intacto: la perdedora nunca pudo
+      // borrar bytes que no eran solo suyos.
+      const cabeceraGanador = await s3.inspeccionarObjeto(a.documento.fileKey);
+      expect(cabeceraGanador, "el objeto de la ganadora no lo borro la perdedora").not.toBeNull();
+      expect(cabeceraGanador!.tamano).toBe(1024);
+
+      // NINGUN objeto de la perdedora queda sin rastro: bajo el prefijo del
+      // expediente sólo debe quedar el objeto del Document. Si la perdedora
+      // hubiera escrito una clave DISTINTA y su borrado compensatorio fallara
+      // sin ningun mecanismo de recuperacion, aqui aparecerian DOS objetos.
+      const claves = await s3.s3Client.send(
+        new ListObjectsV2Command({ Bucket: BUCKET!, Prefix: `${org.id}/${expediente.id}/interno/` }),
+      );
+      expect(
+        (claves.Contents ?? []).length,
+        "ningun objeto de la perdedora queda huerfano y sin rastro, ni siquiera con el borrado compensatorio fallando",
+      ).toBe(1);
+      expect(claves.Contents![0].Key).toBe(a.documento.fileKey);
+
+      // La limpieza, tras la carrera, es idempotente y no toca el objeto vivo.
+      const l1 = await subidas.limpiarSubidasCaducadas();
+      expect(l1.errores).toBe(0);
+      const l2 = await subidas.limpiarSubidasCaducadas();
+      expect(l2.errores).toBe(0);
+      expect(await s3.inspeccionarObjeto(a.documento.fileKey), "la limpieza no toca el objeto final vivo").not.toBeNull();
+      expect(await prisma.document.findUnique({ where: { id: a.documento.id } })).not.toBeNull();
+    },
+    30_000,
+  );
+
+  it(
+    "RACE COMPUESTA CON TRES: tres confirmaciones concurrentes convergen en UN documento, sin depender de quien gane",
+    async () => {
+      /*
+       * La misma propiedad con N=3, sin ningun ajuste de temporizacion: si el
+       * diseño depende de una carrera de exactamente dos, con tres deberia
+       * romperse o dejar rastro. Se repite el mismo borrado compensatorio
+       * fallido para TODAS las perdedoras a la vez.
+       */
+      const { org, owner } = await createOrg();
+      const expediente = await createCase(org.id, "EXP-RACE-COMPUESTA-3");
+      const actor = await actorInterno(org.id, expediente.id, owner.id);
+
+      const autorizacion = await subidas.autorizarSubida({ actor, fileName: "compuesta-3.pdf", size: 1024 });
+      if (!autorizacion.ok) throw new Error("la autorizacion deberia concederse");
+      await escribirEnAlmacen({ url: autorizacion.uploadUrl, fields: autorizacion.fields }, pdfDe(1024));
+
+      const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+
+      const enviarOriginal = s3.s3Client.send.bind(s3.s3Client);
+      (s3.s3Client as { send: unknown }).send = async (cmd: unknown, ...resto: unknown[]) => {
+        if (cmd instanceof DeleteObjectCommand) {
+          const key = (cmd as unknown as { input?: { Key?: string } }).input?.Key;
+          if (key && !key.includes("/preparacion/")) {
+            throw new Error("almacen caido para el borrado compensatorio de las perdedoras (inyectado)");
+          }
+        }
+        return (enviarOriginal as (...a: unknown[]) => unknown)(cmd, ...resto);
+      };
+
+      const [a, b, c] = await Promise.all([
+        subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId }),
+        subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId }),
+        subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId }),
+      ]);
+
+      (s3.s3Client as { send: unknown }).send = enviarOriginal;
+
+      expect(a.ok, JSON.stringify(a)).toBe(true);
+      expect(b.ok, JSON.stringify(b)).toBe(true);
+      expect(c.ok, JSON.stringify(c)).toBe(true);
+      if (!a.ok || !b.ok || !c.ok) throw new Error("inalcanzable");
+
+      const ids = new Set([a.documento.id, b.documento.id, c.documento.id]);
+      expect(ids.size, "las tres devuelven el MISMO documento").toBe(1);
+      expect([a.yaConfirmada, b.yaConfirmada, c.yaConfirmada].filter(Boolean)).toHaveLength(2);
+
+      expect(await prisma.document.count({ where: { caseId: expediente.id } })).toBe(1);
+
+      const filaFinal = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+      expect(filaFinal!.documentId).toBe(a.documento.id);
+      expect(filaFinal!.finalKey).toBe(a.documento.fileKey);
+      expect(await s3.inspeccionarObjeto(a.documento.fileKey)).not.toBeNull();
+
+      const claves = await s3.s3Client.send(
+        new ListObjectsV2Command({ Bucket: BUCKET!, Prefix: `${org.id}/${expediente.id}/interno/` }),
+      );
+      expect(
+        (claves.Contents ?? []).length,
+        "con tres concurrentes, ningun objeto de las dos perdedoras queda huerfano",
+      ).toBe(1);
+
+      const l1 = await subidas.limpiarSubidasCaducadas();
+      expect(l1.errores).toBe(0);
+      const l2 = await subidas.limpiarSubidasCaducadas();
+      expect(l2.errores).toBe(0);
     },
     30_000,
   );

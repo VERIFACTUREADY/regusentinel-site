@@ -67,39 +67,46 @@
  * LA GARANTÍA EXACTA TRAS UN FALLO, Y CÓMO SE SOSTIENE
  * -------------------------------------------------------
  * La afirmación es: todo fallo deja o un `Document` válido con su objeto
- * verificado, o ningún `Document` y ningún objeto huérfano. Nunca la
- * combinación contradictoria. Para que eso sea cierto hace falta más que
- * borrar el objeto final cuando la transacción falla EN CALIENTE —eso ya
- * estaba—: la fila tiene que recordar QUÉ clave final se intentó ANTES de que
- * exista nada que borrar, porque el proceso puede caerse entre escribir ese
- * objeto y comprometer la transacción, y en ese instante no hay ningún `catch`
- * que pueda ejecutarse. Por eso `confirmarSubida` apunta la clave final en la
- * fila —condicionado a que siga `PENDING` en ese instante, ni más ni menos;
- * ver el comentario junto a esa escritura para el porqué exacto de esa
- * condición y no otra— ANTES de llamar a `crearObjetoSiNoExiste`, no después.
- * Con eso, tres mecanismos —no uno solo— cubren las tres formas de fallar:
+ * verificado, o ningún `Document` y ningún objeto que quede PERMANENTEMENTE
+ * sin rastro. Nunca la combinación contradictoria, y NUNCA a costa de poder
+ * borrar el objeto de una confirmación que sí tuvo éxito.
  *
- *   - FALLO EN CALIENTE (la misma llamada sigue viva): el `catch` que envuelve
- *     la transacción borra el objeto final ya mismo, de forma síncrona. Es
- *     INMEDIATO: quien llama nunca ve un huérfano.
- *   - REINTENTO DEL CLIENTE tras un fallo (mismo `uploadId`, otra llamada): si
- *     el borrado síncrono de arriba también falló, la clave sigue en la fila;
- *     el intento siguiente la ve —es DISTINTA de la que él mismo genera— y la
- *     borra antes de escribir la suya. Es INMEDIATO en cuanto el cliente
- *     reintenta, no hace falta esperar a la limpieza.
- *   - NADIE VUELVE A LLAMAR (caída del proceso, o el cliente abandona): la fila
- *     sigue `PENDING` con esa clave. `limpiarSubidasCaducadas` la alcanza como
- *     a cualquier preparación caducada, pasado `VALIDEZ_REGISTRO_MS`, y borra
- *     también la clave final ahí. Esto SÍ es recuperación EVENTUAL, acotada
- *     por ese plazo más la cadencia del cron de limpieza —no inmediata—, y así
- *     queda dicho: no se afirma ausencia instantánea del huérfano en este
- *     caso, sólo su desaparición garantizada dentro de ese plazo.
+ * LA CLAVE FINAL ES DE LA FILA, NO DEL INTENTO
+ * ------------------------------------------------
+ * `confirmarSubida` asigna la clave final UNA SOLA VEZ por fila —la primera
+ * llamada que la necesita la genera y la persiste; cualquier llamada
+ * posterior, propia o de otra rama CONCURRENTE, la REUTILIZA en vez de
+ * generar la suya— y la persiste ANTES de escribir el objeto, no después. Ver
+ * el comentario junto a esa asignación para el razonamiento completo y la
+ * carrera de concurrencia que demostró por qué tenía que ser así (no "una
+ * clave nueva por intento, condicionada a `status: PENDING`", que cerraba la
+ * carrera LENTA pero no la RÁPIDA).
  *
- * El mismo razonamiento cubre la preparación que queda sin borrar tras un
- * `complete` que sí tuvo éxito (pasada 3 de `limpiarSubidasCaducadas`): el
- * `Document` ya es válido y su objeto FINAL ya está verificado en ese momento;
- * lo único pendiente es un objeto de PREPARACIÓN sobrante, y su desaparición
- * también es eventual, no instantánea, tal como se documenta en esa función.
+ * Con la clave compartida, "el objeto de la perdedora" deja de ser un
+ * concepto real: todas las ramas que compiten por la misma fila —dos, tres,
+ * las que sean, concurrentes o secuenciales— apuntan a la MISMA clave. Eso
+ * hace posible (y obligatorio) una simplificación de fondo: NINGÚN camino de
+ * `confirmarSubida` borra `finalKey` de forma síncrona nunca, ni al perder la
+ * transacción ni ante cualquier otro fallo. Antes sí lo hacía, y era
+ * necesario mientras cada intento tenía su propia clave; con clave
+ * compartida, ese mismo borrado síncrono podría acertar sobre el objeto que
+ * OTRA rama —la que sí ganó— ya está sirviendo. La propiedad que nunca puede
+ * romperse —el objeto de quien gana no lo puede borrar quien pierde— pesa más
+ * que la conveniencia de un borrado inmediato.
+ *
+ * La recuperación de una clave que ninguna confirmación llega a comprometer
+ * —el cliente abandona, el proceso se cae, todos los intentos fallan— es
+ * EVENTUAL, por una única vía: `limpiarSubidasCaducadas` (pasada 1) reclama
+ * con CAS cualquier fila `PENDING` caducada y borra también su clave final si
+ * la tiene, pasado `VALIDEZ_REGISTRO_MS` más la cadencia del cron. No se
+ * afirma ausencia instantánea en ningún caso de fallo de la transacción: sólo
+ * su desaparición garantizada dentro de ese plazo.
+ *
+ * El mismo razonamiento —eventual, no instantáneo— cubre la preparación que
+ * queda sin borrar tras un `complete` que sí tuvo éxito (pasada 3 de
+ * `limpiarSubidasCaducadas`): el `Document` ya es válido y su objeto FINAL ya
+ * está verificado en ese momento; lo único pendiente es un objeto de
+ * PREPARACIÓN sobrante.
  */
 
 import type { Document } from "@prisma/client";
@@ -504,114 +511,122 @@ export async function confirmarSubida(params: {
     }
   }
 
-  // Clave FINAL, nueva y aleatoria: el navegador nunca la ve.
-  const finalKey = buildFileKey({
+  /*
+   * CLAVE FINAL: ÚNICA POR FILA, ASIGNADA UNA SOLA VEZ, COMPARTIDA POR TODO
+   * INTENTO —incluidos los concurrentes—, NUNCA REGENERADA.
+   *
+   * POR QUÉ CAMBIÓ (segunda revisión de concurrencia)
+   * -----------------------------------------------------
+   * La versión anterior generaba una clave NUEVA en cada intento y la
+   * apuntaba en la fila condicionada a `status: PENDING` —eso cerraba la
+   * carrera LENTA (una llamada retrasada que llega después de que otra ya
+   * comprometió su transacción), pero no la RÁPIDA: dos confirmaciones que
+   * arrancan a la vez pueden ambas superar esa condición mientras `status`
+   * sigue `PENDING` para las dos, cada una escribe su PROPIA clave, y sólo
+   * UNA gana la transacción. La perdedora borra su propio objeto de forma
+   * síncrona al perder —pero si ese borrado TAMBIÉN falla, o el proceso se
+   * cae justo ahí, ese objeto queda con una clave que NINGUNA fila recuerda
+   * ya (la fila, una vez `COMPLETED`, sólo guarda la clave de la ganadora):
+   * huérfano para siempre, porque una fila `COMPLETED` no pasa por
+   * `limpiarSubidasCaducadas`. Reproducido con una prueba de concurrencia
+   * real (dos y tres confirmaciones a la vez, con el borrado compensatorio
+   * de las perdedoras forzado a fallar): el listado de MinIO mostraba N
+   * objetos para N confirmaciones concurrentes, no 1.
+   *
+   * La causa de fondo era tener UNA CLAVE POR INTENTO. La corrección quita
+   * esa causa: hay UNA clave por FILA, asignada la primera vez que alguien
+   * la necesita y reutilizada por cualquier intento posterior —concurrente o
+   * secuencial— mientras la fila siga sin confirmar. Con eso, "la clave de
+   * la perdedora" deja de existir como concepto: todas las ramas, ganen o
+   * pierdan la transacción, apuntan a la MISMA clave.
+   *
+   * ASIGNACIÓN: CAS SOBRE `finalKey: null`, NO SOBRE `status`
+   * ---------------------------------------------------------
+   * Se reclama con `where: { status: "PENDING", finalKey: null }`. Si dos
+   * llamadas concurrentes intentan asignar a la vez, sólo una tiene éxito
+   * (`count === 1`): la otra ve `count === 0` y debe distinguir DOS motivos
+   * distintos, releyendo la fila:
+   *
+   *   - `status` ya no es `PENDING`: otra confirmación (o la limpieza) ya
+   *     resolvió la fila. Igual que antes, es seguro devolver el documento
+   *     de la ganadora de inmediato (`documentId` se fija atómicamente junto
+   *     con `status` en la misma transacción).
+   *   - `status` SIGUE `PENDING` pero `finalKey` ya no es `null`: otra
+   *     llamada CONCURRENTE ganó la asignación una fracción de segundo antes,
+   *     pero su transacción aún no se ha resuelto. Aquí NO se devuelve un
+   *     409: se REUTILIZA la clave que esa otra llamada acaba de asignar
+   *     (`actual.finalKey`) y se continúa con el mismo flujo, como si esta
+   *     llamada la hubiera generado ella misma. Ninguna llamada concurrente
+   *     legítima se queda nunca sin poder progresar.
+   *
+   * ESCRIBIR UNA CLAVE QUE OTRA RAMA YA ESTÁ ESCRIBIENDO
+   * --------------------------------------------------------
+   * Con la clave compartida, más de una rama puede intentar
+   * `crearObjetoSiNoExiste` sobre la MISMA clave. La primera en llegar la
+   * escribe; las demás reciben `ErrorDePrecondicion` (`If-None-Match: *`) —
+   * y eso NO es un fallo aquí: significa "alguien más, con los MISMOS bytes
+   * ya verificados por esta misma llamada contra la preparación, ya la
+   * escribió", así que se trata como éxito y se continúa. El único riesgo
+   * real —que dos ramas escriban contenidos DISTINTOS bajo la misma clave—
+   * no existe: cada rama valida sus propios bytes contra la preparación
+   * ANTES de llegar aquí, y la preparación es la MISMA para todas.
+   *
+   * POR QUÉ YA NO HAY UN BORRADO COMPENSATORIO SÍNCRONO AL PERDER
+   * -------------------------------------------------------------------
+   * Antes, la rama que perdía la transacción borraba SU clave de inmediato.
+   * Con clave compartida eso ya NO es seguro: si el proceso de la perdedora
+   * llega tarde a ese borrado, o si dos perdedoras compiten, podría borrar
+   * la MISMA clave que la ganadora ya está sirviendo como `Document.fileKey`
+   * —justo la propiedad que NUNCA puede romperse: "el objeto de la ganadora
+   * no lo puede borrar una petición perdedora". Por eso el `catch` de la
+   * transacción, más abajo, YA NO intenta borrar `finalKey` en ningún caso:
+   * la única vía de limpieza para una clave que nadie llega a confirmar es
+   * la EVENTUAL, vía `limpiarSubidasCaducadas` (pasada 1, ya la cubre desde
+   * la revisión anterior) — nunca una síncrona que podría acertar sobre el
+   * objeto equivocado.
+   */
+  const propuesta = buildFileKey({
     orgId: pu.orgId,
     caseId: pu.caseId,
     fileName: pu.fileName,
     fromPortal: pu.isPortalUpload,
   });
-
-  /*
-   * DEJA CONSTANCIA DE LA CLAVE FINAL EN LA FILA ANTES DE ESCRIBIR NADA EN EL
-   * ALMACÉN — condicionado a que la fila SIGA `PENDING` en este instante, ni
-   * más ni menos.
-   *
-   * EL HUECO QUE CIERRA
-   * --------------------
-   * Antes, `finalKey` sólo se guardaba DENTRO de la transacción de más abajo,
-   * junto con `documentId`. Dos fallos quedaban sin ninguna forma de
-   * recuperarse:
-   *
-   *   - el objeto final se escribe bien, pero la transacción falla Y el
-   *     borrado compensatorio del `catch` de más abajo TAMBIÉN falla (dos
-   *     fallos de almacén seguidos, en vez de uno);
-   *   - el proceso se cae justo después de escribir el objeto final y antes
-   *     de que la transacción llegue siquiera a empezar.
-   *
-   * En los dos casos, nada en la fila decía que esa clave se había intentado:
-   * ninguna limpieza posterior podía encontrarla ni borrarla. Ahora la fila lo
-   * sabe ANTES de que se escriba el objeto, así que sobrevive a la caída.
-   *
-   * POR QUÉ `status: PENDING` Y NO LA IGUALDAD DE `finalKey`
-   * -----------------------------------------------------------
-   * La primera versión de este apunte condicionaba también al valor ANTERIOR
-   * de `finalKey` (`where: { finalKey: pu.finalKey }`), pensado como un CAS
-   * optimista. Se retiró: dos confirmaciones SIMULTÁNEAS arrancan ambas con
-   * `pu.finalKey === null`, así que la PRIMERA en escribir "consumía" el
-   * `null` y la SEGUNDA perdía esta reclamación ANTES de que la primera
-   * hubiera llegado siquiera a crear el `Document` —reproducido con la prueba
-   * de concurrencia real: la perdedora encontraba la fila todavía sin
-   * `documentId` y devolvía un 409 en vez del documento ya creado, una
-   * regresión de "confirmación concurrente crea exactamente uno".
-   *
-   * Condicionar sólo a `status: PENDING` no tiene ese problema: en una
-   * carrera RÁPIDA (dos llamadas que arrancan a la vez) el `status` sigue
-   * `PENDING` para AMBAS en este punto —ninguna ha llegado aún a la
-   * transacción que lo cambia—, así que las dos superan la condición, escriben
-   * cada una su propio objeto, y disputan el resultado DESPUÉS, en la
-   * transacción de más abajo, exactamente igual que antes.
-   *
-   * Lo que SÍ bloquea es la carrera LENTA: una llamada retrasada —se quedó
-   * esperando en cualquiera de los `await` anteriores, sin haber fallado
-   * aún— que llega a ESTE punto después de que la otra ya comprometió su
-   * transacción. Reproducido con una prueba de concurrencia real con barreras
-   * deterministas (sin sleeps): antes de este cambio, el apunte llano de la
-   * rezagada SOBRESCRIBÍA en la fila la clave final de la ganadora —ya
-   * confirmada y ya referenciada por su `Document`— con la suya propia, que
-   * la propia rezagada borra segundos después al perder la carrera en la
-   * transacción. La fila quedaba con `documentId` apuntando al `Document`
-   * correcto pero `finalKey` apuntando a una clave YA BORRADA: no un objeto
-   * huérfano en el almacén, pero sí un puntero corrupto en la fila, y en el
-   * peor caso —si el borrado de la rezagada también fallase— un huérfano que
-   * ninguna limpieza posterior podría encontrar nunca, porque una fila
-   * `COMPLETED` no pasa por `limpiarSubidasCaducadas`.
-   *
-   * Si `count === 0` aquí, el `status` ya no es `PENDING`: por construcción,
-   * eso sólo ocurre DENTRO de la misma transacción que también fija
-   * `documentId` (se cambian juntos, atómicamente), así que en cuanto se
-   * observa `status !== PENDING` desde fuera, `documentId` YA está puesto si
-   * la ganadora fue una confirmación. Es seguro devolver su documento de
-   * inmediato, sin escribir nada en el almacén.
-   */
-  const apunte = await prisma.pendingUpload.updateMany({
-    where: { id: pu.id, status: "PENDING" },
-    data: { finalKey },
+  const asignacion = await prisma.pendingUpload.updateMany({
+    where: { id: pu.id, status: "PENDING", finalKey: null },
+    data: { finalKey: propuesta },
   });
-  if (apunte.count === 0) {
-    const ganadora = await resultadoDeLaGanadora(pu.id);
-    if (ganadora) return ganadora;
-    return {
-      ok: false,
-      status: 409,
-      error: "La subida se está confirmando. Vuelve a intentarlo.",
-    };
+
+  let finalKey: string;
+  if (asignacion.count > 0) {
+    finalKey = propuesta;
+  } else {
+    const actual = await prisma.pendingUpload.findUnique({ where: { id: pu.id } });
+    if (!actual) {
+      return { ok: false, status: 404, error: "Subida no encontrada" };
+    }
+    if (actual.status !== "PENDING") {
+      const ganadora = await resultadoDeLaGanadora(pu.id);
+      if (ganadora) return ganadora;
+      return {
+        ok: false,
+        status: 409,
+        error: "La subida se está confirmando. Vuelve a intentarlo.",
+      };
+    }
+    // Sigue PENDING: otra llamada concurrente ya asignó la clave. Se
+    // reutiliza — nunca se genera una segunda para la misma fila.
+    finalKey = actual.finalKey!;
   }
 
-  /*
-   * Si la fila ya traía una clave final DISTINTA de un intento ANTERIOR de
-   * esta MISMA subida que nunca llegó a confirmarse —no de una confirmación
-   * concurrente: ésas parten de `pu.finalKey === null`, igual que ésta—, ese
-   * objeto anterior, si se llegó a escribir, está huérfano: ningún `Document`
-   * lo referencia y nunca lo hará. Se borra ya, en vez de esperar a la
-   * limpieza periódica. Borrar una clave que nunca llegó a escribirse (la
-   * transacción anterior falló ANTES del `PutObject`) no es un error: el
-   * almacén lo trata como éxito.
-   */
-  if (pu.finalKey && pu.finalKey !== finalKey) {
-    await deleteFile(pu.finalKey).catch((e) =>
-      console.error(
-        "No se pudo borrar el objeto final huérfano de un intento anterior de la misma subida:",
-        pu.finalKey,
-        e,
-      ),
-    );
+  // Escribe el final SÓLO si no existe ya (If-None-Match: *). Si otra rama
+  // concurrente ya lo escribió con los mismos bytes verificados, el almacén
+  // responde con una precondición fallida: no es un error, es la señal de
+  // que la clave compartida ya está servida.
+  try {
+    await crearObjetoSiNoExiste(finalKey, bytes, veredicto.detectedType ?? "application/octet-stream");
+  } catch (err) {
+    if (!(err instanceof ErrorDePrecondicion)) throw err;
   }
-
-  // Escribe el final SÓLO si no existe ya (If-None-Match: *). Con clave
-  // aleatoria la colisión es prácticamente imposible; la comprobación es la
-  // garantía, no la probabilidad.
-  await crearObjetoSiNoExiste(finalKey, bytes, veredicto.detectedType ?? "application/octet-stream");
 
   let documento: Document;
   try {
@@ -683,13 +698,11 @@ export async function confirmarSubida(params: {
     if (err instanceof YaReclamada) {
       /*
        * Otra confirmación simultánea ganó la carrera y ya comprometió su
-       * transacción. El objeto final que ACABAMOS de crear nosotros no lo usa
-       * nadie: sin borrarlo quedaría huérfano —dos objetos finales para una
-       * sola subida—. Se borra y se devuelve el documento de la ganadora.
+       * transacción. `finalKey` aquí es la MISMA clave compartida que su
+       * `Document` referencia —no una copia propia de esta rama—, así que NO
+       * se borra: hacerlo destruiría el objeto que la ganadora ya está
+       * sirviendo. Se devuelve directamente su documento.
        */
-      await deleteFile(finalKey).catch((e) =>
-        console.error("No se pudo borrar el objeto final perdedor de la carrera:", finalKey, e),
-      );
       const ganadora = await resultadoDeLaGanadora(pu.id);
       if (ganadora) return ganadora;
       return {
@@ -698,11 +711,17 @@ export async function confirmarSubida(params: {
         error: "La subida se está confirmando. Vuelve a intentarlo.",
       };
     }
-    // Cualquier otro fallo: el objeto final que se acaba de crear no tiene
-    // documento que lo reclame. Se limpia antes de propagar el error.
-    await deleteFile(finalKey).catch((e) =>
-      console.error("No se pudo limpiar el objeto final tras un fallo de confirmación:", finalKey, e),
-    );
+    /*
+     * Cualquier otro fallo de la transacción (no una carrera perdida): la
+     * fila sigue `PENDING` y `finalKey` sigue apuntando a la clave —escrita o
+     * no— que cualquier intento posterior, propio o de otra rama concurrente,
+     * reutilizará. NO se borra aquí: con clave compartida no hay forma de
+     * distinguir, desde este punto, "nadie más la necesita" de "otra rama
+     * concurrente la acaba de escribir y está a punto de comprometer su
+     * transacción". La recuperación de una clave que nadie llega a confirmar
+     * nunca es la vía EVENTUAL ya existente (`limpiarSubidasCaducadas`,
+     * pasada 1), no una síncrona aquí.
+     */
     throw err;
   }
 
@@ -872,17 +891,21 @@ export async function limpiarSubidasCaducadas(
     }
 
     /*
-     * RED DE SEGURIDAD PARA LA CLAVE FINAL, NO SÓLO LA DE PREPARACIÓN.
+     * ÚNICA VÍA DE RECUPERACIÓN PARA LA CLAVE FINAL, NO SÓLO LA DE
+     * PREPARACIÓN.
      *
-     * `confirmarSubida` reclama la clave final en esta misma fila ANTES de
-     * escribir el objeto (ver el comentario en esa función). Si un intento se
-     * cayó o falló por completo —la transacción no llegó a comprometerse Y el
-     * cliente nunca reintentó dentro de `VALIDEZ_REGISTRO_MS`—, la fila sigue
-     * PENDING con `finalKey` apuntando a un objeto que, si se llegó a
-     * escribir, no tiene ni tendrá nunca ningún `Document` que lo reclame: la
-     * reclamación CAS de arriba ya demostró que ninguna confirmación en curso
-     * lo necesita. Se borra aquí, con la misma tolerancia a clave inexistente
-     * que la de preparación.
+     * `confirmarSubida` asigna la clave final EN ESTA MISMA FILA la primera
+     * vez que hace falta, antes de escribir el objeto, y la comparte entre
+     * todo intento posterior (ver el comentario junto a esa asignación). Si
+     * ninguna confirmación llega a comprometerse —todas fallan, el cliente
+     * abandona, el proceso se cae— la fila sigue PENDING con `finalKey`
+     * apuntando a un objeto que, si se llegó a escribir, no tiene ni tendrá
+     * nunca ningún `Document` que lo reclame: la reclamación CAS de arriba ya
+     * demostró que ninguna confirmación en curso lo necesita. `confirmarSubida`
+     * NUNCA borra esta clave de forma síncrona —sería borrar, potencialmente,
+     * el objeto de una rama concurrente que sí gane—, así que ÉSTA pasada es
+     * la ÚNICA vía por la que una clave final abandonada desaparece. Se borra
+     * aquí, con la misma tolerancia a clave inexistente que la de preparación.
      */
     if (candidata.finalKey) {
       try {

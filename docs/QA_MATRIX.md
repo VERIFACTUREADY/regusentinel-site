@@ -895,6 +895,9 @@ se ha verificado contra un bucket S3 de producción ni contra Vercel real.
 | Caída del proceso tras comprometer la transacción y antes de borrar la preparación: recuperada sin tocar el `Document` | ✅ | `subida-directa-db.test.ts` — "ventana 5" |
 | Repetir la limpieza tras recuperar un huérfano final es idempotente | ✅ | `subida-directa-db.test.ts` — "ventana 6" |
 | Confirmación retrasada que llega tras comprometerse la otra no corrompe el puntero (`finalKey`) de la ganadora | ✅ | `subida-directa-db.test.ts` — "RACE", dos barreras deterministas sobre `HeadObjectCommand` y `DeleteObjectCommand` reales |
+| Carrera RÁPIDA (dos ramas escriben cada una antes de disputar) con borrado compensatorio de la perdedora fallando: ningún objeto sin rastro | ✅ | `subida-directa-db.test.ts` — "RACE COMPUESTA", barreras deterministas sobre `PutObjectCommand`; clave final compartida por fila, no por intento |
+| Misma propiedad con TRES confirmaciones concurrentes, sin depender de quién gane | ✅ | `subida-directa-db.test.ts` — "RACE COMPUESTA CON TRES" |
+| Reintento secuencial reutiliza la MISMA clave final, no genera una segunda | ✅ | `subida-directa-db.test.ts` — reescrita tras adoptar clave compartida |
 
 #### Subida (ficha del expediente)
 

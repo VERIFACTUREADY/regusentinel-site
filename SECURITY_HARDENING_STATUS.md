@@ -2208,3 +2208,79 @@ credenciales de producción ni dependencias no relacionadas. Aislamiento por
 tenant, atadura del actor y el diseño de la migración `20260910163000`
 quedan intactos — no se tocó `prisma/schema.prisma` ni se creó ninguna
 migración nueva.
+
+## 2026-09-15 (2) — La carrera RÁPIDA compuesta: una clave por INTENTO era la causa de fondo, no sólo un caso concreto
+
+Revisión acotada, un solo hueco concreto: la revisión anterior (2026-09-15
+(1)) cerró la carrera LENTA condicionando el apunte previo de `finalKey` a
+`status: PENDING`, pero advertía explícitamente que en una carrera RÁPIDA
+—dos confirmaciones que arrancan a la vez— ambas ramas podían superar esa
+condición, escribir cada una su PROPIA clave, y sólo una ganar la transacción.
+La pregunta pendiente: si el borrado compensatorio de la perdedora (síncrono,
+en el `catch(YaReclamada)`) TAMBIÉN fallaba, ¿quedaba su objeto localizable?
+
+**Reproducido contra MinIO y PostgreSQL reales**, con dos barreras
+deterministas sobre `PutObjectCommand` (no `Promise.all` a pelo: se comprobó
+que confiar en el entrelazado natural del runtime no bastaba tras quitar un
+paso intermedio, así que se pasó a barreras explícitas) que detienen la
+primera y la segunda confirmación justo en su intento de escribir el objeto
+final, liberándolas sólo cuando AMBAS lo han alcanzado — y con TODO
+`DeleteObjectCommand` sobre una clave no-de-preparación forzado a fallar
+(ataca el borrado compensatorio de quien pierda, sin necesitar saber de
+antemano quién). Resultado con **dos** confirmaciones concurrentes: el listado
+de MinIO mostraba **2** objetos bajo el prefijo del expediente, no 1 — el de
+la ganadora (correcto) y el de la perdedora, con su borrado fallido y **sin
+ninguna fila que lo recordara** (la fila, una vez `COMPLETED`, sólo guarda la
+clave de la ganadora). Con **tres** confirmaciones concurrentes: **3**
+objetos, dos huérfanos. Confirmado: la causa de fondo era tener una clave por
+INTENTO, no un caso aislado de temporización.
+
+**Corrección** (`src/lib/subida-directa.ts`, sin migración: `finalKey` ya
+existía): la clave final pasa de ser "una por intento" a **una por fila,
+asignada una sola vez y compartida por todo intento**, concurrente o
+secuencial. Se asigna con un CAS sobre `finalKey: null` (no sobre `status`
+solo); quien pierde ese CAS relee la fila: si `status` ya cambió, devuelve el
+documento de la ganadora de inmediato (igual que antes); si sigue `PENDING`,
+**reutiliza** la clave que la otra rama concurrente acaba de asignar, en vez
+de generar la suya. Más de una rama puede entonces intentar escribir la MISMA
+clave: la primera la escribe, las demás reciben una precondición fallida
+(`If-None-Match: *`) que se trata como éxito —no hay riesgo de contenidos
+distintos bajo la misma clave, porque cada rama valida sus propios bytes
+contra la MISMA preparación antes de llegar aquí—.
+
+Con clave compartida, "el objeto de la perdedora" deja de existir como
+concepto, y con él la necesidad —y el riesgo— del borrado compensatorio
+síncrono: se retiró por completo del `catch` de la transacción. Ya no hay
+ningún camino en `confirmarSubida` que borre `finalKey` de forma síncrona,
+porque con clave compartida ese borrado podría acertar sobre el objeto que
+OTRA rama, la que sí ganó, está sirviendo — la propiedad que nunca puede
+romperse pesa más que la conveniencia de un borrado inmediato. La única vía de
+recuperación para una clave que nadie confirma es ahora, siempre, la
+EVENTUAL ya existente (`limpiarSubidasCaducadas`, pasada 1). Dos pruebas ya
+existentes quedaron con premisas incompatibles con el nuevo diseño
+—"ventana 2 (fallo simple)" asumía borrado síncrono; "un reintento secuencial"
+asumía una clave nueva por intento— y se **reescribieron** para probar el
+comportamiento correcto y actual, no para debilitar la cobertura: la primera
+ahora prueba que el objeto queda vivo al instante y se recupera eventualmente;
+la segunda, que el reintento reutiliza la misma clave sin generar una nueva.
+
+**Pruebas nuevas**: dos pruebas de concurrencia compuesta (dos y tres
+confirmaciones concurrentes) contra MinIO y PostgreSQL reales, con barreras
+deterministas, que verifican filas de PostgreSQL y el listado completo de
+MinIO —no sólo el conteo de `Document` ni las respuestas—: exactamente un
+`Document`; `PendingUpload.documentId` y `.finalKey` apuntando ambos al
+objeto real de la ganadora; el objeto de la ganadora intacto; ningún objeto
+de ninguna perdedora sin rastro, ni con dos ni con tres concurrentes, ni con
+el borrado compensatorio fallando; limpieza idempotente tras la carrera.
+Repetidas 4 veces seguidas sin fallos para descartar inestabilidad. Las
+pruebas de concurrencia y de las ventanas de fallo ya existentes se
+repitieron: 41/41 en `subida-directa-db.test.ts`, 208/208 en la suite
+completa de integración real (dos lotes, por un segmentation fault
+pre-existente de Node en este puesto al procesar 17 ficheros en un solo
+proceso — ya documentado en sesiones anteriores, ajeno a este cambio).
+
+No se toca `xlsx`, `npm audit`, `CORS`, `main`, protección de rama,
+credenciales de producción ni dependencias no relacionadas. Aislamiento por
+tenant, atadura del actor y el diseño de la migración `20260910163000`
+quedan intactos — no se tocó `prisma/schema.prisma` ni se creó ninguna
+migración nueva: `finalKey` ya existía.
