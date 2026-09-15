@@ -6,9 +6,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: baritur
-      POSTGRES_PASSWORD: baritur_dev
-      POSTGRES_DB: baritur_pro
+      POSTGRES_USER: heredia
+      POSTGRES_PASSWORD: heredia_dev
+      POSTGRES_DB: heredia
     volumes:
       - pgdata:/var/lib/postgresql/data
 

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { notFound } from "next/navigation";
 import {
   CCAA_LABELS,
@@ -39,7 +41,8 @@ function parsePair(par: string): { a: CCAAKey; b: CCAAKey } | null {
   return { a: a.ccaa, b: b.ccaa };
 }
 
-export async function generateMetadata({ params }: { params: { par: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ par: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const pair = parsePair(params.par);
   if (!pair) return {};
   const labelA = CCAA_LABELS[pair.a];
@@ -55,7 +58,7 @@ export async function generateMetadata({ params }: { params: { par: string } }):
       `donde se paga menos herencia espana`,
     ],
     alternates: {
-      canonical: `https://bariturpro.com/comparador-isd/${params.par}`,
+      canonical: `https://heredia.app/comparador-isd/${params.par}`,
     },
     openGraph: {
       title,
@@ -93,7 +96,8 @@ function compute(ccaa: CCAAKey, group: ParentescoGroup, base: number): CellResul
   return { cuota: result.cuotaAPagar, bonifPct: bonif.pct, foral: bonif.foralRegime };
 }
 
-export default function PairPage({ params }: { params: { par: string } }) {
+export default async function PairPage(props: { params: Promise<{ par: string }> }) {
+  const params = await props.params;
   const pair = parsePair(params.par);
   if (!pair) return notFound();
 
@@ -155,16 +159,7 @@ export default function PairPage({ params }: { params: { par: string } }) {
 
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/calculadora-isd" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/comparador-isd" className="text-gray-700 hover:text-primary">Comparador</Link>
-              <Link href="/borrador-modelo650" className="text-gray-700 hover:text-primary hidden sm:inline">Borrador 650</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         {/* Breadcrumb */}
         <nav className="max-w-5xl mx-auto px-4 py-3 text-xs text-gray-500">
@@ -334,6 +329,7 @@ export default function PairPage({ params }: { params: { par: string } }) {
             })}
           </div>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

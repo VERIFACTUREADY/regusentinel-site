@@ -447,7 +447,7 @@ export default function BillingPage() {
       </div>
 
       <p className="text-xs text-gray-400 mt-6">
-        Precios sin IVA. Facturacion en EUR. Soporte: soporte@baritur.com.
+        Precios sin IVA. Facturacion en EUR. Soporte: soporte@heredia.app.
       </p>
     </div>
   );

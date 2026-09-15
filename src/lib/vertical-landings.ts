@@ -45,10 +45,12 @@ const ICON_SHIELD = "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955
 const ICON_BELL = "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9";
 const ICON_INBOX = "M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4";
 
-export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
+export type VerticalSlug = "funerarias" | "gestorias" | "abogados";
+
+export const VERTICAL_CONFIG: Record<VerticalSlug, VerticalConfig> = {
   funerarias: {
     slug: "funerarias",
-    title: "Software para funerarias y servicios funerarios — BARITUR PRO",
+    title: "Software para funerarias y servicios funerarios — Heredia",
     description:
       "Gestiona los trámites post-mortem desde la propia funeraria: certificado de defunción, plazos del Modelo 650, portal familia y derivación a gestoría. Sin complicar tu operativa diaria.",
     badge: "Para funerarias y servicios funerarios",
@@ -78,7 +80,7 @@ export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
       { title: "Cumplimiento RGPD post-mortem", desc: "El tratamiento de datos de personas fallecidas tiene marco legal específico (art. 3 LOPDGDD). Lo cumplimos por defecto.", icon: ICON_BELL },
     ],
     workflow: [
-      { step: "1", title: "Servicio funerario", desc: "Sigues operando como hasta ahora. Tu CRM funerario y BARITUR PRO conviven sin interferir." },
+      { step: "1", title: "Servicio funerario", desc: "Sigues operando como hasta ahora. Tu CRM funerario y Heredia conviven sin interferir." },
       { step: "2", title: "Apertura del expediente post-mortem", desc: "Después del sepelio, abres el expediente con los datos del causante. 60 segundos." },
       { step: "3", title: "Acompañamiento documental", desc: "Solicitudes de certificado de últimas voluntades, RCSV, plazos del ISD. La familia los ve en su portal." },
       { step: "4", title: "Derivación o gestión propia", desc: "Si decidís ofrecer el servicio post-mortem, usáis el motor completo. Si derivás a gestoría, exportáis el dossier en un clic." },
@@ -87,7 +89,7 @@ export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
       {
         title: "Familia con causante en Madrid y herederos en Valencia",
         problem: "La normativa fiscal aplicable es la de Madrid (residencia del causante). Sin saberlo, la familia podría pagar 30.000 € de más.",
-        solution: "BARITUR detecta automáticamente la CCAA competente y aplica la bonificación correcta. Tú lo explicas a la familia con cifras concretas en la primera reunión.",
+        solution: "Heredia detecta automáticamente la CCAA competente y aplica la bonificación correcta. Tú lo explicas a la familia con cifras concretas en la primera reunión.",
       },
       {
         title: "Plazo del ISD a punto de vencer en agosto",
@@ -108,7 +110,7 @@ export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
     faq: [
       {
         q: "¿Sustituye a nuestro CRM funerario actual?",
-        a: "No. BARITUR PRO se especializa en lo post-mortem (trámites, ISD, herencia). Tu CRM funerario sigue gestionando el servicio del sepelio. Conviven sin solapamiento.",
+        a: "No. Heredia se especializa en lo post-mortem (trámites, ISD, herencia). Tu CRM funerario sigue gestionando el servicio del sepelio. Conviven sin solapamiento.",
       },
       {
         q: "¿Es legal que una funeraria preste servicios post-mortem?",
@@ -116,7 +118,7 @@ export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
       },
       {
         q: "¿Podemos personalizar el portal familia con nuestra marca?",
-        a: "Sí. En los planes Despacho y Firma el portal lleva vuestro logo, colores y dominio personalizado. La familia ve la marca de la funeraria, no la de BARITUR PRO.",
+        a: "Sí. En los planes Despacho y Firma el portal lleva vuestro logo, colores y dominio personalizado. La familia ve la marca de la funeraria, no la de Heredia.",
       },
       {
         q: "¿Cuánto cuesta y cuándo se rentabiliza?",
@@ -127,7 +129,7 @@ export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
 
   gestorias: {
     slug: "gestorias",
-    title: "Software de gestión de herencias para gestorías — BARITUR PRO",
+    title: "Software de gestión de herencias para gestorías — Heredia",
     description:
       "Automatiza el seguimiento de plazos del ISD, genera borradores del Modelo 650 y centraliza toda la documentación de cada herencia. Para gestorías que tramitan post-mortem.",
     badge: "Para gestorías y asesorías fiscales",
@@ -187,11 +189,11 @@ export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
     faq: [
       {
         q: "¿Funciona si tenemos clientes en varias CCAA?",
-        a: "Sí. La provincia del causante determina la CCAA aplicable y BARITUR usa la normativa correcta automáticamente. Cubre las 17 comunidades incluyendo regímenes forales (Navarra, País Vasco).",
+        a: "Sí. La provincia del causante determina la CCAA aplicable y Heredia usa la normativa correcta automáticamente. Cubre las 17 comunidades incluyendo regímenes forales (Navarra, País Vasco).",
       },
       {
         q: "¿Sustituye a nuestro software contable o de declaraciones?",
-        a: "No. BARITUR PRO se especializa en gestión de expedientes de herencia: plazos, documentación, portal familia, borrador del 650. La presentación final del Modelo 650 ante la oficina liquidadora la haces con tu software habitual o telemáticamente.",
+        a: "No. Heredia se especializa en gestión de expedientes de herencia: plazos, documentación, portal familia, borrador del 650. La presentación final del Modelo 650 ante la oficina liquidadora la haces con tu software habitual o telemáticamente.",
       },
       {
         q: "¿Podemos importar nuestros expedientes existentes?",
@@ -206,7 +208,7 @@ export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
 
   abogados: {
     slug: "abogados",
-    title: "Software de herencias y sucesiones para abogados — BARITUR PRO",
+    title: "Software de herencias y sucesiones para abogados — Heredia",
     description:
       "Trazabilidad completa, audit trail, comunicación con familia documentada y cálculo del ISD. Para abogados especializados en derecho sucesorio que necesitan defender cada decisión.",
     badge: "Para despachos de derecho sucesorio",
@@ -255,7 +257,7 @@ export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
       {
         title: "Cálculo de cuota cuestionado por la administración",
         problem: "Hacienda regulariza al alza alegando valor de mercado superior. Defender el cálculo declarado exige reconstruir bases, reducciones y bonificaciones.",
-        solution: "El motor BARITUR conserva el cálculo con todos los inputs y outputs (base imponible, reducciones aplicadas, cuota, bonificación CCAA). Justificación matemática en un clic.",
+        solution: "El motor Heredia conserva el cálculo con todos los inputs y outputs (base imponible, reducciones aplicadas, cuota, bonificación CCAA). Justificación matemática en un clic.",
       },
     ],
     quote: {
@@ -270,7 +272,7 @@ export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
       },
       {
         q: "¿Sustituye al software de firma electrónica?",
-        a: "No. BARITUR PRO no firma documentos: archiva, trazabilidad y plazos. Para firma electrónica avanzada usas tu solución habitual (FNMT, Camerfirma, etc.) y subes el documento firmado al expediente.",
+        a: "No. Heredia no firma documentos: archiva, trazabilidad y plazos. Para firma electrónica avanzada usas tu solución habitual (FNMT, Camerfirma, etc.) y subes el documento firmado al expediente.",
       },
       {
         q: "¿Cómo cumple con el secreto profesional?",
@@ -278,14 +280,14 @@ export const VERTICAL_CONFIG: Record<string, VerticalConfig> = {
       },
       {
         q: "¿Cuánto cuesta para un despacho con 5 abogados?",
-        a: "El plan Firma a 749 €/mes incluye 250 expedientes/mes y usuarios ilimitados. Si gestionáis 80-150 herencias al año, sale a unos 5-9 € por expediente — un coste menor que la luz del despacho.",
+        a: "El plan Firma a 749 €/mes incluye 200 expedientes/mes y hasta 20 usuarios. Si gestionáis 80-150 herencias al año, sale a unos 5-9 € por expediente — un coste menor que la luz del despacho.",
       },
     ],
   },
 };
 
-export const ALL_VERTICAL_SLUGS = Object.keys(VERTICAL_CONFIG);
+export const ALL_VERTICAL_SLUGS = Object.keys(VERTICAL_CONFIG) as VerticalSlug[];
 
 export function getVerticalBySlug(slug: string): VerticalConfig | null {
-  return VERTICAL_CONFIG[slug] ?? null;
+  return (VERTICAL_CONFIG as Record<string, VerticalConfig>)[slug] ?? null;
 }

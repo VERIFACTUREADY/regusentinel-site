@@ -10,7 +10,7 @@
  */
 
 import { prisma } from "./prisma";
-import { detectISDRisks } from "./isd-risk-detector";
+import { detectISDRisks, parseAppliedReductions } from "./isd-risk-detector";
 import { computeNextAction, type NextAction, type NextActionTask } from "./next-action";
 
 export interface QueueCaseInput {
@@ -21,6 +21,17 @@ export interface QueueCaseInput {
   province: string | null;
   deathDate: Date | null;
   tasks: NextActionTask[];
+  /** Inmueble urbano declarado en el caudal — alimenta riesgos IIVTNU. */
+  hasUrbanProperty?: boolean;
+  propertyAcquisitionValue?: number | null;
+  propertyTransmissionValue?: number | null;
+  /** Patrimonio preexistente del heredero — alimenta tramos del coeficiente. */
+  preexistingPatrimony?: number | null;
+  /** El causante cambió de residencia fiscal en los 5 años previos. */
+  recentResidenceChange?: boolean;
+  previousResidenceProvince?: string | null;
+  /** Reducciones del art. 20 aplicadas con periodo de mantenimiento. */
+  appliedReductions?: import("./isd-risk-detector").AppliedReduction[];
 }
 
 export interface ActionQueueItem {
@@ -56,6 +67,13 @@ export function buildActionQueue(cases: QueueCaseInput[], limit = 8): ActionQueu
     const risks = detectISDRisks({
       deathDate: c.deathDate,
       province: c.province,
+      hasUrbanProperty: c.hasUrbanProperty,
+      propertyAcquisitionValue: c.propertyAcquisitionValue,
+      propertyTransmissionValue: c.propertyTransmissionValue,
+      preexistingPatrimony: c.preexistingPatrimony,
+      recentResidenceChange: c.recentResidenceChange,
+      previousResidenceProvince: c.previousResidenceProvince,
+      appliedReductions: c.appliedReductions,
     });
 
     const action = computeNextAction({
@@ -104,6 +122,13 @@ export async function getOrgActionQueue(orgId: string, limit = 8): Promise<Actio
       ref: true,
       status: true,
       province: true,
+      hasUrbanProperty: true,
+      propertyAcquisitionValue: true,
+      propertyTransmissionValue: true,
+      preexistingPatrimony: true,
+      recentResidenceChange: true,
+      previousResidenceProvince: true,
+      appliedReductions: true,
       deceased: { select: { fullName: true, deathDate: true } },
       tasks: {
         select: { id: true, title: true, status: true, deadline: true, dueDate: true, blockReason: true },
@@ -118,6 +143,13 @@ export async function getOrgActionQueue(orgId: string, limit = 8): Promise<Actio
     caseStatus: c.status,
     province: c.province,
     deathDate: c.deceased?.deathDate ?? null,
+    hasUrbanProperty: c.hasUrbanProperty,
+    propertyAcquisitionValue: c.propertyAcquisitionValue,
+    propertyTransmissionValue: c.propertyTransmissionValue,
+    preexistingPatrimony: c.preexistingPatrimony,
+    recentResidenceChange: c.recentResidenceChange,
+    previousResidenceProvince: c.previousResidenceProvince,
+    appliedReductions: parseAppliedReductions(c.appliedReductions),
     tasks: c.tasks.map((t) => ({
       id: t.id,
       title: t.title,

@@ -1,19 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { VERTICAL_CONFIG, ALL_VERTICAL_SLUGS, getVerticalBySlug } from "@/lib/vertical-landings";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
+import { VERTICAL_CONFIG, ALL_VERTICAL_SLUGS, type VerticalSlug } from "@/lib/vertical-landings";
 
-export async function generateStaticParams() {
-  return ALL_VERTICAL_SLUGS.map((slug) => ({ vertical: slug }));
-}
+/**
+ * Landing vertical compartida por /para-gestorias, /para-funerarias y
+ * /para-abogados. Nota: Next.js no soporta segmentos parcialmente dinamicos
+ * ("para-[vertical]"), por eso cada URL tiene su carpeta estatica y este
+ * componente concentra el contenido.
+ */
 
-export async function generateMetadata({ params }: { params: { vertical: string } }): Promise<Metadata> {
-  const v = getVerticalBySlug(params.vertical);
-  if (!v) return {};
+export function verticalMetadata(slug: VerticalSlug): Metadata {
+  const v = VERTICAL_CONFIG[slug];
   return {
     title: v.title,
     description: v.description,
-    alternates: { canonical: `https://bariturpro.com/para-${v.slug}` },
+    alternates: { canonical: `https://heredia.app/para-${v.slug}` },
     openGraph: {
       title: v.title,
       description: v.description,
@@ -22,15 +25,17 @@ export async function generateMetadata({ params }: { params: { vertical: string 
   };
 }
 
+// Alineado con PLAN_PRICING (src/lib/stripe.ts), la fuente de verdad de
+// precios y capacidad incluida. No importamos stripe.ts aqui porque
+// instancia el cliente de Stripe al cargar el modulo.
 const PLAN_PRICES = {
-  INICIA: { price: "149 €", limit: "30 expedientes/mes" },
-  DESPACHO: { price: "349 €", limit: "100 expedientes/mes" },
-  FIRMA: { price: "749 €", limit: "250 expedientes/mes" },
+  INICIA: { price: "149 €", limit: "15 expedientes/mes" },
+  DESPACHO: { price: "349 €", limit: "50 expedientes/mes" },
+  FIRMA: { price: "749 €", limit: "200 expedientes/mes" },
 };
 
-export default function VerticalPage({ params }: { params: { vertical: string } }) {
-  const v = getVerticalBySlug(params.vertical);
-  if (!v) return notFound();
+export function VerticalLanding({ slug }: { slug: VerticalSlug }) {
+  const v = VERTICAL_CONFIG[slug];
 
   const plan = PLAN_PRICES[v.recommendedPlan];
 
@@ -49,17 +54,7 @@ export default function VerticalPage({ params }: { params: { vertical: string } 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/recursos" className="text-gray-700 hover:text-primary">Recursos</Link>
-              <Link href="/calculadora-roi" className="text-gray-700 hover:text-primary hidden sm:inline">ROI</Link>
-              <Link href="/precios" className="text-gray-700 hover:text-primary">Precios</Link>
-              <Link href="/#demo" className="text-primary font-semibold">Probar gratis</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         {/* Hero */}
         <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
@@ -106,7 +101,7 @@ export default function VerticalPage({ params }: { params: { vertical: string } 
 
         {/* Benefits grid */}
         <div className="max-w-5xl mx-auto px-4 mb-14">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Cómo te ayuda BARITUR PRO</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Cómo te ayuda Heredia</h2>
           <p className="text-sm text-gray-600 text-center mb-8">Diseñado específicamente para tu segmento.</p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {v.benefits.map((b, i) => (
@@ -145,7 +140,7 @@ export default function VerticalPage({ params }: { params: { vertical: string } 
         {/* Scenarios */}
         <div className="max-w-5xl mx-auto px-4 py-14">
           <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Casos reales</h2>
-          <p className="text-sm text-gray-600 text-center mb-8">Cómo BARITUR PRO resuelve problemas concretos.</p>
+          <p className="text-sm text-gray-600 text-center mb-8">Cómo Heredia resuelve problemas concretos.</p>
           <div className="space-y-5">
             {v.scenarios.map((s, i) => (
               <div key={i} className="bg-white rounded-xl border overflow-hidden">
@@ -154,11 +149,11 @@ export default function VerticalPage({ params }: { params: { vertical: string } 
                 </div>
                 <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x">
                   <div className="p-6">
-                    <p className="text-xs font-semibold text-rose-600 uppercase tracking-wider mb-2">Sin BARITUR</p>
+                    <p className="text-xs font-semibold text-rose-600 uppercase tracking-wider mb-2">Sin Heredia</p>
                     <p className="text-sm text-gray-700">{s.problem}</p>
                   </div>
                   <div className="p-6 bg-emerald-50/40">
-                    <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-2">Con BARITUR</p>
+                    <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-2">Con Heredia</p>
                     <p className="text-sm text-gray-700">{s.solution}</p>
                   </div>
                 </div>
@@ -234,6 +229,7 @@ export default function VerticalPage({ params }: { params: { vertical: string } 
             })}
           </div>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

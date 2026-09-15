@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { notFound } from "next/navigation";
 import { CCAA_CONTENT, getCCAABySlug } from "@/lib/ccaa-content";
 import { CCAA_LABELS, type ParentescoGroup } from "@/lib/isd-calculator";
@@ -12,7 +14,8 @@ export async function generateStaticParams() {
   return Object.values(CCAA_CONTENT).map((c) => ({ ccaa: c.slug }));
 }
 
-export async function generateMetadata({ params }: { params: { ccaa: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ ccaa: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const content = getCCAABySlug(params.ccaa);
   if (!content) return {};
   const label = CCAA_LABELS[content.ccaa];
@@ -26,7 +29,7 @@ export async function generateMetadata({ params }: { params: { ccaa: string } })
       `donacion vivienda ${label.toLowerCase()}`,
       `bonificacion donaciones ${label.toLowerCase()}`,
     ],
-    alternates: { canonical: `https://bariturpro.com/donaciones/${content.slug}` },
+    alternates: { canonical: `https://heredia.app/donaciones/${content.slug}` },
     openGraph: {
       title: `Donaciones en ${label} 2025`,
       description: `Bonificaciones, plazos y Modelo 651 en ${label}.`,
@@ -47,7 +50,8 @@ function formatEUR(n: number) {
   return n.toLocaleString("es-ES", { maximumFractionDigits: 0 }) + " €";
 }
 
-export default function DonacionCCAAPage({ params }: { params: { ccaa: string } }) {
+export default async function DonacionCCAAPage(props: { params: Promise<{ ccaa: string }> }) {
+  const params = await props.params;
   const content = getCCAABySlug(params.ccaa);
   if (!content) return notFound();
 
@@ -96,16 +100,7 @@ export default function DonacionCCAAPage({ params }: { params: { ccaa: string } 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/calculadora-donaciones" className="text-gray-700 hover:text-primary">Calculadora</Link>
-              <Link href="/donaciones" className="text-primary font-semibold">Donaciones</Link>
-              <Link href="/sucesiones/{content.slug}" className="text-gray-700 hover:text-primary hidden sm:inline">Sucesiones {label}</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
         <nav className="max-w-5xl mx-auto px-4 py-3 text-xs text-gray-500">
           <Link href="/" className="hover:text-primary">Inicio</Link>
@@ -290,13 +285,13 @@ export default function DonacionCCAAPage({ params }: { params: { ccaa: string } 
           <div className="max-w-3xl mx-auto px-4 py-14 text-center">
             <h2 className="text-2xl font-bold mb-3">¿Tramitas donaciones para clientes?</h2>
             <p className="text-blue-200 text-sm mb-6">
-              BARITUR PRO automatiza también los expedientes de donación. 14 días gratis, sin tarjeta.
+              Heredia automatiza también los expedientes de donación. 14 días gratis, sin tarjeta.
             </p>
             <Link
               href="/#demo"
               className="inline-block px-7 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-xl text-sm transition"
             >
-              Probar BARITUR PRO →
+              Probar Heredia →
             </Link>
           </div>
         </div>
@@ -309,6 +304,7 @@ export default function DonacionCCAAPage({ params }: { params: { ccaa: string } 
             jurídico ni fiscal individualizado.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

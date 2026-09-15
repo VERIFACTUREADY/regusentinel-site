@@ -1,18 +1,17 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import { AuditLogViewer } from "./audit-log-viewer";
 
 export const metadata = {
-  title: "Audit Trail — BARITUR PRO",
+  title: "Audit Trail — Heredia",
   robots: { index: false },
 };
 
 export default async function AuditPage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) redirect("/login");
+  const session = await getVerifiedSession();
+  if (!session) redirect("/login");
   if (!hasPermission(session.user.role, "audit.read")) redirect("/dashboard");
 
   const members = await prisma.membership.findMany({

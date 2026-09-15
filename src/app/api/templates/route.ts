@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
 
 export async function GET(_req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "templates.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireOrgPermission("templates.read");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const templates = await prisma.template.findMany({
     where: { orgId: session.user.orgId },
@@ -25,13 +19,9 @@ export async function GET(_req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "templates.create")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireOrgPermission("templates.create");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const body = await req.json();
   const { name, category, type, body: templateBody, variables, subject } = body;

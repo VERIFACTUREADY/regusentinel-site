@@ -10,7 +10,7 @@
  */
 
 import { prisma } from "./prisma";
-import { detectISDRisks, type ISDRisk } from "./isd-risk-detector";
+import { detectISDRisks, parseAppliedReductions, type ISDRisk } from "./isd-risk-detector";
 
 export interface CaseRiskSummary {
   caseId: string;
@@ -43,6 +43,13 @@ export async function getOrgRiskOverview(orgId: string, limit = 6): Promise<OrgR
       id: true,
       ref: true,
       province: true,
+      hasUrbanProperty: true,
+      propertyAcquisitionValue: true,
+      propertyTransmissionValue: true,
+      preexistingPatrimony: true,
+      recentResidenceChange: true,
+      previousResidenceProvince: true,
+      appliedReductions: true,
       deceased: { select: { fullName: true, deathDate: true } },
     },
   });
@@ -55,6 +62,13 @@ export async function getOrgRiskOverview(orgId: string, limit = 6): Promise<OrgR
     const risks = detectISDRisks({
       deathDate: c.deceased?.deathDate ?? null,
       province: c.province,
+      hasUrbanProperty: c.hasUrbanProperty,
+      propertyAcquisitionValue: c.propertyAcquisitionValue,
+      propertyTransmissionValue: c.propertyTransmissionValue,
+      preexistingPatrimony: c.preexistingPatrimony,
+      recentResidenceChange: c.recentResidenceChange,
+      previousResidenceProvince: c.previousResidenceProvince,
+      appliedReductions: parseAppliedReductions(c.appliedReductions),
     });
     if (risks.length === 0) continue;
 

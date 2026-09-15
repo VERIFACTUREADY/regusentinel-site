@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
 import { analyzeCase } from "@/lib/case-analyzer";
 
 // Analyze up to this many cases per bulk run to avoid timeouts
 const MAX_CASES_PER_RUN = 20;
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "autopilot.run")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireOrgPermission("autopilot.run");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   // Find open cases not analyzed in the last 24h
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -71,13 +65,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "cases.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireOrgPermission("cases.read");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const openCount = await prisma.case.count({
     where: {

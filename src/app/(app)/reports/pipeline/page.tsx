@@ -1,12 +1,11 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { hasPermission } from "@/lib/rbac";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 
 export const metadata = {
-  title: "Pipeline SLA — BARITUR PRO",
+  title: "Pipeline SLA — Heredia",
   robots: { index: false },
 };
 
@@ -72,8 +71,8 @@ function staleLabel(days: number | null): string {
 }
 
 export default async function PipelinePage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) redirect("/login");
+  const session = await getVerifiedSession();
+  if (!session) redirect("/login");
   if (!hasPermission(session.user.role, "cases.read")) redirect("/dashboard");
 
   const orgId = session.user.orgId;

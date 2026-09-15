@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PLAN_PRICING } from "@/lib/stripe";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
+  const auth = await requireSession();
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const month = new Date().toISOString().slice(0, 7);
 

@@ -66,7 +66,7 @@ describe("seedSampleCase", () => {
     expect(createArgs.data.province).toBe("madrid");
   });
 
-  it("deceased deathDate is 90 days ago (ISD plazo activo)", async () => {
+  it("deceased deathDate is ~160 days ago (ISD plazo a 20 días — Radar activo)", async () => {
     tx.case.findFirst.mockResolvedValueOnce(null);
     tx.case.create.mockResolvedValueOnce({ id: "case-id" });
     tx.task.create.mockResolvedValue({});
@@ -76,8 +76,11 @@ describe("seedSampleCase", () => {
     const createArgs = tx.case.create.mock.calls[0][0];
     const deathDate = createArgs.data.deceased.create.deathDate as Date;
     const daysSinceDeath = Math.floor((Date.now() - deathDate.getTime()) / 86400000);
-    expect(daysSinceDeath).toBeGreaterThanOrEqual(89);
-    expect(daysSinceDeath).toBeLessThanOrEqual(91);
+    // -160 días: el plazo ISD ordinario (180d) cae en ~20 días, así
+    // el detector dispara isd_30d y el prospecto ve el Radar activo
+    // desde el día 1 del trial.
+    expect(daysSinceDeath).toBeGreaterThanOrEqual(159);
+    expect(daysSinceDeath).toBeLessThanOrEqual(161);
   });
 
   it("ref is EXP-EJEMPLO and isUrgent is false", async () => {
@@ -101,6 +104,37 @@ describe("seedSampleCase", () => {
 
     const createArgs = tx.case.create.mock.calls[0][0];
     expect(createArgs.data.hasDeceasedInsurance).toBe(true);
+  });
+
+  it("populates the fiscal fields that drive Radar alerts", async () => {
+    tx.case.findFirst.mockResolvedValueOnce(null);
+    tx.case.create.mockResolvedValueOnce({ id: "case-id" });
+    tx.task.create.mockResolvedValue({});
+
+    await seedSampleCase(tx as any, "org-1");
+
+    const data = tx.case.create.mock.calls[0][0].data;
+    // Inmueble urbano + adquisición > transmisión → plusvalia_no_incremento
+    expect(data.hasUrbanProperty).toBe(true);
+    expect(data.referenciaCatastral).toMatch(/^[0-9A-Z]{20}$/);
+    expect(data.propertyAcquisitionValue).toBeGreaterThan(data.propertyTransmissionValue);
+    // Patrimonio próximo al tramo de 402.678 → patrimony_bracket warning
+    expect(data.preexistingPatrimony).toBeGreaterThan(400000);
+    expect(data.preexistingPatrimony).toBeLessThan(450000);
+    // Residence change con Asturias previa (0% bonif) vs Madrid (99%) → warning
+    expect(data.recentResidenceChange).toBe(true);
+    expect(data.previousResidenceProvince).toBe("asturias");
+    // Reducción con aniversario en los próximos 30 días → reduction_maintenance_30d
+    expect(Array.isArray(data.appliedReductions)).toBe(true);
+    expect(data.appliedReductions).toHaveLength(1);
+    const reduction = data.appliedReductions[0];
+    expect(reduction.type).toBe("VIVIENDA_HABITUAL");
+    expect(reduction.maintenanceYears).toBe(5);
+    const aniversario = new Date(reduction.appliedDate);
+    aniversario.setFullYear(aniversario.getFullYear() + reduction.maintenanceYears);
+    const daysUntil = Math.round((aniversario.getTime() - Date.now()) / 86400000);
+    expect(daysUntil).toBeGreaterThan(0);
+    expect(daysUntil).toBeLessThanOrEqual(30);
   });
 
   it("includes a mix of DONE / IN_PROGRESS / PENDING / BLOCKED tasks", async () => {

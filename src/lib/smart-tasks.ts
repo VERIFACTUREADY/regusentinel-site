@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { llamarModelo } from "./ai-gateway";
 
 const HAS_AI = !!process.env.ANTHROPIC_API_KEY;
 const MODEL = "claude-sonnet-4-6";
@@ -157,9 +158,6 @@ export async function generateSmartTasks(caseId: string, userId: string): Promis
 
   if (HAS_AI) {
     try {
-      const Anthropic = (await import("@anthropic-ai/sdk")).default;
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
       const userPrompt = `Genera la lista de tareas para este expediente de gestión post-fallecimiento:
 
 ${context}
@@ -168,15 +166,15 @@ Genera solo tareas para estas categorías: ${categories.join(", ")}
 No incluyas tareas que ya existan (listadas arriba).
 Solo usa las categorías válidas: ${VALID_CATEGORIES.join(", ")}`;
 
-      const msg = await client.messages.create({
+      const respuesta = await llamarModelo({
         model: MODEL,
         max_tokens: 2000,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: userPrompt }],
-      });
+        caseId,
+    });
 
-      const block = msg.content[0];
-      const rawText = block.type === "text" ? block.text.trim() : "{}";
+      const rawText = respuesta.texto || "{}";
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);

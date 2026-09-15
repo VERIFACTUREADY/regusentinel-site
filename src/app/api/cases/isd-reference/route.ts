@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireSession } from "@/lib/session";
 import { getReferenceBonification, type ParentescoGroup } from "@/lib/isd-calculator";
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
+  const auth = await requireSession();
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
   const { searchParams } = new URL(req.url);
   const province = searchParams.get("province");
   const group = (searchParams.get("group") || "II") as ParentescoGroup;

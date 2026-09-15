@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { PricingTable } from "./pricing-table";
 
 export const metadata: Metadata = {
@@ -7,11 +9,11 @@ export const metadata: Metadata = {
   description:
     "Planes desde 149 EUR/mes. Software B2B para gestorías y funerarias: motor de plazos ISD, portal familia, pack banco y cumplimiento RGPD. Prueba la demo gratis.",
   openGraph: {
-    title: "Precios BARITUR PRO — Gestión post-mortem para profesionales",
+    title: "Precios Heredia — Gestión post-mortem para profesionales",
     description:
       "Tres planes para gestorías y funerarias. Sin permanencia. Ahorra 2 meses con prepago anual. Incluye onboarding y soporte en español.",
   },
-  alternates: { canonical: "https://baritur.pro/precios" },
+  alternates: { canonical: "https://heredia.app/precios" },
 };
 
 const faqItems = [
@@ -28,8 +30,8 @@ const faqItems = [
     a: "Cada expediente adicional se factura al final del mes según la tarifa overage de tu plan. Puedes ver el consumo en tiempo real desde el panel de facturación.",
   },
   {
-    q: "¿BARITUR PRO presta asesoramiento fiscal o jurídico?",
-    a: "No. BARITUR PRO es una herramienta de orquestación y documentación. Las decisiones profesionales (fiscales, jurídicas) las toma el gestor o asesor responsable del expediente.",
+    q: "¿Heredia presta asesoramiento fiscal o jurídico?",
+    a: "No. Heredia es una herramienta de orquestación y documentación. Las decisiones profesionales (fiscales, jurídicas) las toma el gestor o asesor responsable del expediente.",
   },
   {
     q: "¿Cómo funciona el portal familia?",
@@ -37,7 +39,7 @@ const faqItems = [
   },
   {
     q: "¿Es compatible con el RGPD y la LOPDGDD?",
-    a: "Sí. Mantenemos el RAT actualizado, aplicamos minimización de datos, cifrado en tránsito y reposo, política de retención configurable y DPA con cada cliente. El tratamiento de datos de personas fallecidas sigue el marco del art. 3 de la LO 3/2018.",
+    a: "Aplicamos minimización de datos, control de acceso por roles, cifrado en tránsito, registro de actividad append-only y política de retención configurable con purga real de base de datos y almacenamiento. Ponemos a tu disposición un contrato de encargado de tratamiento (art. 28 RGPD) para que lo firmes como responsable. El tratamiento de datos de personas fallecidas sigue el marco del art. 3 de la LO 3/2018. El cumplimiento del RGPD no es una certificación: es responsabilidad compartida y cada cliente debe mantener su propio registro de actividades.",
   },
 ];
 
@@ -47,7 +49,7 @@ export default function PreciosPage() {
     "@graph": [
       {
         "@type": "SoftwareApplication",
-        name: "BARITUR PRO",
+        name: "Heredia",
         applicationCategory: "BusinessApplication",
         offers: [
           {
@@ -95,22 +97,7 @@ export default function PreciosPage() {
       />
 
       {/* Header */}
-      <header className="border-b bg-white sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-          <Link href="/" className="text-xl font-bold text-primary">BARITUR PRO</Link>
-          <div className="flex gap-2 sm:gap-4 items-center">
-            <Link href="/login" className="hidden sm:inline px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">
-              Iniciar sesion
-            </Link>
-            <Link href="/login?demo=1" className="px-4 py-2 text-sm font-medium border border-primary text-primary rounded-md hover:bg-primary/5">
-              Probar demo
-            </Link>
-            <Link href="/onboarding" className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-md hover:bg-primary/90">
-              Registrarse
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* Hero */}
       <section className="py-16 text-center bg-gradient-to-b from-blue-50 to-white">
@@ -135,6 +122,62 @@ export default function PreciosPage() {
         </div>
       </section>
 
+      {/* Moat features — lo que justifica el precio */}
+      <section className="py-12 bg-gradient-to-b from-white to-slate-50 border-y">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="text-center mb-10">
+            <p className="text-xs font-bold uppercase tracking-wider text-primary mb-2">Qué incluye cualquier plan</p>
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Las 3 piezas que justifican el precio</h2>
+            <p className="mt-3 text-gray-600 max-w-2xl mx-auto text-sm sm:text-base">
+              No vendemos un CRM más. Vendemos las tres herramientas que evitan que
+              pierdas un cliente, un plazo o una tarde en tareas repetitivas.
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-5">
+            {[
+              {
+                href: "/radar-isd",
+                tile: "from-rose-500/15 to-amber-500/10 text-rose-600 ring-rose-100",
+                title: "Radar ISD",
+                desc: "Vigila el plazo del Modelo 650, la ventana de prórroga y los tramos de patrimonio, con avisos escalonados antes de cada vencimiento.",
+              },
+              {
+                href: "/portal-familia",
+                tile: "from-emerald-500/15 to-sky-500/10 text-emerald-700 ring-emerald-100",
+                title: "Portal Familia",
+                desc: "Cada heredero ve el estado del expediente sin llamarte. Reduce 68% las consultas, capta por recomendación.",
+              },
+              {
+                href: "/borrador-modelo650",
+                tile: "from-indigo-500/15 to-blue-500/10 text-indigo-600 ring-indigo-100",
+                title: "Borrador automático",
+                desc: "Modelo 650 y 651 generados desde el expediente con plazos, bonificación CCAA y cuota estimada. PDF en 5 segundos.",
+              },
+            ].map((m) => (
+              <Link
+                key={m.href}
+                href={m.href}
+                className="group relative bg-white border rounded-2xl p-6 shadow-sm card-lift hover:border-primary/30"
+              >
+                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${m.tile} ring-4 flex items-center justify-center mb-4`}>
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 mb-2">{m.title}</h3>
+                <p className="text-sm text-gray-600 leading-relaxed mb-3">{m.desc}</p>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary group-hover:gap-2 transition-all">
+                  Saber más
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Feature comparison */}
       <section className="py-16 bg-gray-50">
         <div className="max-w-4xl mx-auto px-4">
@@ -153,16 +196,17 @@ export default function PreciosPage() {
                 {[
                   ["Usuarios", "2", "5", "20"],
                   ["Expedientes/mes incluidos", "15", "50", "200"],
-                  ["Motor de plazos ISD (6m)", "✓", "✓", "✓"],
+                  ["Radar ISD (vigilancia de plazos del Modelo 650)", "✓", "✓", "✓"],
                   ["Checklist inteligente por categoría", "✓", "✓", "✓"],
-                  ["Portal familia", "Básico", "White-label", "White-label"],
+                  ["Portal Familia", "Básico", "White-label", "White-label"],
+                  ["Borrador automático Modelo 650 / 651", "✓", "✓", "✓"],
                   ["Pack banco unificado (PDF+ZIP)", "—", "✓", "✓"],
                   ["Plantillas versionadas con aprobación", "—", "✓", "✓"],
                   ["Notificaciones email automáticas ISD", "—", "✓", "✓"],
                   ["Reporting operativo (lead time, bloqueos)", "—", "✓", "✓"],
                   ["Export PDF/ZIP expediente completo", "✓", "✓", "✓"],
-                  ["Audit trail inmutable", "✓", "✓", "✓"],
-                  ["Roles y permisos avanzados (SSO)", "—", "—", "✓"],
+                  ["Registro de actividad append-only", "✓", "✓", "✓"],
+                  ["SSO con Google Workspace + roles avanzados", "—", "—", "✓"],
                   ["API / webhooks", "—", "—", "✓"],
                   ["DPA extendido + auditorías", "—", "—", "✓"],
                   ["Onboarding asistido + formación", "—", "—", "✓"],
@@ -228,20 +272,13 @@ export default function PreciosPage() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="py-8 border-t bg-gray-50">
-        <div className="max-w-6xl mx-auto px-4 text-center text-sm text-gray-500 space-y-2">
+      {/* Disclaimer */}
+      <section className="py-8 border-t bg-gray-50">
+        <div className="max-w-6xl mx-auto px-4 text-center text-sm text-gray-500">
           <p>Precios sin IVA. Facturación en euros. Domicilio fiscal en España.</p>
-          <p className="font-medium text-gray-700">BARITUR no presta asesoramiento jurídico ni fiscal individual.</p>
-          <p className="mt-4 space-x-4">
-            <Link href="/" className="text-primary hover:underline">Inicio</Link>
-            <Link href="/login" className="text-primary hover:underline">Acceder</Link>
-            <Link href="/legal/privacidad" className="text-primary hover:underline">Privacidad</Link>
-            <Link href="/legal/terminos" className="text-primary hover:underline">Terminos</Link>
-            <Link href="/legal/cookies" className="text-primary hover:underline">Cookies</Link>
-          </p>
         </div>
-      </footer>
+      </section>
+      <SiteFooter />
     </div>
   );
 }

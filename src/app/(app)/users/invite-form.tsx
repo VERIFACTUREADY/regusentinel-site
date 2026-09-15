@@ -9,7 +9,7 @@ export function InviteForm() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("OPERATOR");
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: "ok" | "warn" | "err"; text: string } | null>(null);
   const router = useRouter();
 
   async function handleInvite(e: React.FormEvent) {
@@ -26,9 +26,35 @@ export function InviteForm() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al invitar");
 
-      setMessage({ type: "ok", text: `Invitacion enviada a ${email}` });
+      /*
+       * No se anuncia "Invitacion enviada" sin saber si ha salido.
+       *
+       * El endpoint devuelve `emailSent`. Cuando el correo falla, el alta ES
+       * correcta —la persona ya es miembro— pero no se ha enterado, y decirle
+       * al administrador que se envio le deja esperando a alguien que nunca va
+       * a recibir nada. Se distingue un caso del otro.
+       */
+      if (data.emailSent === false) {
+        setMessage({
+          type: "warn",
+          text:
+            `${email} ya es miembro, pero NO se ha podido enviar el correo. ` +
+            (data.needsPasswordSetup
+              ? "Necesita el enlace para crear su contrasena: usa \u201cReenviar invitacion\u201d cuando el correo vuelva a funcionar."
+              : "Avisale de que ya puede entrar con su cuenta habitual."),
+        });
+      } else {
+        setMessage({ type: "ok", text: `Invitacion enviada a ${email}` });
+      }
       setEmail("");
       setRole("OPERATOR");
+      /*
+       * `router.refresh()` refresca los componentes de servidor, pero el panel
+       * de invitaciones es de cliente y trae su lista por su cuenta: sin este
+       * aviso, invitabas a alguien y no aparecia en la lista hasta recargar la
+       * pagina a mano.
+       */
+      window.dispatchEvent(new CustomEvent("heredia:invitaciones-cambiadas"));
       router.refresh();
     } catch (err: any) {
       setMessage({ type: "err", text: err.message });
@@ -54,16 +80,31 @@ export function InviteForm() {
   return (
     <div className="mb-6 bg-white border rounded-lg p-6">
       <h3 className="font-semibold mb-4">Invitar nuevo miembro</h3>
+      {/*
+        Los dos campos no tenian NINGUNA etiqueta: solo un `placeholder`, que no
+        lo es —desaparece al escribir— y un `<select>` mudo. Un lector de
+        pantalla anunciaba "cuadro de edicion" y "lista" sin decir de que.
+      */}
       <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-3">
-        <input
-          type="email"
-          required
-          placeholder="email@ejemplo.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="flex-1 px-3 py-2 border rounded-md text-sm"
-        />
+        <div className="flex-1 min-w-0">
+          <label htmlFor="invitarEmail" className="sr-only">
+            Email de la persona invitada
+          </label>
+          <input
+            id="invitarEmail"
+            type="email"
+            required
+            placeholder="email@ejemplo.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full px-3 py-2 border rounded-md text-sm"
+          />
+        </div>
+        <label htmlFor="invitarRol" className="sr-only">
+          Rol de la persona invitada
+        </label>
         <select
+          id="invitarRol"
           value={role}
           onChange={(e) => setRole(e.target.value)}
           className="px-3 py-2 border rounded-md text-sm"
@@ -90,7 +131,15 @@ export function InviteForm() {
         </div>
       </form>
       {message && (
-        <p className={`mt-3 text-sm ${message.type === "ok" ? "text-green-600" : "text-red-600"}`}>
+        <p
+          className={`mt-3 text-sm ${
+            message.type === "ok"
+              ? "text-green-600"
+              : message.type === "warn"
+                ? "text-amber-700"
+                : "text-red-600"
+          }`}
+        >
           {message.text}
         </p>
       )}

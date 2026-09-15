@@ -1,16 +1,16 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import { PLAN_PRICING } from "@/lib/stripe";
 import { ROLE_LABELS } from "@/lib/constants";
 import { InviteForm } from "./invite-form";
+import { InvitacionesPanel } from "./invitaciones-panel";
 import { MemberRow } from "./member-row";
 
 export default async function UsersPage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) redirect("/login");
+  const session = await getVerifiedSession();
+  if (!session) redirect("/login");
   if (!hasPermission(session.user.role, "org.members")) redirect("/dashboard");
 
   const [members, subscription] = await Promise.all([
@@ -49,6 +49,18 @@ export default async function UsersPage() {
       )}
 
       {canInvite && <InviteForm />}
+      {/*
+        El panel de invitaciones se pinta con `canManage`, NO con `canInvite`.
+
+        EL DEFECTO QUE CORRIGE
+        ----------------------
+        Antes dependía de `canInvite`, que es `permiso && members.length <
+        maxUsers`. Al alcanzar el límite del plan, el panel entero desaparecía:
+        las invitaciones pendientes se volvían invisibles y —lo importante— no
+        había forma de REVOCARLAS desde la aplicación. Justo cuando el equipo
+        está lleno es cuando hace falta poder retirar una invitación que sobra.
+      */}
+      {canManage && <InvitacionesPanel />}
 
       <div className="bg-white rounded-lg border">
         <div className="px-6 py-4 border-b">

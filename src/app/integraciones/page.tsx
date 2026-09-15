@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Integraciones — BARITUR PRO",
+  title: "Integraciones — Heredia",
   description:
-    "Con qué se conecta BARITUR PRO: Stripe, S3, email, autenticación, IA y mucho más. Plus una API pública v1 para tus propias integraciones y un roadmap claro de lo que viene.",
-  alternates: { canonical: "https://bariturpro.com/integraciones" },
+    "Con qué se conecta Heredia: Stripe, S3, email, autenticación, IA y mucho más. Plus una API pública v1 para tus propias integraciones y un roadmap claro de lo que viene.",
+  alternates: { canonical: "https://heredia.app/integraciones" },
 };
 
 interface Integration {
@@ -20,11 +22,11 @@ const INTEGRATIONS: Integration[] = [
   // Active
   { name: "Stripe Billing", category: "Pagos", desc: "Cobros recurrentes mensuales y anuales, gestión de upgrades/downgrades, dunning automático.", status: "active" },
   { name: "AWS S3 (eu-central-1)", category: "Almacenamiento", desc: "Documentos del expediente (DNIs, escrituras, certificados) en bucket privado UE con SSE-S3.", status: "active" },
-  { name: "Resend", category: "Email", desc: "Emails transaccionales: bienvenida, recordatorios de plazo ISD, notificaciones del portal familia.", status: "active" },
+  { name: "Email transaccional (SMTP)", category: "Email", desc: "Emails transaccionales vía SMTP: bienvenida, recordatorios de plazo ISD, notificaciones del portal familia. Compatible con Resend, SES, SendGrid y servidores propios.", status: "active" },
   { name: "Anthropic Claude API", category: "IA", desc: "Análisis automático de expedientes, generación de resúmenes y chat asistido sobre normativa ISD.", status: "active" },
   { name: "NextAuth + bcrypt", category: "Autenticación", desc: "Email/password con hash bcrypt 12 rounds. Sesiones JWT con rotación. Login por enlace mágico opcional.", status: "active" },
-  { name: "Sede del Catastro", category: "Datos públicos", desc: "Lookup del Valor de Referencia de un inmueble vía referencia catastral (consulta automática durante el cálculo del 650).", status: "soon" },
-  { name: "Webhook API", category: "Eventos", desc: "Recibe eventos en tiempo real: case.created, task.completed, deadline.upcoming. Configurable desde Ajustes.", status: "soon" },
+  { name: "Sede del Catastro (deep link)", category: "Datos públicos", desc: "Cuando declaras la referencia catastral del inmueble, el expediente muestra deep links \"Ficha Catastro\" y \"Mapa\" que abren la Sede del Catastro con la RC pre-rellenada. El lookup directo del Valor de Referencia llega en una segunda fase (requiere certificado).", status: "active" },
+  { name: "Webhook genérico", category: "Eventos", desc: "Recibe eventos del Radar ISD en JSON POST con firma HMAC-SHA256. Configurable y testeable desde Ajustes → Integraciones (plan Firma).", status: "active", href: "/settings/integrations" },
   { name: "Plantillas de documentos", category: "Workflow", desc: "6 modelos de carta (banco, prórroga, aseguradora, comunidad, suministros, tasación) generables en PDF.", status: "active", href: "/plantillas-documentos" },
   { name: "Exportación CSV / ZIP", category: "Workflow", desc: "Exporta todos los expedientes, tareas y documentos en cualquier momento. Sin lock-in.", status: "active" },
   { name: "API pública v1", category: "Plataforma", desc: "Endpoints REST para cálculo ISD, comparación CCAA, detección de riesgos y generación de borradores PDF.", status: "active", href: "/docs/api" },
@@ -32,10 +34,10 @@ const INTEGRATIONS: Integration[] = [
   // Soon
   { name: "Google Drive", category: "Almacenamiento", desc: "Sincronización bidireccional con carpetas de Google Drive. Los documentos del portal familia se replican a tu Drive del despacho.", status: "soon" },
   { name: "Microsoft OneDrive", category: "Almacenamiento", desc: "Equivalente a Google Drive para despachos en ecosistema Microsoft.", status: "soon" },
-  { name: "Calendar (Google + Outlook)", category: "Productividad", desc: "Los plazos del Modelo 650 y tareas con fecha aparecen automáticamente en tu agenda profesional.", status: "soon" },
-  { name: "Slack", category: "Notificaciones", desc: "Notificaciones de eventos críticos (plazo en 7 días, nuevo mensaje del portal, expediente bloqueado) en canal Slack.", status: "soon" },
-  { name: "Microsoft Teams", category: "Notificaciones", desc: "Equivalente a Slack para despachos que trabajan con Microsoft Teams.", status: "soon" },
-  { name: "WhatsApp Business (deep link)", category: "Comunicación", desc: "Botón \"Enviar mensaje por WhatsApp\" en cada contacto del expediente, con el texto pre-rellenado.", status: "soon" },
+  { name: "Calendar (Google + Outlook + iCal)", category: "Productividad", desc: "Botones \"+ Google\" y \"+ Outlook / .ics\" en cada plazo del expediente: añaden el evento al calendario con el ref, descripción y plazo legal pre-rellenados. Sin OAuth ni permisos extra.", status: "active" },
+  { name: "Slack", category: "Notificaciones", desc: "Las alertas del Radar ISD (plazo a 60/30/7/1 día y vencido) llegan a un canal de Slack vía incoming webhook. Plan Firma.", status: "active", href: "/settings/integrations" },
+  { name: "Microsoft Teams", category: "Notificaciones", desc: "Alertas del Radar ISD en un canal de Teams vía incoming webhook (MessageCard con título, plazo y botón al expediente). Plan Firma.", status: "active", href: "/settings/integrations" },
+  { name: "WhatsApp Business (deep link)", category: "Comunicación", desc: "Botón \"WhatsApp\" junto al teléfono del contacto en cada expediente. Abre wa.me con el ref del caso pre-rellenado para que el gestor escriba directo sin copiar/pegar.", status: "active" },
 
   // Planned
   { name: "AEAT - Sede electrónica", category: "Hacienda", desc: "Envío directo del Modelo 650/651 a la Sede de la AEAT/CCAA con certificado digital del despacho.", status: "planned" },
@@ -44,7 +46,7 @@ const INTEGRATIONS: Integration[] = [
   { name: "Registro de la Propiedad", category: "Inmuebles", desc: "Solicitud automática de nota simple desde el expediente.", status: "planned" },
   { name: "Holded / Quaderno", category: "Contabilidad", desc: "Sincronización de facturas y movimientos contables del despacho.", status: "planned" },
   { name: "DocuSign / FirmaProfesional", category: "Firma", desc: "Firma electrónica avanzada de los documentos generados (escrituras, autorizaciones).", status: "planned" },
-  { name: "Zapier / Make", category: "No-code", desc: "Conector universal para que los no-developers puedan conectar BARITUR PRO con cualquier app del ecosistema.", status: "planned" },
+  { name: "Zapier / Make", category: "No-code", desc: "Conector universal para que los no-developers puedan conectar Heredia con cualquier app del ecosistema.", status: "planned" },
 ];
 
 const STATUS_STYLES: Record<Integration["status"], { label: string; bg: string; text: string }> = {
@@ -86,27 +88,20 @@ export default function IntegracionesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-          <nav className="flex gap-3 sm:gap-4 text-sm">
-            <Link href="/integraciones" className="text-primary font-semibold">Integraciones</Link>
-            <Link href="/seguridad" className="text-gray-700 hover:text-primary hidden sm:inline">Seguridad</Link>
-            <Link href="/docs/api" className="text-gray-700 hover:text-primary hidden sm:inline">API</Link>
-            <Link href="/#demo" className="text-primary font-semibold">Probar gratis</Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* Hero */}
-      <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
-        <div className="max-w-5xl mx-auto px-4 py-14 sm:py-16">
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-blue-900 text-white">
+        <div className="absolute inset-0 dot-grid-light opacity-30" />
+        <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl animate-float-slow" />
+        <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
+        <div className="relative max-w-5xl mx-auto px-4 py-14 sm:py-16">
           <div className="inline-flex items-center gap-2 bg-blue-500/20 border border-blue-400/30 rounded-full px-3 py-1 text-xs text-blue-300 mb-4">
             {totalActive} activas · {totalSoon} próximas · {totalPlanned} en roadmap
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold mb-3">Integraciones y plataforma</h1>
           <p className="text-base sm:text-lg text-blue-100 max-w-3xl mb-6">
-            Con qué se conecta BARITUR PRO hoy y qué llega en los próximos meses. Más una API pública v1
+            Con qué se conecta Heredia hoy y qué llega en los próximos meses. Más una API pública v1
             para tus propias integraciones — porque tus expedientes deben ser tuyos, no rehén de un proveedor.
           </p>
           <div className="flex flex-wrap gap-3">
@@ -117,7 +112,7 @@ export default function IntegracionesPage() {
               Documentación API →
             </Link>
             <a
-              href="mailto:partners@bariturpro.com"
+              href="mailto:partners@heredia.app"
               className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition"
             >
               Solicitar integración custom
@@ -189,15 +184,15 @@ export default function IntegracionesPage() {
               <h2 className="text-2xl font-bold text-gray-900 mb-3">¿Necesitas algo que no está aquí?</h2>
               <p className="text-sm text-gray-700 mb-4">
                 La API pública v1 cubre cálculo ISD, comparación entre CCAA, detección de riesgos y generación de borradores Modelo 650/651.
-                Suficiente para que cualquier software de gestoría integre BARITUR PRO en su propio flujo.
+                Suficiente para que cualquier software de gestoría integre Heredia en su propio flujo.
               </p>
               <p className="text-sm text-gray-700">
-                Para integraciones empresariales con webhooks bidireccionales, SLA y soporte dedicado, escríbenos a partners@bariturpro.com.
+                Para integraciones empresariales con webhooks bidireccionales, SLA y soporte dedicado, escríbenos a partners@heredia.app.
               </p>
             </div>
             <div className="bg-gray-900 rounded-xl p-5 text-gray-100 font-mono text-xs overflow-x-auto">
               <pre>{`# Calcular ISD para Madrid, grupo II
-curl -X POST https://bariturpro.com/api/public/isd-calc \\
+curl -X POST https://heredia.app/api/public/isd-calc \\
   -H "Content-Type: application/json" \\
   -d '{
     "group": "II",
@@ -206,7 +201,7 @@ curl -X POST https://bariturpro.com/api/public/isd-calc \\
   }'
 
 # Comparar 17 CCAA para una herencia
-curl "https://bariturpro.com/api/public/isd-compare?\\
+curl "https://heredia.app/api/public/isd-compare?\\
   group=II&baseImponible=300000"`}</pre>
             </div>
           </div>
@@ -240,10 +235,11 @@ curl "https://bariturpro.com/api/public/isd-compare?\\
             href="/#demo"
             className="inline-block px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-xl text-sm transition"
           >
-            Probar BARITUR PRO →
+            Probar Heredia →
           </Link>
         </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

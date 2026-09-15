@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
 import { CATEGORY_LABELS } from "@/lib/constants";
+import { isdDeadlineFor, isdExtensionRequestDeadlineFor } from "@/lib/deadline-engine";
 
 function escapeCsv(value: string | null | undefined): string {
   if (!value) return "";
@@ -27,13 +26,9 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "cases.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+  const auth = await requireOrgPermission("cases.read");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const orgId = session.user.orgId;
   const url = new URL(req.url);
@@ -115,11 +110,7 @@ export async function GET(req: NextRequest) {
     String(c._count.tasks),
     String(c._count.documents),
     c.deceased?.deathDate
-      ? (() => {
-          const d = new Date(c.deceased!.deathDate!);
-          d.setMonth(d.getMonth() + 6);
-          return d.toLocaleDateString("es-ES");
-        })()
+      ? isdDeadlineFor(new Date(c.deceased.deathDate)).toLocaleDateString("es-ES")
       : "",
     "",
     new Date(c.createdAt).toLocaleDateString("es-ES"),

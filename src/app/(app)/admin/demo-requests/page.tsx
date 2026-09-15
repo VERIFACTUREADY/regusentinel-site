@@ -1,12 +1,15 @@
-import { getServerSession } from "next-auth";
+import { getVerifiedUser } from "@/lib/session";
 import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isSuperAdmin } from "@/lib/admin";
 import { LeadsTable } from "./leads-table";
 
 export default async function DemoRequestsPage() {
-  const session = await getServerSession(authOptions);
-  if (session?.user?.role !== "OWNER") redirect("/dashboard");
+  // El email del superadmin salia del JWT: una cuenta borrada conservaba
+  // acceso al panel. Ahora se relee de la base de datos.
+  const verificado = await getVerifiedUser();
+  const session = verificado ? { user: verificado } : null;
+  if (!isSuperAdmin(session?.user?.email)) redirect("/dashboard");
 
   const requests = await prisma.demoRequest.findMany({
     orderBy: { createdAt: "desc" },

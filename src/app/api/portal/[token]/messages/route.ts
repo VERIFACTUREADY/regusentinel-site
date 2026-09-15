@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/api-rate-limit";
+import { resolvePortalAccess } from "@/lib/portal-access";
 
-export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
-  const c = await prisma.case.findFirst({
-    where: { portalToken: params.token, portalEnabled: true, deletedAt: null },
-    select: { id: true },
-  });
-  if (!c) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+export async function GET(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
+  // 60 lecturas/min por IP. El token es CUID (~10^36) asi que el riesgo es
+  // scraping si el enlace se filtra, no bruteforce.
+  const limited = rateLimit(req, { bucket: "portal-messages-read", windowMs: 60_000, max: 60 });
+  if (limited) return limited;
+
+  const access = await resolvePortalAccess(params.token, { requireConsent: true });
+  if (!access.ok) return access.response;
+  const c = access.case;
 
   const messages = await prisma.portalMessage.findMany({
     where: { caseId: c.id },
@@ -17,12 +23,17 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
   return NextResponse.json(messages);
 }
 
-export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
-  const c = await prisma.case.findFirst({
-    where: { portalToken: params.token, portalEnabled: true, deletedAt: null },
-    select: { id: true },
-  });
-  if (!c) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+export async function POST(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
+  // 20 mensajes/min por IP. Limite mas bajo que la lectura porque el write
+  // crea filas en BD; sin esto un atacante con token filtrado podria spammear
+  // miles de mensajes en el expediente.
+  const limited = rateLimit(req, { bucket: "portal-messages-write", windowMs: 60_000, max: 20 });
+  if (limited) return limited;
+
+  const access = await resolvePortalAccess(params.token, { requireConsent: true });
+  if (!access.ok) return access.response;
+  const c = access.case;
 
   const body = await req.json();
   const content = body.content?.trim();
