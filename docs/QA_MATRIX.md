@@ -894,6 +894,7 @@ se ha verificado contra un bucket S3 de producción ni contra Vercel real.
 | Caída del proceso entre escribir el objeto final y comprometer la transacción: la limpieza recupera huérfano y fila | ✅ | `subida-directa-db.test.ts` — "ventana 4", estado reconstruido con las mismas primitivas que `confirmarSubida` |
 | Caída del proceso tras comprometer la transacción y antes de borrar la preparación: recuperada sin tocar el `Document` | ✅ | `subida-directa-db.test.ts` — "ventana 5" |
 | Repetir la limpieza tras recuperar un huérfano final es idempotente | ✅ | `subida-directa-db.test.ts` — "ventana 6" |
+| Confirmación retrasada que llega tras comprometerse la otra no corrompe el puntero (`finalKey`) de la ganadora | ✅ | `subida-directa-db.test.ts` — "RACE", dos barreras deterministas sobre `HeadObjectCommand` y `DeleteObjectCommand` reales |
 
 #### Subida (ficha del expediente)
 

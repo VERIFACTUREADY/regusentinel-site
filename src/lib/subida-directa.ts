@@ -74,11 +74,10 @@
  * exista nada que borrar, porque el proceso puede caerse entre escribir ese
  * objeto y comprometer la transacción, y en ese instante no hay ningún `catch`
  * que pueda ejecutarse. Por eso `confirmarSubida` apunta la clave final en la
- * fila con una escritura llana —a propósito NO una reclamación que pueda
- * hacer perder la carrera a una confirmación concurrente legítima, ver el
- * comentario junto a esa escritura— ANTES de llamar a `crearObjetoSiNoExiste`,
- * no después. Con eso, tres mecanismos —no uno solo— cubren las tres formas de
- * fallar:
+ * fila —condicionado a que siga `PENDING` en ese instante, ni más ni menos;
+ * ver el comentario junto a esa escritura para el porqué exacto de esa
+ * condición y no otra— ANTES de llamar a `crearObjetoSiNoExiste`, no después.
+ * Con eso, tres mecanismos —no uno solo— cubren las tres formas de fallar:
  *
  *   - FALLO EN CALIENTE (la misma llamada sigue viva): el `catch` que envuelve
  *     la transacción borra el objeto final ya mismo, de forma síncrona. Es
@@ -329,6 +328,28 @@ class YaReclamada extends Error {}
 class EnLimpieza extends Error {}
 
 /**
+ * Si otra confirmación (o la limpieza) ya se adelantó sobre esta fila,
+ * devuelve el resultado que le corresponde a QUIEN LLEGA TARDE: el documento
+ * de la ganadora si ya existe, o `null` si no hay nada que devolver todavía
+ * (p. ej. la limpieza reclamó la fila pero nadie la confirmó).
+ *
+ * Se usa en DOS puntos que antes duplicaban esta misma lógica por separado
+ * —el apunte previo de la clave final y el `catch(YaReclamada)` de la
+ * transacción— para que ambos se comporten EXACTAMENTE igual ante quien
+ * llega tarde, en vez de arriesgarse a que diverjan con el tiempo.
+ */
+async function resultadoDeLaGanadora(pendienteId: string): Promise<ResultadoConfirmacion | null> {
+  const actual = await prisma.pendingUpload.findUnique({ where: { id: pendienteId } });
+  if (actual?.documentId) {
+    const existente = await prisma.document.findUnique({ where: { id: actual.documentId } });
+    if (existente) {
+      return { ok: true, documento: existente, taskUpdated: false, yaConfirmada: true };
+    }
+  }
+  return null;
+}
+
+/**
  * Paso 2: confirmar. Inspecciona la preparación, la copia a una clave final
  * nueva sólo si todo cuadra, y crea el documento.
  */
@@ -493,8 +514,8 @@ export async function confirmarSubida(params: {
 
   /*
    * DEJA CONSTANCIA DE LA CLAVE FINAL EN LA FILA ANTES DE ESCRIBIR NADA EN EL
-   * ALMACÉN — pero SIN convertirlo en una reclamación que pueda hacer perder
-   * la carrera a una confirmación concurrente legítima.
+   * ALMACÉN — condicionado a que la fila SIGA `PENDING` en este instante, ni
+   * más ni menos.
    *
    * EL HUECO QUE CIERRA
    * --------------------
@@ -512,24 +533,60 @@ export async function confirmarSubida(params: {
    * ninguna limpieza posterior podía encontrarla ni borrarla. Ahora la fila lo
    * sabe ANTES de que se escriba el objeto, así que sobrevive a la caída.
    *
-   * POR QUÉ NO ES UN CAS QUE PUEDA HACER ABORTAR AQUÍ
-   * -----------------------------------------------------
-   * Dos confirmaciones SIMULTÁNEAS para el mismo `uploadId` —doble clic,
-   * reintento del cliente que se cruza con el original— tienen que poder
-   * escribir CADA UNA su propio objeto final y disputar el resultado DESPUÉS,
-   * en la transacción de más abajo (que ya lo hace bien: la perdedora borra su
-   * objeto y devuelve el documento de la ganadora). Convertir este apunte en
-   * una reclamación que aborta con `count === 0` haría perder la carrera a la
-   * perdedora ANTES de que la ganadora haya llegado a crear el `Document` —se
-   * comprobó con la prueba de concurrencia real: la perdedora encontraba la
-   * fila todavía sin `documentId` y devolvía un 409 en vez del documento ya
-   * creado, una regresión de "confirmación concurrente crea exactamente uno".
-   * Por eso es una escritura llana, sin condición de carrera que arbitrar
-   * aquí: la única disputa real sigue siendo la de la transacción.
+   * POR QUÉ `status: PENDING` Y NO LA IGUALDAD DE `finalKey`
+   * -----------------------------------------------------------
+   * La primera versión de este apunte condicionaba también al valor ANTERIOR
+   * de `finalKey` (`where: { finalKey: pu.finalKey }`), pensado como un CAS
+   * optimista. Se retiró: dos confirmaciones SIMULTÁNEAS arrancan ambas con
+   * `pu.finalKey === null`, así que la PRIMERA en escribir "consumía" el
+   * `null` y la SEGUNDA perdía esta reclamación ANTES de que la primera
+   * hubiera llegado siquiera a crear el `Document` —reproducido con la prueba
+   * de concurrencia real: la perdedora encontraba la fila todavía sin
+   * `documentId` y devolvía un 409 en vez del documento ya creado, una
+   * regresión de "confirmación concurrente crea exactamente uno".
+   *
+   * Condicionar sólo a `status: PENDING` no tiene ese problema: en una
+   * carrera RÁPIDA (dos llamadas que arrancan a la vez) el `status` sigue
+   * `PENDING` para AMBAS en este punto —ninguna ha llegado aún a la
+   * transacción que lo cambia—, así que las dos superan la condición, escriben
+   * cada una su propio objeto, y disputan el resultado DESPUÉS, en la
+   * transacción de más abajo, exactamente igual que antes.
+   *
+   * Lo que SÍ bloquea es la carrera LENTA: una llamada retrasada —se quedó
+   * esperando en cualquiera de los `await` anteriores, sin haber fallado
+   * aún— que llega a ESTE punto después de que la otra ya comprometió su
+   * transacción. Reproducido con una prueba de concurrencia real con barreras
+   * deterministas (sin sleeps): antes de este cambio, el apunte llano de la
+   * rezagada SOBRESCRIBÍA en la fila la clave final de la ganadora —ya
+   * confirmada y ya referenciada por su `Document`— con la suya propia, que
+   * la propia rezagada borra segundos después al perder la carrera en la
+   * transacción. La fila quedaba con `documentId` apuntando al `Document`
+   * correcto pero `finalKey` apuntando a una clave YA BORRADA: no un objeto
+   * huérfano en el almacén, pero sí un puntero corrupto en la fila, y en el
+   * peor caso —si el borrado de la rezagada también fallase— un huérfano que
+   * ninguna limpieza posterior podría encontrar nunca, porque una fila
+   * `COMPLETED` no pasa por `limpiarSubidasCaducadas`.
+   *
+   * Si `count === 0` aquí, el `status` ya no es `PENDING`: por construcción,
+   * eso sólo ocurre DENTRO de la misma transacción que también fija
+   * `documentId` (se cambian juntos, atómicamente), así que en cuanto se
+   * observa `status !== PENDING` desde fuera, `documentId` YA está puesto si
+   * la ganadora fue una confirmación. Es seguro devolver su documento de
+   * inmediato, sin escribir nada en el almacén.
    */
-  await prisma.pendingUpload
-    .update({ where: { id: pu.id }, data: { finalKey } })
-    .catch((e) => console.error("No se pudo apuntar la clave final antes de escribirla:", finalKey, e));
+  const apunte = await prisma.pendingUpload.updateMany({
+    where: { id: pu.id, status: "PENDING" },
+    data: { finalKey },
+  });
+  if (apunte.count === 0) {
+    const ganadora = await resultadoDeLaGanadora(pu.id);
+    if (ganadora) return ganadora;
+    return {
+      ok: false,
+      status: 409,
+      error: "La subida se está confirmando. Vuelve a intentarlo.",
+    };
+  }
 
   /*
    * Si la fila ya traía una clave final DISTINTA de un intento ANTERIOR de
@@ -633,13 +690,8 @@ export async function confirmarSubida(params: {
       await deleteFile(finalKey).catch((e) =>
         console.error("No se pudo borrar el objeto final perdedor de la carrera:", finalKey, e),
       );
-      const actual = await prisma.pendingUpload.findUnique({ where: { id: pu.id } });
-      if (actual?.documentId) {
-        const existente = await prisma.document.findUnique({ where: { id: actual.documentId } });
-        if (existente) {
-          return { ok: true, documento: existente, taskUpdated: false, yaConfirmada: true };
-        }
-      }
+      const ganadora = await resultadoDeLaGanadora(pu.id);
+      if (ganadora) return ganadora;
       return {
         ok: false,
         status: 409,

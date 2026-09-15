@@ -2152,3 +2152,59 @@ en dependencias no relacionadas. Aislamiento por tenant, atadura del actor,
 idempotencia, reclamación CAS existente y el diseño de la migración de
 `20260910163000` quedan intactos — no se tocó `prisma/schema.prisma` ni se creó
 ninguna migración nueva: `finalKey` ya existía.
+
+## 2026-09-15 — El apunte previo de `finalKey` (revisión anterior) tenía su propia carrera: corregido
+
+Revisión acotada, un solo hueco concreto: la sospecha era que el apunte previo
+de `finalKey` (introducido el 2026-09-14 para que una caída del proceso no
+dejara un objeto final sin rastro, ver arriba) podía tener su propia carrera
+entre dos confirmaciones concurrentes.
+
+**Reproducido contra MinIO y PostgreSQL reales**, con una interleaving
+determinista de dos barreras (sin sleeps): una confirmación B se detiene justo
+tras inspeccionar; se deja correr una confirmación A entera hasta que se para
+justo antes de borrar su preparación —prueba de que su transacción YA se
+comprometió, porque ese borrado ocurre estrictamente después—; sólo entonces
+se libera B, que encuentra la preparación todavía viva, sigue su camino
+normal, escribe su propio objeto final, pierde la disputa en su transacción y
+borra su propio objeto. Resultado observado: `PendingUpload.documentId`
+apuntaba correctamente al `Document` de A, pero `PendingUpload.finalKey`
+quedaba con la clave de B —ya borrada por B al perder—, no con la de A. No era
+un objeto huérfano en el almacén (B se borra a sí mismo con éxito en este
+escenario), pero sí un puntero corrupto en una fila ya `COMPLETED`, que
+`limpiarSubidasCaducadas` nunca revisa; en el peor caso —si el borrado de B
+también fallara— ese huérfano quedaría sin ninguna vía de recuperación para
+siempre.
+
+**Causa exacta**: el apunte previo era una escritura llana (sin condición),
+así que una confirmación retrasada podía sobrescribir en la fila la clave de
+la ganadora, ya confirmada, con la suya propia.
+
+**Corrección** (`src/lib/subida-directa.ts`, sin migración): el apunte pasa a
+condicionarse a `status: "PENDING"` en ese instante —no a la igualdad del
+valor anterior de `finalKey`, que ya se había descartado en la revisión previa
+por romper la concurrencia rápida legítima—. La diferencia importa: en una
+carrera RÁPIDA (dos llamadas que arrancan a la vez) el `status` sigue
+`PENDING` para ambas en ese punto, así que ambas superan la condición sin
+cambios de comportamiento; sólo una carrera LENTA —una llamada que llega
+después de que la otra ya comprometió su transacción, momento en el que
+`status` ya cambió— encuentra `count === 0` y, en vez de escribir nada, mira
+la fila y devuelve el documento de la ganadora de inmediato, sin desperdiciar
+una escritura en el almacén. Se extrajo a un único punto (`resultadoDeLaGanadora`)
+la lógica de "devolver el documento de quien ya ganó", compartida ahora entre
+este apunte y el `catch` de la transacción, para que ambos caminos se
+comporten exactamente igual.
+
+**Prueba nueva**: una prueba de concurrencia con dos barreras deterministas en
+`subida-directa-db.test.ts`, contra MinIO y PostgreSQL reales, que verifica
+—no sólo el conteo de `Document` ni las respuestas HTTP— que `PendingUpload`
+apunta al `Document` ganador Y a su objeto final real, que hay exactamente un
+objeto final bajo el prefijo del expediente, y que repetir la limpieza tras la
+carrera es idempotente. La prueba de concurrencia rápida ya existente
+(`Promise.all`, sin barreras) se repitió intacta, sin debilitarla.
+
+No se toca `xlsx`, `npm audit`, `CORS`, `main`, protección de rama,
+credenciales de producción ni dependencias no relacionadas. Aislamiento por
+tenant, atadura del actor y el diseño de la migración `20260910163000`
+quedan intactos — no se tocó `prisma/schema.prisma` ni se creó ninguna
+migración nueva.

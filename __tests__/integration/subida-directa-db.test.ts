@@ -1202,4 +1202,156 @@ describeSiHayMinio("Subida directa: la garantia tras un fallo, ventana por venta
     const segunda = await subidas.limpiarSubidasCaducadas();
     expect(segunda.errores).toBe(0);
   }, 30_000);
+
+  it(
+    "RACE: una confirmacion RETRASADA que llega DESPUES de que la otra ya comprometio su transaccion no corrompe el puntero de la ganadora",
+    async () => {
+      /*
+       * La asercion "confirmaciones simultaneas crean UN documento" (arriba)
+       * usa Promise.all sin ningun control de orden: en la practica ambas
+       * ramas avanzan casi a la par y el apunte previo de `finalKey` de cada
+       * una llega ANTES de que la otra comprometa su transaccion. Eso no
+       * demuestra nada sobre el orden CONTRARIO: una rama retrasada —se quedo
+       * esperando en cualquiera de los `await` de camino, sin haber fallado
+       * aun— cuyo apunte previo de `finalKey` llega DESPUES de que la otra ya
+       * comprometio su `Document`. Se fuerza ese orden EXACTO con dos barreras
+       * deterministas, sin sleeps, sobre llamadas reales a MinIO:
+       *
+       *   1. Se intercepta el PRIMER `HeadObjectCommand` real (la
+       *      inspeccion inicial de `confirmarSubida`) y se detiene ahi: es la
+       *      rama B, lanzada primero.
+       *   2. Con B parada justo despues de leer la fila pero antes de tocarla
+       *      mas, se deja correr A entera: escribe su objeto final, comete su
+       *      transaccion (Document + COMPLETED + finalKey de A), y llega a
+       *      borrar su preparacion — se intercepta ese PRIMER
+       *      `DeleteObjectCommand` real y se detiene AHI TAMBIEN. Ese punto
+       *      es la prueba de que la transaccion de A YA se comprometio (el
+       *      borrado de preparacion, en el codigo, ocurre estrictamente
+       *      DESPUES de comprometerla).
+       *   3. Solo entonces se libera B: la preparacion sigue en el almacen
+       *      (A esta parada justo antes de borrarla), asi que la lectura
+       *      condicionada de B tiene exito y B sigue su camino normal:
+       *      valida, apunta SU propia clave final, escribe su propio objeto,
+       *      intenta su transaccion (pierde, `status` ya no es PENDING),
+       *      borra su propio objeto y devuelve el documento de A.
+       *   4. Se libera A al final, que termina de borrar su preparacion.
+       *
+       * Es el orden que la aseveracion original no cubria: ambas ramas SI
+       * llegan a escribir su propio objeto final antes de disputar, pero el
+       * apunte previo de B en la fila llega tarde a proposito.
+       */
+      const { org, owner } = await createOrg();
+      const expediente = await createCase(org.id, "EXP-RACE-TARDIA");
+      const actor = await actorInterno(org.id, expediente.id, owner.id);
+
+      const autorizacion = await subidas.autorizarSubida({ actor, fileName: "carrera-tardia.pdf", size: 1024 });
+      if (!autorizacion.ok) throw new Error("la autorizacion deberia concederse");
+      await escribirEnAlmacen({ url: autorizacion.uploadUrl, fields: autorizacion.fields }, pdfDe(1024));
+
+      const { HeadObjectCommand, ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+
+      let soltarB!: () => void;
+      const barreraB = new Promise<void>((r) => (soltarB = r));
+      let bAlcanzoInspeccion!: () => void;
+      const bAlcanzoInspeccionP = new Promise<void>((r) => (bAlcanzoInspeccion = r));
+
+      let soltarABorradoStaging!: () => void;
+      const barreraABorradoStaging = new Promise<void>((r) => (soltarABorradoStaging = r));
+      let aAlcanzoBorradoStaging!: () => void;
+      const aAlcanzoBorradoStagingP = new Promise<void>((r) => (aAlcanzoBorradoStaging = r));
+
+      let primerHead = true;
+      let primerDelete = true;
+      const enviarOriginal = s3.s3Client.send.bind(s3.s3Client);
+      (s3.s3Client as { send: unknown }).send = async (cmd: unknown, ...resto: unknown[]) => {
+        if (primerHead && cmd instanceof HeadObjectCommand) {
+          primerHead = false;
+          bAlcanzoInspeccion();
+          await barreraB;
+        }
+        if (primerDelete && cmd instanceof DeleteObjectCommand) {
+          primerDelete = false;
+          aAlcanzoBorradoStaging();
+          await barreraABorradoStaging;
+        }
+        return (enviarOriginal as (...a: unknown[]) => unknown)(cmd, ...resto);
+      };
+
+      // B arranca primero y se para justo tras inspeccionar.
+      const promesaB = subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId });
+      await bAlcanzoInspeccionP;
+
+      // A corre entera (su HeadObject NO se intercepta: ya se consumio el
+      // "primerHead" con B) hasta quedarse parada justo antes de borrar SU
+      // preparacion — lo que prueba que su transaccion YA se comprometio.
+      const promesaA = subidas.confirmarSubida({ actor, uploadId: autorizacion.uploadId });
+      await aAlcanzoBorradoStagingP;
+
+      // Con la transaccion de A ya comprometida y su preparacion todavia sin
+      // borrar, se libera B: su lectura condicionada de la preparacion (que
+      // sigue ahi) tiene exito, y sigue su camino completo.
+      soltarB();
+      const b = await promesaB;
+
+      // Se libera A al final.
+      soltarABorradoStaging();
+      const a = await promesaA;
+
+      (s3.s3Client as { send: unknown }).send = enviarOriginal;
+
+      // ── Aserciones exigidas ──────────────────────────────────────────────
+      expect(a.ok, JSON.stringify(a)).toBe(true);
+      expect(b.ok, JSON.stringify(b)).toBe(true);
+      if (!a.ok || !b.ok) throw new Error("inalcanzable");
+
+      expect(a.documento.id).toBe(b.documento.id);
+      expect([a.yaConfirmada, b.yaConfirmada].filter(Boolean)).toHaveLength(1);
+
+      // Exactamente UN Document para este expediente.
+      expect(await prisma.document.count({ where: { caseId: expediente.id } })).toBe(1);
+
+      // La fila apunta al Document ganador Y A SU OBJETO FINAL REAL — no al
+      // de la rama retrasada, aunque el apunte previo de esta ultima llegara
+      // despues de comprometida la transaccion.
+      const filaFinal = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+      expect(filaFinal!.documentId).toBe(a.documento.id);
+      expect(
+        filaFinal!.finalKey,
+        "el puntero de la fila no debe corromperse con la clave de la rama retrasada",
+      ).toBe(a.documento.fileKey);
+      expect(filaFinal!.status).toBe("COMPLETED");
+
+      // Exactamente UN objeto final bajo el prefijo del expediente, y es el
+      // del Document — nada de la rama que perdio queda sin rastro.
+      const claves = await s3.s3Client.send(
+        new ListObjectsV2Command({ Bucket: BUCKET!, Prefix: `${org.id}/${expediente.id}/interno/` }),
+      );
+      expect(
+        (claves.Contents ?? []).length,
+        "exactamente un objeto final: nada huerfano de la rama retrasada",
+      ).toBe(1);
+      expect(claves.Contents![0].Key).toBe(a.documento.fileKey);
+
+      // El objeto final del Document es real y legible.
+      expect(await s3.inspeccionarObjeto(a.documento.fileKey)).not.toBeNull();
+
+      // La preparacion se borro (ambas ramas la dan por resuelta al confirmar
+      // con exito).
+      const pendienteOriginal = await prisma.pendingUpload.findUnique({ where: { id: autorizacion.uploadId } });
+      if (pendienteOriginal?.stagingKey) {
+        expect(await s3.inspeccionarObjeto(pendienteOriginal.stagingKey)).toBeNull();
+      }
+
+      // La limpieza, ejecutada dos veces tras la carrera, es idempotente y no
+      // encuentra nada que reclamar: la fila esta COMPLETED y su clave final
+      // es la correcta.
+      const l1 = await subidas.limpiarSubidasCaducadas();
+      expect(l1.errores).toBe(0);
+      const l2 = await subidas.limpiarSubidasCaducadas();
+      expect(l2.errores).toBe(0);
+      expect(await s3.inspeccionarObjeto(a.documento.fileKey), "la limpieza no toca el objeto final vivo").not.toBeNull();
+      expect(await prisma.document.findUnique({ where: { id: a.documento.id } })).not.toBeNull();
+    },
+    30_000,
+  );
 });
