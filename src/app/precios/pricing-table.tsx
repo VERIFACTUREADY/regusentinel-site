@@ -49,9 +49,9 @@ const plans = [
     features: [
       "Hasta 20 usuarios",
       "200 expedientes/mes incluidos",
-      "Roles y permisos avanzados, SSO",
-      "API / webhooks + integraciones",
-      "DPA extendido + auditorías",
+      "Roles y permisos avanzados (5 niveles)",
+      "Integraciones salientes: Slack, Teams y webhook propio",
+      "Registro de auditoría exportable",
       "Onboarding asistido + formación",
       "Soporte prioritario dedicado",
     ],
@@ -142,14 +142,21 @@ export function PricingTable() {
               )}
 
               <Link
-                href="/#demo"
-                className={`block w-full text-center py-3 rounded-lg font-semibold text-sm transition mb-8 ${
+                href="/onboarding"
+                className={`block w-full text-center py-3 rounded-lg font-semibold text-sm transition mb-2 ${
                   plan.highlight
                     ? "bg-primary text-white hover:bg-primary/90"
                     : "border-2 border-primary text-primary hover:bg-primary/5"
                 }`}
               >
-                Solicitar demo
+                Empezar 14 días gratis
+              </Link>
+
+              <Link
+                href="/#demo"
+                className="block w-full text-center py-2 text-xs text-gray-500 hover:text-gray-700 mb-6"
+              >
+                o solicitar una demo guiada
               </Link>
 
               <ul className="space-y-3">

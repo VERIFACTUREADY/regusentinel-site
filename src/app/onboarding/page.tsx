@@ -251,7 +251,7 @@ export default function OnboardingPage() {
                   {[
                     { id: "INICIA", name: "Inicia", price: "149€/mes", desc: "Hasta 2 usuarios · 15 exp/mes · sin setup" },
                     { id: "DESPACHO", name: "Despacho", price: "349€/mes + 299€ setup", desc: "Hasta 5 usuarios · 50 exp/mes · pack banco + white-label", recommended: true },
-                    { id: "FIRMA", name: "Firma", price: "749€/mes + 990€ setup", desc: "Hasta 20 usuarios · 200 exp/mes · SSO + onboarding asistido" },
+                    { id: "FIRMA", name: "Firma", price: "749€/mes + 990€ setup", desc: "Hasta 20 usuarios · 200 exp/mes · integraciones salientes + onboarding asistido" },
                   ].map((p) => (
                     <button
                       key={p.id}

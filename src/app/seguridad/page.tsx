@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { contactoPrivacidadTexto, datosEntidadLegal } from "@/lib/legal-entity";
 
 export const metadata: Metadata = {
   title: "Seguridad y privacidad — Heredia",
@@ -59,8 +60,8 @@ const MEASURES: MeasureCard[] = [
   },
   {
     icon: "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9",
-    title: "Detección de intrusiones",
-    desc: "Monitorización 24/7 de logs de acceso. Alertas automáticas ante patrones anómalos (login fallidos repetidos, picos de exportación, accesos fuera de horario).",
+    title: "Registro de accesos y limitación de peticiones",
+    desc: "Los accesos y las acciones relevantes quedan registrados, y los endpoints públicos aplican limitación de peticiones por IP. La monitorización activa y las alertas dependen de las herramientas que se contraten en cada despliegue; el software no las presta por sí solo.",
   },
 ];
 
@@ -84,7 +85,7 @@ const RGPD_POINTS: RGPDPoint[] = [
   },
   {
     q: "¿Se usa la información de mis expedientes para entrenar modelos de IA?",
-    a: "No. Los datos de tu organización nunca se usan para entrenar modelos. Cuando usamos APIs de IA (Anthropic Claude para resúmenes), los datos enviados son temporales, no se almacenan en el proveedor y van con cabecera de no-training. Las llamadas se hacen con cuenta empresarial bajo DPA.",
+    a: "No. Los datos de tu organización nunca se usan para entrenar modelos. Cuando usamos APIs de IA (Anthropic Claude para resúmenes), los datos enviados son temporales, no se almacenan en el proveedor y van con cabecera de no-training. El uso de IA está desactivado por defecto y sólo se activa si tu organización lo habilita expresamente.",
   },
   {
     q: "¿Puedo exportar todos mis datos?",
@@ -96,7 +97,7 @@ const RGPD_POINTS: RGPDPoint[] = [
   },
   {
     q: "¿Qué medidas habéis tomado tras el incidente X o ante Y vulnerabilidad?",
-    a: "Política de divulgación responsable: cualquier vulnerabilidad reportada a security@heredia.app se tritra en 48h. Si afecta a tus datos, te notificamos en menos de 72h conforme exige el art. 33 RGPD.",
+    a: "Política de divulgación responsable: puedes reportar cualquier vulnerabilidad a la dirección de contacto de privacidad que figura al final de esta página. Si un incidente afecta a tus datos, la notificación se realiza conforme al plazo del art. 33 RGPD.",
   },
   {
     q: "¿Cumplís con ENS (Esquema Nacional de Seguridad)?",
@@ -105,6 +106,10 @@ const RGPD_POINTS: RGPDPoint[] = [
 ];
 
 export default function SeguridadPage() {
+  // El DPO solo se menciona si se ha designado de verdad: afirmar que existe uno
+  // cuando no lo hay es exactamente lo que `legal-entity.ts` evita en los textos
+  // legales, y esta pagina la lee el mismo comprador.
+  const dpoContacto = datosEntidadLegal().dpo;
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
@@ -261,17 +266,26 @@ export default function SeguridadPage() {
         {/* Contact */}
         <div className="max-w-4xl mx-auto px-4 py-12">
           <div className="bg-gradient-to-br from-slate-900 to-blue-900 rounded-2xl p-8 text-white">
-            <h2 className="text-xl font-bold mb-3">Contacto del Delegado de Protección de Datos</h2>
+            <h2 className="text-xl font-bold mb-3">Contacto de privacidad y seguridad</h2>
             <p className="text-blue-200 text-sm mb-4">
-              Para ejercer derechos, reportar un incidente de seguridad o solicitar el DPA firmado, contacta directamente con nuestro DPO.
+              Para ejercer derechos, reportar un incidente de seguridad o solicitar el Contrato de
+              Encargo de Tratamiento, escribe a la dirección de privacidad{dpoContacto ? " o al delegado de protección de datos" : ""}.
             </p>
             <div className="flex flex-wrap gap-3">
-              <a href="mailto:dpo@heredia.app" className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition">
-                dpo@heredia.app
+              <a
+                href={`mailto:${contactoPrivacidadTexto()}`}
+                className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition"
+              >
+                {contactoPrivacidadTexto()}
               </a>
-              <a href="mailto:security@heredia.app" className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-lg text-sm transition">
-                Reportar vulnerabilidad
-              </a>
+              {dpoContacto && (
+                <a
+                  href={`mailto:${dpoContacto}`}
+                  className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition"
+                >
+                  DPO: {dpoContacto}
+                </a>
+              )}
             </div>
           </div>
         </div>

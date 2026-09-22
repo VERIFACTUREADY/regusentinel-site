@@ -122,7 +122,7 @@ export const VERTICAL_CONFIG: Record<VerticalSlug, VerticalConfig> = {
       },
       {
         q: "¿Cuánto cuesta y cuándo se rentabiliza?",
-        a: "El plan Despacho es 349 €/mes y soporta hasta 100 expedientes/mes. Si cobráis al menos 100 € por servicio post-mortem en 4 expedientes, ya está pagado. Si lo ofrecéis a 200-400 €, el ROI es enorme.",
+        a: "El plan Despacho es 349 €/mes e incluye hasta 50 expedientes/mes. Si cobráis al menos 100 € por servicio post-mortem en 4 expedientes, ya está pagado. Si lo ofrecéis a 200-400 €, el ROI es enorme.",
       },
     ],
   },
@@ -201,7 +201,7 @@ export const VERTICAL_CONFIG: Record<VerticalSlug, VerticalConfig> = {
       },
       {
         q: "¿Qué plan elegimos?",
-        a: "El plan Despacho (349 €/mes, hasta 100 expedientes/mes) cubre la mayoría de gestorías especializadas. El plan Firma (749 €/mes, hasta 250 expedientes/mes + integraciones) está pensado para despachos grandes con varios gestores.",
+        a: "El plan Despacho (349 €/mes, hasta 50 expedientes/mes) cubre la mayoría de gestorías especializadas. El plan Firma (749 €/mes, hasta 200 expedientes/mes + integraciones salientes) está pensado para despachos grandes con varios gestores.",
       },
     ],
   },

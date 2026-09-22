@@ -293,46 +293,6 @@ export default function PortalFamiliaPage() {
           </div>
         </div>
 
-        {/* Testimonios (sintéticos) */}
-        <div className="bg-gradient-to-br from-slate-50 to-white border-t">
-          <div className="max-w-5xl mx-auto px-4 py-14">
-            <h2 className="text-center text-2xl font-bold text-gray-900 mb-2 tracking-tight">
-              La diferencia, en palabras de quienes lo usan
-            </h2>
-            <p className="text-center text-xs text-gray-500 mb-10">
-              Citas representativas reconstruidas a partir de feedback real de despachos en periodo de prueba o producción.
-            </p>
-            <div className="grid md:grid-cols-2 gap-5">
-              {[
-                {
-                  quote: "Antes pasaba la mañana del lunes contestando emails de '¿hay novedades?'. Desde que active el portal, esa bandeja está vacía y las familias me cuentan que se sienten más tranquilas.",
-                  who: "Gestoría boutique · Madrid",
-                },
-                {
-                  quote: "Hemos pasado de captar 2-3 herencias por trimestre por recomendación a 6-8. La gente enseña el portal en el grupo de WhatsApp de la familia y lo ven hijos, sobrinos y primos.",
-                  who: "Despacho fiscal · Sevilla",
-                },
-                {
-                  quote: "La parte del chat asíncrono fue lo que más miedo nos daba — pensábamos que generaría más trabajo. Es justo al revés: condensa todas las dudas y respondemos en bloque al final del día.",
-                  who: "Funeraria con servicio post-mortem · Bilbao",
-                },
-                {
-                  quote: "Cuando hay 4 hermanos en una herencia, el portal evita 4 versiones distintas de lo que está pasando. Una sola verdad para toda la familia. Eso solo ya vale el precio.",
-                  who: "Abogado de derecho sucesorio · Valencia",
-                },
-              ].map((t, i) => (
-                <div key={i} className="bg-white border rounded-2xl p-6 card-lift">
-                  <svg className="w-8 h-8 text-primary/30 mb-3" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M9.983 3v7.391c0 5.704-3.731 9.57-8.983 10.609l-.995-2.151c2.432-.917 3.995-3.638 3.995-5.849h-4v-10h9.983zm14.017 0v7.391c0 5.704-3.748 9.571-9 10.609l-.996-2.151c2.433-.917 3.996-3.638 3.996-5.849h-3.983v-10h9.983z" />
-                  </svg>
-                  <p className="text-sm text-gray-700 leading-relaxed mb-3 italic">{t.quote}</p>
-                  <p className="text-xs text-gray-500 font-semibold">{t.who}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
         {/* CTA */}
         <Reveal>
           <div className="max-w-5xl mx-auto px-4 pb-16 pt-4">

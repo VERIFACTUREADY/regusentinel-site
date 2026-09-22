@@ -615,7 +615,7 @@ export function LandingClient() {
                 <p className="text-4xl font-bold text-slate-900">749<span className="text-lg">€</span><span className="text-sm font-normal text-slate-400">/mes</span></p>
                 <p className="text-xs text-slate-500 mt-1">o 7.490€/año · + 990€ setup único</p>
                 <ul className="mt-6 space-y-2.5 text-sm text-slate-600">
-                  {["Hasta 20 usuarios", "200 expedientes/mes", "Roles/permisos avanzados, SSO", "API/webhooks + integraciones", "DPA extendido + auditorías", "Onboarding asistido + formación", "Soporte prioritario"].map((x) => (
+                  {["Hasta 20 usuarios", "200 expedientes/mes", "Roles y permisos avanzados (5 niveles)", "Integraciones salientes: Slack, Teams y webhook propio", "Registro de auditoría exportable", "Onboarding asistido + formación", "Soporte prioritario"].map((x) => (
                     <li key={x} className="flex items-start gap-2">
                       <svg className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                       {x}
