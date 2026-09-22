@@ -97,6 +97,18 @@ export const E2E = {
   caseRef: "EXP-2026-9001",
   portalToken: "token-e2e-portal-de-pruebas-0000000000",
   /**
+   * Portal con token propio para la prueba de la carrera del consentimiento.
+   *
+   * Con token aparte por el mismo motivo que `documentos.portal`: tiene que
+   * llegar a la prueba SIN consentimiento aceptado, y compartir un token con
+   * otra suite lo dejaria aceptado segun el orden de ejecucion.
+   */
+  portalConsentimiento: {
+    caseRef: "EXP-2026-9700",
+    token: "token-e2e-consentimiento-00000000000000",
+    documento: "D-E2E-consentimiento-compartido.pdf",
+  },
+  /**
    * Expedientes ficticios de relleno.
    *
    * POR QUE EXISTEN
@@ -956,6 +968,42 @@ async function main() {
       mimeType: "application/pdf",
       fileSize: 654,
       visibleToFamily: true,
+    },
+  });
+
+  // ── Portal propio para la prueba de la carrera del consentimiento ──
+  //
+  // Sin consentimiento aceptado a proposito, igual que casoPortalDocs: esta
+  // prueba necesita reproducir la PRIMERA visita real.
+  const casoPortalConsentimiento = await prisma.case.create({
+    data: {
+      orgId: org.id,
+      ref: E2E.portalConsentimiento.caseRef,
+      portalToken: E2E.portalConsentimiento.token,
+      portalEnabled: true,
+      createdAt: new Date(Date.now() - 30 * 60 * 1000),
+      deceased: { create: { fullName: "Causante Consentimiento E2E", deathDate: new Date("2026-04-01") } },
+      contact: {
+        create: { fullName: "Familiar Consentimiento E2E", email: "familia.consentimiento.e2e@ejemplo.test" },
+      },
+    },
+  });
+  await prisma.document.create({
+    data: {
+      caseId: casoPortalConsentimiento.id,
+      fileName: E2E.portalConsentimiento.documento,
+      fileKey: "e2e/portal-consentimiento-compartido.pdf",
+      mimeType: "application/pdf",
+      fileSize: 654,
+      visibleToFamily: true,
+    },
+  });
+  await prisma.portalMessage.create({
+    data: {
+      caseId: casoPortalConsentimiento.id,
+      fromFamily: false,
+      authorName: "Gestoría E2E",
+      content: "Mensaje previo de la gestoria, visible antes de que la familia escriba nada.",
     },
   });
 

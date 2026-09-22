@@ -210,10 +210,17 @@ export default function PortalPage() {
     if (res.ok) {
       const json = await res.json();
       setData(json);
-      setConsented(json.consentAccepted === true);
-      // Load secondary data only after main data is confirmed
-      fetchDocs();
-      fetchMessages();
+      const hasConsent = json.consentAccepted === true;
+      setConsented(hasConsent);
+      // Documentos y mensajes exigen consentimiento vigente en el servidor
+      // (403 si no lo hay). Antes se pedian aqui sin mirar `hasConsent`, asi
+      // que en la primera visita —sin consentimiento todavia— siempre
+      // fallaban, y el error se quedaba en el estado para cuando la puerta se
+      // abriera. Se piden solo cuando ya sabemos que hay consentimiento.
+      if (hasConsent) {
+        fetchDocs();
+        fetchMessages();
+      }
     } else {
       setError("Enlace no valido o expediente no encontrado.");
     }
@@ -365,6 +372,14 @@ export default function PortalPage() {
         onAccepted={(name) => {
           setConsented(true);
           if (name) setMsgAuthor(name);
+          // El POST de consentimiento ya se ha resuelto (200) cuando se llama
+          // a este callback, y esa respuesta solo llega despues de que el
+          // servidor lo ha persistido (ver consent/route.ts): es la
+          // confirmacion autoritativa, no una suposicion. Ya se puede pedir
+          // documentos y mensajes sin esperar a una recarga manual.
+          setDocsError("");
+          fetchDocs();
+          fetchMessages();
         }}
       />
     );
