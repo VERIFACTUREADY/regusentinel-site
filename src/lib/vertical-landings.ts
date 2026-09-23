@@ -28,8 +28,12 @@ export interface VerticalConfig {
   workflow: { step: string; title: string; desc: string }[];
   /** Real-world scenarios (3) */
   scenarios: { title: string; problem: string; solution: string }[];
-  /** Testimonial-style quote */
-  quote: { text: string; attribution: string };
+  /**
+   * Testimonial-style quote. Opcional a proposito: sin una cita real y
+   * verificable de un cliente, la seccion se omite en vez de rellenarse
+   * con algo inventado.
+   */
+  quote?: { text: string; attribution: string };
   /** Pricing pitch — which plan fits this segment */
   recommendedPlan: "INICIA" | "DESPACHO" | "FIRMA";
   /** FAQ specific to this vertical */
@@ -181,10 +185,6 @@ export const VERTICAL_CONFIG: Record<VerticalSlug, VerticalConfig> = {
         solution: "El motor aplica reducciones, calcula la cuota integra con tarifa estatal, aplica bonificación por tramo de Cataluña y muestra cuánto se paga si la base baja al tramo anterior.",
       },
     ],
-    quote: {
-      text: "Pasamos de tramitar 60 herencias al año a 150 con el mismo equipo. La automatización del Modelo 650 y el portal familia son los dos ejes que cambiaron todo.",
-      attribution: "Gestoría con 4 gestores — Comunidad Valenciana",
-    },
     recommendedPlan: "DESPACHO",
     faq: [
       {

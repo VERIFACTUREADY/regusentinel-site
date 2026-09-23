@@ -95,19 +95,6 @@ export default function OnboardingPage() {
             ))}
           </ul>
         </div>
-
-        <div className="relative mt-12">
-          <div className="rounded-2xl bg-white/[0.06] border border-white/10 backdrop-blur p-5">
-            <svg className="w-6 h-6 text-blue-300/40 mb-2" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M9.983 3v7.391c0 5.704-3.731 9.57-8.983 10.609l-.995-2.151c2.432-.917 3.995-3.638 3.995-5.849h-4v-10h9.983zm14.017 0v7.391c0 5.704-3.748 9.571-9 10.609l-.996-2.151c2.433-.917 3.996-3.638 3.996-5.849h-3.983v-10h9.983z" />
-            </svg>
-            <p className="text-sm text-slate-200 leading-relaxed italic">
-              Pasamos de 60 herencias al año a 150 con el mismo equipo. La automatización
-              del Modelo 650 y el portal familia fueron los dos ejes que cambiaron todo.
-            </p>
-            <p className="text-xs text-slate-400 mt-3 font-semibold">Gestoría boutique · Madrid</p>
-          </div>
-        </div>
       </aside>
 
       {/* Right: form column */}
