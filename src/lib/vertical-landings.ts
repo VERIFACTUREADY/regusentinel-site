@@ -28,12 +28,6 @@ export interface VerticalConfig {
   workflow: { step: string; title: string; desc: string }[];
   /** Real-world scenarios (3) */
   scenarios: { title: string; problem: string; solution: string }[];
-  /**
-   * Testimonial-style quote. Opcional a proposito: sin una cita real y
-   * verificable de un cliente, la seccion se omite en vez de rellenarse
-   * con algo inventado.
-   */
-  quote?: { text: string; attribution: string };
   /** Pricing pitch — which plan fits this segment */
   recommendedPlan: "INICIA" | "DESPACHO" | "FIRMA";
   /** FAQ specific to this vertical */
@@ -106,10 +100,6 @@ export const VERTICAL_CONFIG: Record<VerticalSlug, VerticalConfig> = {
         solution: "Pack banco automatiza el ZIP unificado. El RCSV detecta los seguros. El borrador del 650 lista todos los bienes. Una sola visita por gestión.",
       },
     ],
-    quote: {
-      text: "Pasamos de ser la funeraria que organiza el sepelio a ser el referente que la familia recomienda durante años. El servicio post-mortem ha sido nuestra mejor inversión.",
-      attribution: "Despacho funerario — Comunidad de Madrid",
-    },
     recommendedPlan: "DESPACHO",
     faq: [
       {
@@ -260,10 +250,6 @@ export const VERTICAL_CONFIG: Record<VerticalSlug, VerticalConfig> = {
         solution: "El motor Heredia conserva el cálculo con todos los inputs y outputs (base imponible, reducciones aplicadas, cuota, bonificación CCAA). Justificación matemática en un clic.",
       },
     ],
-    quote: {
-      text: "El audit trail nos sacó de un proceso disciplinario. Pudimos demostrar al colegio que cada paso del expediente estaba registrado.",
-      attribution: "Despacho de derecho sucesorio — Cataluña",
-    },
     recommendedPlan: "FIRMA",
     faq: [
       {

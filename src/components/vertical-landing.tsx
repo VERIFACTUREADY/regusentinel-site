@@ -162,21 +162,6 @@ export function VerticalLanding({ slug }: { slug: VerticalSlug }) {
           </div>
         </div>
 
-        {/* Testimonial: solo si el vertical trae una cita real. Sin una
-            verificable, la seccion se omite en vez de rellenarse con algo
-            inventado. */}
-        {v.quote && (
-          <div className="bg-white border-t border-b">
-            <div className="max-w-3xl mx-auto px-4 py-12 text-center">
-              <svg className="w-10 h-10 text-blue-200 mx-auto mb-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z" />
-              </svg>
-              <p className="text-lg sm:text-xl text-gray-800 leading-relaxed mb-4">"{v.quote.text}"</p>
-              <p className="text-sm text-gray-500">— {v.quote.attribution}</p>
-            </div>
-          </div>
-        )}
-
         {/* Recommended plan */}
         <div className="max-w-3xl mx-auto px-4 py-14">
           <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Plan recomendado</h2>

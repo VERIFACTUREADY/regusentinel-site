@@ -21,11 +21,6 @@ describe("vertical-landings", () => {
       expect(v.workflow.length).toBe(4);
       expect(v.scenarios.length).toBe(3);
       expect(v.faq.length).toBeGreaterThanOrEqual(3);
-      // `quote` es opcional a proposito: sin una cita real y verificable, el
-      // vertical simplemente no trae una. Si trae una, tiene que ser sustancial.
-      if (v.quote) {
-        expect(v.quote.text.length).toBeGreaterThan(20);
-      }
     }
   });
 
@@ -70,15 +65,25 @@ describe("vertical-landings", () => {
   });
 });
 
-describe("el testimonio fabricado no vuelve", () => {
+describe("los testimonios fabricados no vuelven", () => {
   /*
-   * "Pasamos de 60 herencias al año a 150 con el mismo equipo", atribuido a
-   * "Gestoría boutique · Madrid" (en /onboarding) y a una variante casi
-   * identica ("Gestoría con 4 gestores — Comunidad Valenciana", en el
-   * vertical de gestorias) fue un cliente, una cifra y una atribucion
-   * inventados. Se retiraron sin sustituirlos por otra cita inventada: esta
-   * prueba falla si alguno de los dos vuelve a aparecer, aqui o en cualquier
-   * otro vertical.
+   * Tres testimonios fabricados, retirados en dos pasadas:
+   *
+   *   1. "Pasamos de 60 herencias al año a 150 con el mismo equipo",
+   *      atribuido a "Gestoría boutique · Madrid" (en /onboarding) y a una
+   *      variante casi identica ("Gestoría con 4 gestores — Comunidad
+   *      Valenciana", en el vertical de gestorias).
+   *   2. "Pasamos de ser la funeraria que organiza el sepelio...", atribuido
+   *      a "Despacho funerario — Comunidad de Madrid" (vertical funerarias).
+   *   3. "El audit trail nos sacó de un proceso disciplinario...", atribuido
+   *      a "Despacho de derecho sucesorio — Cataluña" (vertical abogados).
+   *
+   * Los tres eran un cliente, una cifra y una atribucion inventados. Se
+   * retiraron sin sustituir ninguno por otra cita inventada, y ya no queda
+   * ningun testimonio real que verificar: `quote` se elimino por completo de
+   * `VerticalConfig` en vez de dejarlo opcional y sin usar. Estas pruebas
+   * fallan si cualquiera de los tres vuelve a aparecer, en cualquier campo de
+   * cualquier vertical, o si el campo/la seccion de testimonio resucitan.
    */
   const FRAGMENTOS_PROHIBIDOS = [
     /60 herencias/i,
@@ -86,16 +91,30 @@ describe("el testimonio fabricado no vuelve", () => {
     /Gestoría boutique/i,
     /Gestoria boutique/i,
     /Gestoría con 4 gestores/i,
+    /Pasamos de ser la funeraria/i,
+    /Despacho funerario — Comunidad de Madrid/i,
+    /nos sacó de un proceso disciplinario/i,
+    /Despacho de derecho sucesorio — Cataluña/i,
   ];
 
-  it("ningun vertical trae la cifra o la atribucion inventadas", () => {
+  it("ningun vertical trae, en ningun campo, la cifra, la cita o la atribucion inventadas", () => {
     for (const slug of ALL_VERTICAL_SLUGS) {
-      const v = VERTICAL_CONFIG[slug];
-      if (!v.quote) continue;
+      // Se serializa el vertical entero: no solo un campo `quote` que ya no
+      // existe, sino cualquier lugar donde el texto pudiera reaparecer
+      // (un scenario, una FAQ, un benefit...).
+      const serializado = JSON.stringify(VERTICAL_CONFIG[slug]);
       for (const patron of FRAGMENTOS_PROHIBIDOS) {
-        expect(v.quote.text, `${slug}: quote.text`).not.toMatch(patron);
-        expect(v.quote.attribution, `${slug}: quote.attribution`).not.toMatch(patron);
+        expect(serializado, `${slug} coincide con ${patron}`).not.toMatch(patron);
       }
+    }
+  });
+
+  it("`quote` no existe en ningun vertical: sin cita real, no hay campo, no un opcional sin usar", () => {
+    for (const slug of ALL_VERTICAL_SLUGS) {
+      expect(
+        Object.prototype.hasOwnProperty.call(VERTICAL_CONFIG[slug], "quote"),
+        `${slug} todavia declara "quote"`,
+      ).toBe(false);
     }
   });
 
@@ -106,6 +125,21 @@ describe("el testimonio fabricado no vuelve", () => {
     );
     for (const patron of FRAGMENTOS_PROHIBIDOS) {
       expect(contenido, `onboarding/page.tsx coincide con ${patron}`).not.toMatch(patron);
+    }
+  });
+
+  it("el componente de landing vertical ya no tiene una seccion de testimonio ni referencia a `.quote`", () => {
+    // Cubre el requisito de que las paginas no se queden con una seccion
+    // vacia o un hueco de maquetacion: la seccion no esta condicionada a
+    // datos, esta eliminada del JSX.
+    const contenido = readFileSync(
+      join(process.cwd(), "src/components/vertical-landing.tsx"),
+      "utf8",
+    );
+    expect(contenido).not.toMatch(/\.quote\b/);
+    expect(contenido).not.toMatch(/testimonial/i);
+    for (const patron of FRAGMENTOS_PROHIBIDOS) {
+      expect(contenido, `vertical-landing.tsx coincide con ${patron}`).not.toMatch(patron);
     }
   });
 });
