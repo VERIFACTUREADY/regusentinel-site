@@ -8,21 +8,203 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 
-const S3_ENDPOINT = process.env.S3_ENDPOINT!;
-const S3_ACCESS_KEY = process.env.S3_ACCESS_KEY!;
-const S3_SECRET_KEY = process.env.S3_SECRET_KEY!;
-const S3_BUCKET = process.env.S3_BUCKET!;
-const S3_REGION = process.env.S3_REGION || "us-east-1";
+/**
+ * Resolucion de configuracion de almacenamiento: S3_* explicito primero,
+ * Tigris (integracion gestionada de Vercel) como respaldo.
+ *
+ * POR QUE HACE FALTA ESTO
+ * ------------------------
+ * Las cinco variables `S3_*` (heredadas de MinIO/producción propia) estaban
+ * puestas en "Todos los entornos" en Vercel con valores de PRUEBA
+ * (`S3_ENDPOINT=https://placeholder.r2.cloudflarestorage.com`,
+ * `S3_ACCESS_KEY=placeholder`, bucket de la marca anterior). Eso hacia que el
+ * Preview real firmara subidas contra un host que ni siquiera completa el
+ * TLS, mientras la integracion de Tigris -ya conectada y con variables
+ * gestionadas reales- se ignoraba por completo, porque este fichero solo
+ * leia `S3_*`.
+ *
+ * LA REGLA DE PRECEDENCIA
+ * ------------------------
+ *   1. Si CUALQUIER variable S3_* esta definida, es la UNICA fuente posible.
+ *      Tiene que estar COMPLETA y no parecer un valor de prueba, o falla.
+ *      Nunca se completa lo que falte con Tigris: eso enmascararia
+ *      exactamente el problema que esto corrige (production ya usa S3_*
+ *      completo y valido; el Preview con S3_* puesto pero roto NO debe
+ *      arrancar en silencio con otra cosa).
+ *   2. Solo cuando las cinco S3_* estan COMPLETAMENTE ausentes se prueba
+ *      Tigris. Si Tigris tampoco esta completo, falla igual.
+ *
+ * Consecuencia deliberada: mientras `S3_*` siga puesto (con el valor que
+ * sea) en el entorno de Preview de Vercel, este codigo NO usara Tigris. El
+ * primer despliegue tras este cambio seguira rechazando la subida -por
+ * diseño- hasta que alguien con acceso al panel quite o corrija esas cinco
+ * variables en Preview.
+ */
+export interface ConfiguracionAlmacenamiento {
+  endpoint: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+}
+
+export type ResultadoConfiguracionAlmacenamiento =
+  | { ok: true; config: ConfiguracionAlmacenamiento }
+  | { ok: false; error: string };
+
+/** Host fijo de Tigris (integracion de Vercel): no es una variable de entorno. */
+const TIGRIS_ENDPOINT = "https://fly.storage.tigris.dev";
+const TIGRIS_REGION = "auto";
+
+function vacio(valor: string | undefined): boolean {
+  return valor === undefined || valor.trim() === "";
+}
+
+/**
+ * Detecta valores de prueba obvios sin necesidad de una lista cerrada: el
+ * caso real que motiva esto llevaba literalmente la palabra "placeholder" en
+ * el access key y en el propio host del endpoint.
+ */
+function pareceValorDePrueba(valor: string): boolean {
+  return /placeholder/i.test(valor);
+}
+
+/**
+ * Resuelve la configuracion de almacenamiento segun la precedencia de arriba.
+ *
+ * Pura y sin memorizar: lee `process.env` en cada llamada, para que se pueda
+ * probar con distintas combinaciones sin reimportar el modulo. Nunca lanza:
+ * devuelve `{ ok: false, error }` con el motivo, mencionando siempre NOMBRES
+ * de variable, nunca sus valores.
+ */
+export function resolverConfiguracionAlmacenamiento(): ResultadoConfiguracionAlmacenamiento {
+  const legacy = {
+    S3_ENDPOINT: process.env.S3_ENDPOINT,
+    S3_ACCESS_KEY: process.env.S3_ACCESS_KEY,
+    S3_SECRET_KEY: process.env.S3_SECRET_KEY,
+    S3_BUCKET: process.env.S3_BUCKET,
+    S3_REGION: process.env.S3_REGION,
+  };
+  const camposLegacyRequeridos = ["S3_ENDPOINT", "S3_ACCESS_KEY", "S3_SECRET_KEY", "S3_BUCKET"] as const;
+  const legacyCompletamenteAusente = camposLegacyRequeridos.every((campo) => vacio(legacy[campo]));
+
+  if (!legacyCompletamenteAusente) {
+    // Hay AL MENOS una S3_* definida: es la unica fuente posible a partir de
+    // aqui. No se completa con Tigris bajo ningun concepto.
+    const faltantes = camposLegacyRequeridos.filter((campo) => vacio(legacy[campo]));
+    if (faltantes.length > 0) {
+      return {
+        ok: false,
+        error:
+          `Configuracion de almacenamiento incompleta: falta ${faltantes.join(", ")}. ` +
+          `Hay alguna variable S3_* definida, asi que no se completa con Tigris: ` +
+          `una configuracion S3_* parcial se trata como invalida, no como ausente.`,
+      };
+    }
+    const sospechosos = camposLegacyRequeridos.filter((campo) => pareceValorDePrueba(legacy[campo]!));
+    if (sospechosos.length > 0) {
+      return {
+        ok: false,
+        error:
+          `Configuracion de almacenamiento invalida: ${sospechosos.join(", ")} tiene ` +
+          `un valor de prueba ("placeholder"). Corrige el valor real en Vercel; no se ` +
+          `usan credenciales de ejemplo.`,
+      };
+    }
+    return {
+      ok: true,
+      config: {
+        endpoint: legacy.S3_ENDPOINT!,
+        accessKeyId: legacy.S3_ACCESS_KEY!,
+        secretAccessKey: legacy.S3_SECRET_KEY!,
+        bucket: legacy.S3_BUCKET!,
+        region: vacio(legacy.S3_REGION) ? "us-east-1" : legacy.S3_REGION!,
+      },
+    };
+  }
+
+  // Las cinco S3_* estan completamente ausentes: se intenta Tigris.
+  const tigris = {
+    TIGRIS_STORAGE_ACCESS_KEY_ID: process.env.TIGRIS_STORAGE_ACCESS_KEY_ID,
+    TIGRIS_STORAGE_SECRET_ACCESS_KEY: process.env.TIGRIS_STORAGE_SECRET_ACCESS_KEY,
+    TIGRIS_STORAGE_BUCKET: process.env.TIGRIS_STORAGE_BUCKET,
+  };
+  const camposTigrisRequeridos = [
+    "TIGRIS_STORAGE_ACCESS_KEY_ID",
+    "TIGRIS_STORAGE_SECRET_ACCESS_KEY",
+    "TIGRIS_STORAGE_BUCKET",
+  ] as const;
+  const tigrisFaltantes = camposTigrisRequeridos.filter((campo) => vacio(tigris[campo]));
+  if (tigrisFaltantes.length > 0) {
+    return {
+      ok: false,
+      error:
+        `No hay configuracion de almacenamiento: no hay ninguna variable S3_* y, ` +
+        `de Tigris, falta ${tigrisFaltantes.join(", ")}.`,
+    };
+  }
+  return {
+    ok: true,
+    config: {
+      endpoint: TIGRIS_ENDPOINT,
+      accessKeyId: tigris.TIGRIS_STORAGE_ACCESS_KEY_ID!,
+      secretAccessKey: tigris.TIGRIS_STORAGE_SECRET_ACCESS_KEY!,
+      bucket: tigris.TIGRIS_STORAGE_BUCKET!,
+      region: TIGRIS_REGION,
+    },
+  };
+}
+
+/** Se lanza cuando la configuracion de almacenamiento no es valida. */
+export class ErrorDeConfiguracionDeAlmacenamiento extends Error {
+  constructor(mensaje: string) {
+    super(mensaje);
+    this.name = "ErrorDeConfiguracionDeAlmacenamiento";
+  }
+}
+
+// Resuelta UNA VEZ al cargar el modulo: las variables de entorno no cambian
+// mientras el proceso vive.
+const RESOLUCION = resolverConfiguracionAlmacenamiento();
+
+/*
+ * El CLIENTE se construye siempre, aunque la configuracion no sea valida.
+ *
+ * El SDK de AWS no valida nada al construir `S3Client` -ni endpoint ni
+ * credenciales-, solo al mandar de verdad un comando. Lanzar aqui, al cargar
+ * el modulo, tumbaria cualquier cosa que importe este fichero sin ninguna
+ * S3_* ni Tigris definida, incluido `next build` (scripts/build-sin-base-de-datos.sh
+ * lo comprueba exactamente sin ninguna S3_*, a proposito). El fallo tiene que
+ * llegar en el primer intento REAL de subir, bajar o borrar algo -ver
+ * `configuracionValidada()`-, no al importar el modulo.
+ */
+const CONFIG_PARA_CLIENTE: ConfiguracionAlmacenamiento = RESOLUCION.ok
+  ? RESOLUCION.config
+  : { endpoint: "", region: "us-east-1", accessKeyId: "", secretAccessKey: "", bucket: "" };
 
 export const s3Client = new S3Client({
-  endpoint: S3_ENDPOINT,
-  region: S3_REGION,
+  endpoint: CONFIG_PARA_CLIENTE.endpoint,
+  region: CONFIG_PARA_CLIENTE.region,
   credentials: {
-    accessKeyId: S3_ACCESS_KEY,
-    secretAccessKey: S3_SECRET_KEY,
+    accessKeyId: CONFIG_PARA_CLIENTE.accessKeyId,
+    secretAccessKey: CONFIG_PARA_CLIENTE.secretAccessKey,
   },
   forcePathStyle: true, // Required for MinIO
 });
+
+/**
+ * Bucket activo, o lanza si la configuracion de almacenamiento no es valida.
+ *
+ * Se llama al PRINCIPIO de cada operacion de este fichero: es el punto donde
+ * de verdad falla-rapido, con un mensaje que nombra las variables, nunca sus
+ * valores.
+ */
+function configuracionValidada(): ConfiguracionAlmacenamiento {
+  if (!RESOLUCION.ok) {
+    throw new ErrorDeConfiguracionDeAlmacenamiento(RESOLUCION.error);
+  }
+  return RESOLUCION.config;
+}
 
 /**
  * Upload a file to S3/MinIO.
@@ -32,9 +214,10 @@ export async function uploadFile(
   body: Buffer | Uint8Array | ReadableStream | string,
   contentType: string
 ): Promise<void> {
+  const { bucket } = configuracionValidada();
   await s3Client.send(
     new PutObjectCommand({
-      Bucket: S3_BUCKET,
+      Bucket: bucket,
       Key: key,
       Body: body,
       ContentType: contentType,
@@ -63,6 +246,7 @@ export async function getPresignedUrl(
   key: string,
   opciones: { fileName?: string | null; mimeType?: string | null; expiresIn?: number } = {},
 ): Promise<string> {
+  const { bucket } = configuracionValidada();
   const { fileName, mimeType, expiresIn = 3600 } = opciones;
 
   // El nombre viaja entre comillas y además codificado, para que un nombre con
@@ -71,7 +255,7 @@ export async function getPresignedUrl(
   const disposition = `attachment; filename="${nombre}"; filename*=UTF-8''${encodeURIComponent(nombre)}`;
 
   const command = new GetObjectCommand({
-    Bucket: S3_BUCKET,
+    Bucket: bucket,
     Key: key,
     ResponseContentDisposition: disposition,
     // `octet-stream` salvo que el tipo esté confirmado: no se reenvía al
@@ -121,8 +305,9 @@ export async function crearPoliticaDeSubida(
   tamano: number,
   expiresInSegundos: number,
 ): Promise<PoliticaDeSubida> {
+  const { bucket } = configuracionValidada();
   const { url, fields } = await createPresignedPost(s3Client, {
-    Bucket: S3_BUCKET,
+    Bucket: bucket,
     Key: key,
     Conditions: [["content-length-range", tamano, tamano]],
     Expires: expiresInSegundos,
@@ -171,8 +356,9 @@ function esPrecondicion(err: unknown): boolean {
 export async function inspeccionarObjeto(
   key: string,
 ): Promise<{ tamano: number; etag: string } | null> {
+  const { bucket } = configuracionValidada();
   try {
-    const res = await s3Client.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+    const res = await s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
     if (!res.ETag) {
       throw new Error("El almacenamiento no ha devuelto la identidad del objeto (ETag).");
     }
@@ -208,9 +394,10 @@ export async function leerObjetoSiCoincide(
   etag: string,
   maxBytes: number,
 ): Promise<Buffer> {
+  const { bucket } = configuracionValidada();
   try {
     const res = await s3Client.send(
-      new GetObjectCommand({ Bucket: S3_BUCKET, Key: key, IfMatch: etag }),
+      new GetObjectCommand({ Bucket: bucket, Key: key, IfMatch: etag }),
     );
     if (res.ETag && res.ETag !== etag) {
       throw new ErrorDePrecondicion("El objeto ha cambiado desde que se inspeccionó.");
@@ -250,10 +437,11 @@ export async function crearObjetoSiNoExiste(
   cuerpo: Buffer,
   contentType: string,
 ): Promise<void> {
+  const { bucket } = configuracionValidada();
   try {
     await s3Client.send(
       new PutObjectCommand({
-        Bucket: S3_BUCKET,
+        Bucket: bucket,
         Key: key,
         Body: cuerpo,
         ContentType: contentType,
@@ -272,9 +460,10 @@ export async function crearObjetoSiNoExiste(
  * Delete a file from S3/MinIO.
  */
 export async function deleteFile(key: string): Promise<void> {
+  const { bucket } = configuracionValidada();
   await s3Client.send(
     new DeleteObjectCommand({
-      Bucket: S3_BUCKET,
+      Bucket: bucket,
       Key: key,
     })
   );
@@ -285,8 +474,9 @@ export async function deleteFile(key: string): Promise<void> {
  * Used by the bank pack generator to merge stored documents.
  */
 export async function downloadFile(key: string): Promise<Buffer> {
+  const { bucket } = configuracionValidada();
   const res = await s3Client.send(
-    new GetObjectCommand({ Bucket: S3_BUCKET, Key: key })
+    new GetObjectCommand({ Bucket: bucket, Key: key })
   );
   if (!res.Body) throw new Error(`S3 object ${key} has empty body`);
 
