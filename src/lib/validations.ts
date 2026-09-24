@@ -127,6 +127,15 @@ export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
 const taskStatuses = Object.values(TaskStatus) as [TaskStatus, ...TaskStatus[]];
 
+// Los usuarios creados normalmente usan CUID, pero la organización pública de
+// demo tiene tres identificadores estables para que su reset diario pueda
+// reconstruir relaciones deterministas. Se aceptan sólo esos ids excepcionales;
+// después, las rutas siguen comprobando la membresía activa en la organización.
+const assigneeIdSchema = z.union([
+  z.string().cuid("assigneeId no valido"),
+  z.enum(["demo-user-owner", "demo-user-operator", "demo-user-viewer"]),
+]);
+
 /** Fecha ISO opcional; acepta null para borrarla. */
 const optionalDate = z
   .union([z.string().datetime({ offset: true }), z.string().date(), z.null()])
@@ -141,7 +150,7 @@ export const createTaskSchema = z.object({
   title: z.string().trim().min(1, "El titulo es obligatorio").max(300, "Titulo demasiado largo"),
   description: z.string().max(5000, "Descripcion demasiado larga").nullish(),
   dueDate: optionalDate,
-  assigneeId: z.string().cuid("assigneeId no valido").nullish(),
+  assigneeId: assigneeIdSchema.nullish(),
   sortOrder: z.number().int().min(0).max(100000).optional(),
 });
 
@@ -150,7 +159,7 @@ export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export const updateTaskSchema = z.object({
   taskId: z.string().cuid("taskId no valido"),
   status: z.enum(taskStatuses, { errorMap: () => ({ message: "Estado no valido" }) }).optional(),
-  assigneeId: z.string().cuid("assigneeId no valido").nullish(),
+  assigneeId: assigneeIdSchema.nullish(),
   dependsOnId: z.string().cuid("dependsOnId no valido").nullish(),
   blockReason: z.string().max(500).nullish(),
   blockedUntil: optionalDate,
@@ -169,7 +178,7 @@ export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
 export const batchTaskSchema = z.object({
   taskIds: z.array(z.string().cuid()).min(1, "1-100 tareas requeridas").max(100, "1-100 tareas requeridas"),
   status: z.enum(taskStatuses, { errorMap: () => ({ message: "Estado no valido" }) }).optional(),
-  assigneeId: z.string().cuid("assigneeId no valido").nullish(),
+  assigneeId: assigneeIdSchema.nullish(),
 });
 
 export type BatchTaskInput = z.infer<typeof batchTaskSchema>;
