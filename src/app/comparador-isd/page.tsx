@@ -9,6 +9,8 @@ import {
 } from "@/lib/isd-calculator";
 import { CCAA_CONTENT } from "@/lib/ccaa-content";
 import { ComparadorClient } from "./comparador-client";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Comparador ISD por Comunidad Autónoma 2025 — Cuánto se paga en cada CCAA",
@@ -30,7 +32,7 @@ export const metadata: Metadata = {
     type: "website",
   },
   alternates: {
-    canonical: "https://bariturpro.com/comparador-isd",
+    canonical: "https://heredia.app/comparador-isd",
   },
 };
 
@@ -125,9 +127,14 @@ export default function ComparadorISDPage() {
       />
 
       <div className="min-h-screen bg-gray-50">
+        <SiteHeader />
+
         {/* Hero */}
-        <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
-          <div className="max-w-5xl mx-auto px-4 py-16 sm:py-20">
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-blue-900 text-white">
+          <div className="absolute inset-0 dot-grid-light opacity-30" />
+          <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl animate-float-slow" />
+          <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
+          <div className="relative max-w-5xl mx-auto px-4 py-16 sm:py-20">
             <div className="max-w-3xl">
               <div className="inline-flex items-center gap-2 bg-blue-500/20 border border-blue-400/30 rounded-full px-4 py-1.5 text-sm text-blue-300 mb-6">
                 <span>Actualizado 2025</span>
@@ -156,7 +163,7 @@ export default function ComparadorISDPage() {
                   href="/#demo"
                   className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-sm transition"
                 >
-                  Ver BARITUR PRO gratis
+                  Ver Heredia gratis
                 </Link>
               </div>
             </div>
@@ -296,7 +303,7 @@ export default function ComparadorISDPage() {
           <div className="bg-gradient-to-br from-slate-900 to-blue-900 rounded-2xl p-8 text-white text-center">
             <h2 className="text-2xl font-bold mb-3">¿Gestorías y funerarias?</h2>
             <p className="text-blue-200 mb-6 max-w-lg mx-auto">
-              BARITUR PRO automatiza el seguimiento de plazos, genera borradores del Modelo 650 y
+              Heredia automatiza el seguimiento de plazos, genera borradores del Modelo 650 y
               centraliza toda la documentación de cada expediente.
             </p>
             <Link
@@ -307,6 +314,7 @@ export default function ComparadorISDPage() {
             </Link>
           </div>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

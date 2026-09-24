@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedUser, requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const verified = await getVerifiedUser();
+  if (!verified) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+  const session = { user: verified };
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
@@ -54,10 +54,9 @@ const updateSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id || !session.user.orgId) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
+  const auth = await requireSession();
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const body = await req.json();
   const parsed = updateSchema.safeParse(body);

@@ -30,8 +30,23 @@ const MONTH_NAMES = [
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
+/**
+ * Clave de dia en horario LOCAL.
+ *
+ * NO usar `toISOString()`. Las celdas se construyen con `new Date(anio, mes,
+ * dia)`, que es medianoche local; `toISOString()` la pasa a UTC, y en Espana
+ * —UTC+1 o UTC+2— medianoche local es el DIA ANTERIOR en UTC. El resultado era
+ * un calendario entero desplazado: las tareas del dia 6 se pintaban en la
+ * casilla del 5, y el circulo de "hoy" caia en la casilla de manana.
+ *
+ * No se detectaba porque los servidores y la integracion continua corren en
+ * UTC, donde el desplazamiento es cero. Solo lo veia el usuario espanol, que es
+ * todo el mercado de este producto.
+ */
 function toYMD(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
 }
 
 function buildMonthGrid(year: number, month: number): (Date | null)[] {
@@ -85,7 +100,18 @@ function DayDetail({
               {d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric" })}
             </h3>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+          {/*
+            El boton solo contenia "×", que como nombre accesible es
+            literalmente el caracter de multiplicacion: inservible para un lector
+            de pantalla. `aria-hidden` en el simbolo y el nombre en `aria-label`.
+          */}
+          <button
+            onClick={onClose}
+            aria-label="Cerrar detalle"
+            className="text-gray-400 hover:text-gray-600 text-xl"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -141,27 +167,65 @@ export function CalendarClient() {
   const [month, setMonth] = useState(now.getMonth());
   const [data, setData] = useState<CalendarData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [filterAssignee, setFilterAssignee] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
 
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
 
+  /**
+   * Antes esto terminaba en `.catch(() => {})`.
+   *
+   * Con la peticion caida —sesion caducada, error del servidor, red— `data` se
+   * quedaba en null y la interfaz pintaba un calendario perfectamente vacio con
+   * los tres contadores a cero. Indistinguible de "no tienes ningun plazo". El
+   * usuario cerraba tranquilo una pantalla que le estaba ocultando sus
+   * vencimientos.
+   *
+   * Un fallo tiene que verse. Se comprueba `r.ok` —una respuesta 401 o 500 con
+   * cuerpo JSON pasaba por buena y dejaba `byDate` sin definir— y se ofrece
+   * reintentar.
+   */
   const fetchData = useCallback(() => {
     const ctrl = new AbortController();
     setLoading(true);
+    setError(null);
     const params = new URLSearchParams({ month: monthKey });
     if (filterAssignee) params.set("assignee", filterAssignee);
     if (filterCategory) params.set("category", filterCategory);
 
     fetch(`/api/tasks/calendar?${params}`, { signal: ctrl.signal })
-      .then((r) => r.json())
-      .then((d: CalendarData) => setData(d))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${r.status}.`,
+          );
+        }
+        return r.json() as Promise<CalendarData>;
+      })
+      .then((d) => {
+        if (!d || typeof d.byDate !== "object") {
+          throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        }
+        setData(d);
+      })
+      .catch((e: unknown) => {
+        // Cambiar de mes rapido aborta la peticion anterior: eso no es un error
+        // que deba ensenarse.
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setData(null);
+        setError(e instanceof Error ? e.message : "No se han podido cargar los plazos.");
+      })
+      .finally(() => {
+        if (!ctrl.signal.aborted) setLoading(false);
+      });
 
     return () => ctrl.abort();
-  }, [monthKey, filterAssignee, filterCategory]);
+  }, [monthKey, filterAssignee, filterCategory, reintento]);
 
   useEffect(() => {
     const cleanup = fetchData();
@@ -206,9 +270,15 @@ export function CalendarClient() {
           <p className="text-sm text-gray-500 mt-0.5">Deadlines y fechas límite de todas las tareas activas</p>
         </div>
         <div className="flex items-center gap-3">
+          {/*
+            Antes esto era siempre `scope=me`. Con el filtro en "Todos los
+            asignados" —que es el valor por defecto— la pantalla mostraba los
+            plazos de todo el equipo y el fichero descargado traia solo los
+            propios, sin avisar de nada. Exportar debe entregar lo que se ve.
+          */}
           <a
-            href="/api/tasks/ical?scope=me"
-            download="plazos-baritur.ics"
+            href={`/api/tasks/ical?scope=${filterAssignee === "me" ? "me" : "all"}`}
+            download="plazos-heredia.ics"
             className="inline-flex items-center gap-1.5 text-sm text-gray-600 border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 transition"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -225,22 +295,40 @@ export function CalendarClient() {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="text-2xl font-bold text-red-700">{stats.overdue}</div>
+          <div className="text-2xl font-bold text-red-700">{error ? "—" : stats.overdue}</div>
           <div className="text-xs text-red-600 mt-0.5">Vencidos</div>
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-          <div className="text-2xl font-bold text-amber-700">{stats.thisWeek}</div>
+          <div className="text-2xl font-bold text-amber-700">{error ? "—" : stats.thisWeek}</div>
           <div className="text-xs text-amber-600 mt-0.5">Esta semana</div>
         </div>
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="text-2xl font-bold text-blue-700">{stats.thisMonth}</div>
+          <div className="text-2xl font-bold text-blue-700">{error ? "—" : stats.thisMonth}</div>
           <div className="text-xs text-blue-600 mt-0.5">Este mes</div>
         </div>
       </div>
 
       {/* Filters */}
+      {/*
+        Los dos filtros llevan `<label htmlFor>` con su `id`.
+
+        EL DEFECTO QUE CORRIGE
+        ----------------------
+        Eran dos `<select>` sin nombre accesible ninguno: un lector de pantalla
+        anunciaba "lista" dos veces seguidas sin decir de que, y las pruebas
+        tenian que pedirlos por posicion (`select >> nth=0`), que se rompe en
+        cuanto alguien añade otro desplegable a la pantalla.
+
+        Las etiquetas van en `sr-only`: presentes en el arbol de accesibilidad,
+        sin alterar el diseño. `title` NO sirve aqui —es una ayuda emergente,
+        no un nombre—, por eso no se usa.
+      */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <label htmlFor="calendarioResponsable" className="sr-only">
+          Filtrar por responsable
+        </label>
         <select
+          id="calendarioResponsable"
           value={filterAssignee}
           onChange={(e) => setFilterAssignee(e.target.value)}
           className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -248,7 +336,11 @@ export function CalendarClient() {
           <option value="">Todos los asignados</option>
           <option value="me">Solo mis tareas</option>
         </select>
+        <label htmlFor="calendarioCategoria" className="sr-only">
+          Filtrar por categoria
+        </label>
         <select
+          id="calendarioCategoria"
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value)}
           className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -317,6 +409,36 @@ export function CalendarClient() {
           <div className="h-64 flex items-center justify-center text-gray-400 text-sm">
             Cargando...
           </div>
+        ) : error ? (
+          /*
+            Un calendario vacio no puede ser la forma de comunicar un fallo: es
+            exactamente igual que un mes sin plazos, y el usuario se va creyendo
+            que no debe nada.
+          */
+          <div
+            role="alert"
+            data-testid="calendario-error"
+            className="h-64 flex flex-col items-center justify-center gap-3 px-6 text-center"
+          >
+            <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.5 0l-7.1 12.25A2 2 0 004.99 19z" />
+            </svg>
+            <div>
+              <p className="text-sm font-medium text-gray-900">
+                No se han podido cargar los plazos
+              </p>
+              <p className="text-xs text-gray-500 mt-1">{error}</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Este mes puede tener vencimientos que no se estan mostrando.
+              </p>
+            </div>
+            <button
+              onClick={() => setReintento((n) => n + 1)}
+              className="text-sm bg-primary text-white rounded-md px-4 py-1.5 hover:opacity-90 transition"
+            >
+              Reintentar
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-7">
             {grid.map((date, idx) => {
@@ -377,6 +499,29 @@ export function CalendarClient() {
                 </button>
               );
             })}
+          </div>
+        )}
+
+        {/*
+          Estado vacio explicito. Una rejilla de casillas en blanco no dice si no
+          hay plazos o si el filtro los ha escondido todos; con filtros puestos,
+          lo segundo es lo habitual.
+        */}
+        {!loading && !error && Object.keys(byDate).length === 0 && (
+          <div className="px-5 py-6 border-t text-center">
+            <p className="text-sm text-gray-500">
+              {filterAssignee || filterCategory
+                ? "Ningun plazo en este mes con los filtros aplicados."
+                : "Ningun plazo en este mes."}
+            </p>
+            {(filterAssignee || filterCategory) && (
+              <button
+                onClick={() => { setFilterAssignee(""); setFilterCategory(""); }}
+                className="text-xs text-primary hover:underline mt-1"
+              >
+                Quitar los filtros
+              </button>
+            )}
           </div>
         )}
 

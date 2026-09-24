@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runDeadlineNotifications } from "@/lib/notifications";
+import { validateCronSecret } from "@/lib/cron-auth";
 
 /**
  * Scheduled (Vercel Cron) endpoint that dispatches ISD deadline alerts
@@ -12,9 +13,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  const auth = req.headers.get("authorization");
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!validateCronSecret(req)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 

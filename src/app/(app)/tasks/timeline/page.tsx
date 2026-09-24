@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoError } from "@/components/ui/carga-remota";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { TASK_STATUS_COLORS, CATEGORY_LABELS } from "@/lib/constants";
@@ -25,14 +26,38 @@ interface TimelineData {
 export default function TimelinePage() {
   const [data, setData] = useState<TimelineData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [reintento, setReintento] = useState(0);
   const [assignee, setAssignee] = useState("");
   const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
 
+  /*
+   * El fallo al cargar compañeros se dice, no se traga.
+   *
+   * Era `.catch(() => {})` con `r.ok ? r.json() : []`: si la peticion fallaba,
+   * el desplegable de responsable se quedaba con dos opciones y el usuario
+   * concluia que ya no hay nadie mas en la gestoria. No sustituye a la
+   * pantalla —el cronograma carga igual—, pero se avisa.
+   */
+  const [errorMiembros, setErrorMiembros] = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/org/members")
-      .then((r) => (r.ok ? r.json() : []))
-      .then(setMembers)
-      .catch(() => {});
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`El servidor ha respondido ${r.status}.`);
+        return r.json();
+      })
+      .then((data) => {
+        setErrorMiembros(null);
+        setMembers(Array.isArray(data) ? data : []);
+      })
+      .catch((e: unknown) => {
+        setErrorMiembros(
+          `No se ha podido cargar la lista de compañeros: ${
+            e instanceof Error ? e.message : "error de red"
+          }. El filtro por responsable queda incompleto.`,
+        );
+      });
   }, []);
 
   useEffect(() => {
@@ -40,11 +65,29 @@ export default function TimelinePage() {
     const params = new URLSearchParams();
     if (assignee) params.set("assignee", assignee);
     fetch(`/api/tasks/timeline?${params}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setData(d); })
-      .catch(() => {})
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 401
+              ? "Tu sesion ha caducado. Vuelve a entrar."
+              : `El servidor ha respondido ${r.status}.`,
+          );
+        }
+        return r.json();
+      })
+      .then((d) => {
+        if (!d) throw new Error("La respuesta del servidor no tiene el formato esperado.");
+        setErrorCarga(null);
+        setData(d);
+      })
+      .catch((e: unknown) => {
+        // No se conservan los datos anteriores: enseñarlos tras un fallo los
+        // presenta como actuales cuando ya no se sabe si lo son.
+        setData(null);
+        setErrorCarga(e instanceof Error ? e.message : "Error de red. Comprueba tu conexion.");
+      })
       .finally(() => setLoading(false));
-  }, [assignee]);
+  }, [assignee, reintento]);
 
   const grouped = useMemo(() => {
     if (!data) return {};
@@ -141,27 +184,48 @@ export default function TimelinePage() {
 
       {/* Filters */}
       <div className="flex gap-3 mb-4">
-        <select
-          value={assignee}
-          onChange={(e) => setAssignee(e.target.value)}
-          className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-        >
-          <option value="">Todos</option>
-          <option value="me">Mis tareas</option>
-          {members.map((m) => (
-            <option key={m.id} value={m.id}>{m.name || m.email}</option>
-          ))}
-        </select>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="cronogramaResponsable" className="text-xs font-medium text-gray-500">
+            Responsable
+          </label>
+          <select
+            id="cronogramaResponsable"
+            value={assignee}
+            onChange={(e) => setAssignee(e.target.value)}
+            className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          >
+            <option value="">Todos</option>
+            <option value="me">Mis tareas</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>{m.name || m.email}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
+      {errorMiembros && (
+        <p
+          role="status"
+          data-testid="aviso-miembros"
+          className="mb-4 text-sm rounded-md px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200"
+        >
+          {errorMiembros}
+        </p>
+      )}
+
       {/* Timeline */}
-      {loading ? (
+      {errorCarga ? (
+        <AvisoError mensaje={errorCarga} que="la linea de tiempo" onReintentar={() => setReintento((n) => n + 1)} />
+      ) : loading ? (
         <div className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">
           Cargando...
         </div>
       ) : !data || data.tasks.length === 0 ? (
-        <div className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400">
-          No hay tareas con plazos
+        <div
+          data-testid="carga-vacio"
+          className="bg-white rounded-lg border px-4 py-12 text-center text-gray-400"
+        >
+          {assignee ? "No hay tareas con plazos para este responsable" : "No hay tareas con plazos"}
         </div>
       ) : (() => {
         const now = new Date();

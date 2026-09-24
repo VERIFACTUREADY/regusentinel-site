@@ -1,18 +1,18 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { redirect, notFound } from "next/navigation";
 import { TemplateEditor } from "./template-editor";
 
 export const metadata = {
-  title: "Editar plantilla — BARITUR PRO",
+  title: "Editar plantilla — Heredia",
   robots: { index: false },
 };
 
-export default async function TemplateDetailPage({ params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) redirect("/login");
+export default async function TemplateDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const session = await getVerifiedSession();
+  if (!session) redirect("/login");
   if (!hasPermission(session.user.role, "templates.read")) redirect("/dashboard");
 
   const template = await prisma.template.findFirst({

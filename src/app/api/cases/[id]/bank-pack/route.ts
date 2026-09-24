@@ -1,22 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
 import { generateBankPackPdf, generateBankPackZip } from "@/lib/bank-pack-export";
 import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "cases.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const auth = await requireOrgPermission("cases.read");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const format = (req.nextUrl.searchParams.get("format") || "pdf").toLowerCase();
   if (format !== "pdf" && format !== "zip") {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { validateCronSecret } from "@/lib/cron-auth";
 
 /**
  * Daily cron that flags leads stuck in NEW status for ≥ 2 days and sends
@@ -11,9 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  const auth = req.headers.get("authorization");
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!validateCronSecret(req)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
@@ -36,7 +35,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, staleCount: 0 });
   }
 
-  const baseUrl = process.env.NEXTAUTH_URL || "https://baritur.pro";
+  const baseUrl = process.env.NEXTAUTH_URL || "https://heredia.app";
 
   const rows = stale
     .map((r) => {
@@ -81,13 +80,13 @@ export async function GET(req: NextRequest) {
         </a>
       </p>
       <hr style="border:none;border-top:1px solid #eee;margin-top:32px;"/>
-      <p style="color:#999;font-size:12px;">BARITUR PRO · Recordatorio automático de leads sin contactar</p>
+      <p style="color:#999;font-size:12px;">Heredia · Recordatorio automático de leads sin contactar</p>
     </div>
   `;
 
   await sendEmail({
     to: notifyEmail,
-    subject: `⚠️ ${stale.length} lead${stale.length > 1 ? "s" : ""} sin contactar — BARITUR PRO`,
+    subject: `⚠️ ${stale.length} lead${stale.length > 1 ? "s" : ""} sin contactar — Heredia`,
     html,
   });
 

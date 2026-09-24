@@ -49,9 +49,9 @@ const plans = [
     features: [
       "Hasta 20 usuarios",
       "200 expedientes/mes incluidos",
-      "Roles y permisos avanzados, SSO",
-      "API / webhooks + integraciones",
-      "DPA extendido + auditorías",
+      "Roles y permisos avanzados (5 niveles)",
+      "Integraciones salientes: Slack, Teams y webhook propio",
+      "Registro de auditoría exportable",
       "Onboarding asistido + formación",
       "Soporte prioritario dedicado",
     ],
@@ -142,14 +142,21 @@ export function PricingTable() {
               )}
 
               <Link
-                href="/#demo"
-                className={`block w-full text-center py-3 rounded-lg font-semibold text-sm transition mb-8 ${
+                href="/onboarding"
+                className={`block w-full text-center py-3 rounded-lg font-semibold text-sm transition mb-2 ${
                   plan.highlight
                     ? "bg-primary text-white hover:bg-primary/90"
                     : "border-2 border-primary text-primary hover:bg-primary/5"
                 }`}
               >
-                Solicitar demo
+                Empezar 14 días gratis
+              </Link>
+
+              <Link
+                href="/#demo"
+                className="block w-full text-center py-2 text-xs text-gray-500 hover:text-gray-700 mb-6"
+              >
+                o solicitar una demo guiada
               </Link>
 
               <ul className="space-y-3">
@@ -171,7 +178,7 @@ export function PricingTable() {
       <div className="mt-8 border-2 border-gray-800 rounded-xl p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <p className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-1">Servicio gestionado</p>
-          <h4 className="text-lg font-bold text-gray-900 mb-2">BARITUR MANAGED</h4>
+          <h4 className="text-lg font-bold text-gray-900 mb-2">Heredia Managed</h4>
           <p className="text-sm text-gray-600 max-w-xl">
             Operación administrativa coordinada por expediente: intake, documentación, pack banco,
             plazos y comunicación con familia. Sin asesoría legal/fiscal.

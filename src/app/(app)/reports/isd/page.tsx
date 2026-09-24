@@ -1,13 +1,13 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { isdDeadlineFor, isdExtensionRequestDeadlineFor } from "@/lib/deadline-engine";
 
 export const metadata: Metadata = {
-  title: "Análisis ISD — BARITUR PRO",
+  title: "Análisis ISD — Heredia",
   robots: { index: false },
 };
 
@@ -17,7 +17,7 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 
 function isdDeadline(deathDate: Date): Date {
   const d = new Date(deathDate);
-  d.setMonth(d.getMonth() + 6);
+  return isdDeadlineFor(deathDate);
   return d;
 }
 
@@ -58,8 +58,8 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default async function IsdReportPage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) redirect("/login");
+  const session = await getVerifiedSession();
+  if (!session) redirect("/login");
   if (!hasPermission(session.user.role, "cases.read")) redirect("/dashboard");
 
   const orgId = session.user.orgId;

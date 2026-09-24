@@ -11,17 +11,18 @@ export default function AppleIcon() {
           width: 180,
           height: 180,
           borderRadius: 36,
-          background: "linear-gradient(135deg, #1e40af, #1e3a8a)",
+          background: "linear-gradient(135deg, #2563eb 0%, #6366f1 100%)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           color: "white",
-          fontSize: 100,
+          fontSize: 120,
           fontWeight: 800,
           fontFamily: "Inter, system-ui, sans-serif",
+          letterSpacing: "-0.04em",
         }}
       >
-        B
+        H
       </div>
     ),
     { ...size }

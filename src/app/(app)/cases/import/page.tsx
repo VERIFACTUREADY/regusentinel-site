@@ -14,12 +14,47 @@ interface ImportResult {
   refs: string[];
 }
 
+/**
+ * Lo que puede venir en el cuerpo de `/api/cases/import`.
+ *
+ * Todo opcional a proposito: el cliente no puede dar por hecho la forma de una
+ * respuesta que tambien puede ser un error, y darla por hecha es como se
+ * acaban leyendo `undefined` como si fueran datos.
+ */
+interface RespuestaImportacion {
+  error?: string;
+  valid?: number;
+  total?: number;
+  errors?: { row: number; field: string; message: string }[];
+  created?: number;
+  refs?: string[];
+}
+
 const TEMPLATE_CSV = `fallecido,contacto,email_contacto,telefono_contacto,provincia,categorias,fecha_fallecimiento,dni_fallecido,parentesco,urgente,notas
-"Garcia Lopez, Maria","Perez Garcia, Antonio",antonio@example.com,+34612345678,Madrid,"BANCOS,SEGUROS",2026-04-01,12345678A,Hijo,false,"Caso estandar"
+"Garcia Lopez, Maria","Perez Garcia, Antonio",antonio@example.com,+34612345678,Madrid,"BANCOS,SEGUROS",2026-04-01,12345678A,Hijo,false,"Caso estándar"
 "Fernandez Ruiz, Jose","Fernandez Martin, Laura",laura@example.com,,Barcelona,SUMINISTROS,2026-03-15,87654321B,Hija,true,"Urgente por plazos"`;
 
+type Payload =
+  | { kind: "csv"; csv: string }
+  | { kind: "xlsx"; base64: string };
+
+/** Las mismas del `accept` del input, pero comprobadas de verdad. */
+const EXTENSIONES_ADMITIDAS = ["csv", "txt", "xlsx", "xls"];
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
+  }
+  return btoa(binary);
+}
+
 export default function ImportCasesPage() {
-  const [csv, setCsv] = useState("");
+  const [payload, setPayload] = useState<Payload | null>(null);
+  const [csvPreview, setCsvPreview] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
   const [step, setStep] = useState<"input" | "validating" | "validated" | "importing" | "done">("input");
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -29,12 +64,103 @@ export default function ImportCasesPage() {
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setCsv(ev.target?.result as string);
-    };
-    reader.readAsText(file, "utf-8");
+    const ext = file.name.toLowerCase().split(".").pop() ?? "";
+    setError(null);
+    setValidation(null);
+
+    /*
+     * El `accept` del input es una sugerencia del navegador, no una
+     * comprobacion: se puede elegir "todos los archivos" y colar un PDF. Sin
+     * esto el PDF se leia como texto y acababa en el servidor como CSV, que
+     * respondia "No se pudo leer el CSV" — verdad a medias que no dice al
+     * usuario lo unico que necesita saber: que ese tipo de archivo no vale.
+     */
+    if (!EXTENSIONES_ADMITIDAS.includes(ext)) {
+      setPayload(null);
+      setCsvPreview("");
+      setFileName(null);
+      setError(
+        `El archivo «${file.name}» no tiene una extension admitida. Acepta ${EXTENSIONES_ADMITIDAS.map((x) => `.${x}`).join(", ")}.`,
+      );
+      e.target.value = "";
+      return;
+    }
+
+    setFileName(file.name);
+
+    if (ext === "xlsx" || ext === "xls") {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const buffer = ev.target?.result as ArrayBuffer | null;
+        if (!buffer) {
+          setError("No se pudo leer el archivo Excel.");
+          return;
+        }
+        const base64 = arrayBufferToBase64(buffer);
+        setPayload({ kind: "xlsx", base64 });
+        setCsvPreview("");
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const csv = (ev.target?.result as string | null) ?? "";
+        setCsvPreview(csv);
+        if (!csv.trim()) {
+          /*
+           * Con un fichero vacio el boton "Validar archivo" se quedaba
+           * desactivado y no se decia por que: el usuario pulsaba sin efecto y
+           * no tenia forma de saber si la pantalla estaba rota o el archivo.
+           */
+          setPayload(null);
+          setError(`El archivo «${file.name}» esta vacio: no contiene ninguna fila.`);
+          return;
+        }
+        setPayload({ kind: "csv", csv });
+      };
+      reader.readAsText(file, "utf-8");
+    }
     e.target.value = "";
+  }
+
+  function handleTextarea(csv: string) {
+    setCsvPreview(csv);
+    setPayload(csv.trim() ? { kind: "csv", csv } : null);
+    setFileName(null);
+    setValidation(null);
+  }
+
+  function payloadBody(extra: object = {}): string {
+    if (!payload) return JSON.stringify(extra);
+    return JSON.stringify(
+      payload.kind === "csv"
+        ? { csv: payload.csv, ...extra }
+        : { xlsx: payload.base64, ...extra },
+    );
+  }
+
+  /**
+   * Lee el cuerpo sin dar por hecho que es JSON.
+   *
+   * Un 500 de Next devuelve HTML: `res.json()` lanzaba y el `catch` de mas
+   * abajo lo presentaba como "Error de conexión". El usuario buscaba su wifi
+   * cuando el problema estaba en el servidor.
+   */
+  async function cuerpoJson(res: Response): Promise<RespuestaImportacion | null> {
+    try {
+      return (await res.json()) as RespuestaImportacion;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Traduce la respuesta a lo que pinta el bloque de validacion. */
+  function comoValidacion(data: RespuestaImportacion): ValidationResult {
+    return {
+      valid: typeof data.valid === "number" ? data.valid : 0,
+      errors: Array.isArray(data.errors) ? data.errors : [],
+      total: typeof data.total === "number" ? data.total : 0,
+    };
   }
 
   async function handleValidate() {
@@ -45,18 +171,23 @@ export default function ImportCasesPage() {
       const res = await fetch("/api/cases/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ csv, validate: true }),
+        body: payloadBody({ validate: true }),
       });
-      const data = await res.json();
-      if (!res.ok && !data.errors) {
-        setError(data.error || "Error de validacion");
+      const data = await cuerpoJson(res);
+      if (!res.ok && !data?.errors) {
+        setError(data?.error || `El servidor ha respondido ${res.status}. No se ha validado nada.`);
         setStep("input");
         return;
       }
-      setValidation(data);
+      if (!data) {
+        setError("La respuesta del servidor no tiene el formato esperado.");
+        setStep("input");
+        return;
+      }
+      setValidation(comoValidacion(data));
       setStep("validated");
     } catch {
-      setError("Error de conexion");
+      setError("No se ha podido contactar con el servidor. Comprueba tu conexion.");
       setStep("input");
     }
   }
@@ -68,23 +199,30 @@ export default function ImportCasesPage() {
       const res = await fetch("/api/cases/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ csv }),
+        body: payloadBody(),
       });
-      const data = await res.json();
+      const data = await cuerpoJson(res);
       if (!res.ok) {
-        if (data.errors) {
-          setValidation(data);
+        if (data?.errors) {
+          setValidation(comoValidacion(data));
           setStep("validated");
         } else {
-          setError(data.error || "Error al importar");
+          // Nunca se pasa a "done" desde aqui: anunciar expedientes
+          // importados que no existen es el peor final posible.
+          setError(data?.error || `El servidor ha respondido ${res.status}. No se ha importado nada.`);
           setStep("validated");
         }
         return;
       }
-      setResult(data);
+      if (!data || typeof data.created !== "number") {
+        setError("La respuesta del servidor no tiene el formato esperado. Revisa el listado antes de reintentar.");
+        setStep("validated");
+        return;
+      }
+      setResult({ created: data.created, refs: Array.isArray(data.refs) ? data.refs : [] });
       setStep("done");
     } catch {
-      setError("Error de conexion");
+      setError("No se ha podido contactar con el servidor. No se ha importado nada.");
       setStep("validated");
     }
   }
@@ -94,10 +232,12 @@ export default function ImportCasesPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "plantilla-importacion-baritur.csv";
+    a.download = "plantilla-importacion-heredia.csv";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 500);
   }
+
+  const canValidate = payload !== null && (payload.kind === "xlsx" || (payload.kind === "csv" && payload.csv.trim().length > 0));
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -105,7 +245,7 @@ export default function ImportCasesPage() {
         <div>
           <h1 className="text-2xl font-bold">Importar expedientes</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Importa expedientes en bloque desde un archivo CSV
+            Importa expedientes en bloque desde un archivo Excel (.xlsx) o CSV
           </p>
         </div>
         <Link href="/cases" className="text-sm text-primary hover:underline">
@@ -132,10 +272,17 @@ export default function ImportCasesPage() {
                 Ver expedientes
               </Link>
               <button
-                onClick={() => { setCsv(""); setStep("input"); setResult(null); setValidation(null); }}
+                onClick={() => {
+                  setPayload(null);
+                  setCsvPreview("");
+                  setFileName(null);
+                  setStep("input");
+                  setResult(null);
+                  setValidation(null);
+                }}
                 className="px-4 py-2 border text-sm rounded-md hover:bg-gray-50"
               >
-                Importar mas
+                Importar más
               </button>
             </div>
           </div>
@@ -144,9 +291,11 @@ export default function ImportCasesPage() {
         <>
           {/* Instructions */}
           <div className="bg-white rounded-lg border p-6 mb-6">
-            <h2 className="font-semibold mb-3">Formato del CSV</h2>
+            <h2 className="font-semibold mb-3">Formato del archivo</h2>
             <p className="text-sm text-gray-600 mb-3">
-              El archivo debe tener las siguientes columnas (separadas por coma o punto y coma):
+              Acepta <strong>.xlsx</strong>, <strong>.xls</strong> y <strong>.csv</strong>.
+              La primera fila debe tener las cabeceras (separadas por coma o punto y coma si es CSV).
+              Sólo se lee la primera hoja del Excel.
             </p>
             <div className="overflow-x-auto">
               <table className="text-xs w-full">
@@ -159,8 +308,8 @@ export default function ImportCasesPage() {
                 </thead>
                 <tbody className="text-gray-600">
                   {[
-                    ["fallecido", "Si", "Garcia Lopez, Maria"],
-                    ["contacto", "Si", "Perez Garcia, Antonio"],
+                    ["fallecido", "Sí", "García López, María"],
+                    ["contacto", "Sí", "Pérez García, Antonio"],
                     ["email_contacto", "Email o tel.", "antonio@example.com"],
                     ["telefono_contacto", "Email o tel.", "+34612345678"],
                     ["provincia", "No", "Madrid"],
@@ -168,7 +317,7 @@ export default function ImportCasesPage() {
                     ["fecha_fallecimiento", "No", "2026-04-01"],
                     ["dni_fallecido", "No", "12345678A"],
                     ["parentesco", "No", "Hijo"],
-                    ["urgente", "No", "true / si / 1"],
+                    ["urgente", "No", "true / sí / 1"],
                     ["notas", "No", "Texto libre"],
                   ].map(([col, req, ex]) => (
                     <tr key={col} className="border-b last:border-0">
@@ -187,24 +336,48 @@ export default function ImportCasesPage() {
 
           {/* Input area */}
           <div className="bg-white rounded-lg border p-6 mb-6">
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-3 mb-4 flex-wrap">
               <label className="inline-block px-4 py-2 bg-primary text-white rounded-md text-sm cursor-pointer hover:bg-primary/90">
-                Seleccionar archivo CSV
-                <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleFileUpload} />
+                Seleccionar archivo
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv,.txt"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
               </label>
-              <span className="text-sm text-gray-400">o pega el contenido directamente</span>
+              <span className="text-sm text-gray-400">o pega el contenido CSV abajo</span>
+              {fileName && (
+                <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded inline-flex items-center gap-1.5">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  {fileName}
+                </span>
+              )}
             </div>
-            <textarea
-              value={csv}
-              onChange={(e) => setCsv(e.target.value)}
-              rows={10}
-              placeholder={`fallecido,contacto,email_contacto,telefono_contacto,provincia,categorias\n"Garcia Lopez, Maria","Perez Garcia, Antonio",antonio@example.com,+34612345678,Madrid,"BANCOS,SEGUROS"`}
-              className="w-full px-3 py-2 border rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
+            {payload?.kind === "xlsx" ? (
+              <div className="border rounded-md bg-slate-50 px-3 py-6 text-sm text-slate-500 text-center">
+                Archivo Excel listo. <strong>Validar</strong> para revisar las filas que se importarán.
+              </div>
+            ) : (
+              <textarea
+                value={csvPreview}
+                onChange={(e) => handleTextarea(e.target.value)}
+                rows={10}
+                placeholder={`fallecido,contacto,email_contacto,telefono_contacto,provincia,categorias\n"García López, María","Pérez García, Antonio",antonio@example.com,+34612345678,Madrid,"BANCOS,SEGUROS"`}
+                className="w-full px-3 py-2 border rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            )}
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-sm text-red-700">
+            <div
+              role="alert"
+              data-testid="error-importacion"
+              className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-sm text-red-700"
+            >
               {error}
             </div>
           )}
@@ -212,10 +385,10 @@ export default function ImportCasesPage() {
           {/* Validation results */}
           {validation && (
             <div className="bg-white rounded-lg border p-6 mb-6">
-              <h3 className="font-semibold mb-3">Resultado de validacion</h3>
+              <h3 className="font-semibold mb-3">Resultado de validación</h3>
               <div className="flex gap-4 mb-4">
                 <div className="px-4 py-2 bg-green-50 rounded-lg">
-                  <p className="text-xs text-gray-500">Validos</p>
+                  <p className="text-xs text-gray-500">Válidos</p>
                   <p className="text-xl font-bold text-green-600">{validation.valid}</p>
                 </div>
                 <div className="px-4 py-2 bg-red-50 rounded-lg">
@@ -246,15 +419,15 @@ export default function ImportCasesPage() {
             {step === "input" && (
               <button
                 onClick={handleValidate}
-                disabled={!csv.trim()}
+                disabled={!canValidate}
                 className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-md hover:bg-primary/90 disabled:opacity-50"
               >
-                Validar CSV
+                Validar archivo
               </button>
             )}
             {step === "validating" && (
               <button disabled className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-md opacity-50">
-                Validando...
+                Validando…
               </button>
             )}
             {step === "validated" && validation && validation.valid > 0 && validation.errors.length === 0 && (
@@ -267,15 +440,19 @@ export default function ImportCasesPage() {
             )}
             {step === "validated" && (
               <button
-                onClick={() => { setStep("input"); setValidation(null); setError(null); }}
+                onClick={() => {
+                  setStep("input");
+                  setValidation(null);
+                  setError(null);
+                }}
                 className="px-4 py-2 border text-sm rounded-md hover:bg-gray-50"
               >
-                Editar CSV
+                Editar
               </button>
             )}
             {step === "importing" && (
               <button disabled className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md opacity-50">
-                Importando...
+                Importando…
               </button>
             )}
           </div>

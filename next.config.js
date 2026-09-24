@@ -1,3 +1,24 @@
+/*
+ * SIN TECHO DE CUERPO GLOBAL A PROPOSITO.
+ *
+ * Aqui habia `experimental.middlewareClientMaxBodySize = MAX_FILE_BYTES + 1 MiB`
+ * (22 020 096 bytes) para que un multipart de 20 MiB cupiera en las rutas de
+ * subida. Esas rutas ya no reciben archivos: el navegador escribe directamente
+ * en el almacen con una politica POST y la aplicacion solo recibe JSON pequeno
+ * (`upload-url` y `complete`). Mantener el techo ampliaba para TODAS las rutas
+ * el cuerpo que Next acepta clonar, sin que ninguna lo necesitara.
+ *
+ * Inventario de rutas comprobado al retirarlo: ninguna llama a `formData()`,
+ * `arrayBuffer()` ni `blob()`; la unica que lee el cuerpo en crudo es el webhook
+ * de Stripe (`req.text()`, cuerpos de kilobytes). La mayor entrada JSON legitima
+ * es la importacion de expedientes, acotada por la propia ruta a ~4 MB de
+ * base64. Queda el valor por defecto de Next (10 MB) y, en Vercel, el limite de
+ * 4,5 MB de la plataforma.
+ *
+ * `__tests__/file-policy.test.ts` falla si alguien vuelve a subir el techo o a
+ * recibir archivos por una ruta de la aplicacion.
+ */
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {

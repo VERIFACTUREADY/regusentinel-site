@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { isSuperAdmin } from "@/lib/admin";
+import { logAudit } from "@/lib/audit";
 import { z } from "zod";
 
 const VALID_PLANS = ["INICIA", "DESPACHO", "FIRMA"] as const;
@@ -11,12 +12,15 @@ const bodySchema = z.object({
   days: z.number().int().min(1).max(90),
 });
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const session = await getServerSession(authOptions);
-  if (session?.user?.role !== "OWNER") {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const verified = await getVerifiedUser();
+  const session = verified ? { user: verified } : null;
+  // Solo el equipo de Heredia (ADMIN_EMAILS whitelist) puede otorgar trials
+  // a otras orgs. Antes esto comprobaba `role === "OWNER"`, lo cual permitia
+  // a cualquier OWNER de cualquier despacho darse 90 dias gratis a si mismo
+  // o a otra org saltandose el billing — cross-tenant privilege escalation.
+  if (!session?.user?.email || !isSuperAdmin(session.user.email)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
@@ -39,21 +43,27 @@ export async function POST(
   const currentPeriodEnd = new Date();
   currentPeriodEnd.setDate(currentPeriodEnd.getDate() + days);
 
-  if (org.subscription) {
-    const updated = await prisma.subscription.update({
-      where: { id: org.subscription.id },
-      data: { plan, status: "trialing", currentPeriodEnd },
-    });
-    return NextResponse.json(updated);
-  }
+  const result = org.subscription
+    ? await prisma.subscription.update({
+        where: { id: org.subscription.id },
+        data: { plan, status: "trialing", currentPeriodEnd },
+      })
+    : await prisma.subscription.create({
+        data: {
+          orgId: org.id,
+          plan,
+          status: "trialing",
+          currentPeriodEnd,
+        },
+      });
 
-  const created = await prisma.subscription.create({
-    data: {
-      orgId: org.id,
-      plan,
-      status: "trialing",
-      currentPeriodEnd,
-    },
-  });
-  return NextResponse.json(created);
+  // Audit trail: queda registrado quien del equipo Heredia toco el trial.
+  logAudit({
+    orgId: org.id,
+    userId: session.user.id ?? undefined,
+    action: "admin.trial_granted",
+    details: `Superadmin ${session.user.email} otorgo trial ${plan} por ${days} dias`,
+  }).catch(() => {});
+
+  return NextResponse.json(result);
 }

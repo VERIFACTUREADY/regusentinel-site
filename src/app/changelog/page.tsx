@@ -1,13 +1,34 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Changelog — BARITUR PRO",
-  description: "Novedades y actualizaciones de BARITUR PRO. Software de gestion de herencias para gestorias.",
-  alternates: { canonical: "https://baritur.pro/changelog" },
+  title: "Changelog — Heredia",
+  description: "Novedades y actualizaciones de Heredia. Software de gestion de herencias para gestorias.",
+  alternates: { canonical: "https://heredia.app/changelog" },
 };
 
 const entries = [
+  {
+    date: "2026-05-24",
+    version: "1.5",
+    title: "Radar ISD completo + integraciones outbound (plan Firma)",
+    changes: [
+      "Radar ISD: 6/6 alertas del mockup operativas — plazo Modelo 650, ventana de prórroga, plusvalía municipal (IIVTNU) con detección de no-sujeción (RDL 26/2021), tramos del coeficiente multiplicador del art. 22, cambio de residencia <5 años (art. 28 Ley 22/2009) y mantenimiento de reducciones del art. 20 con aniversarios",
+      "Importación nativa de Excel (.xlsx) en el endpoint /api/cases/import. SheetJS lee la primera hoja, soporta hasta 200 filas, mantiene la validación CSV existente",
+      "Slack notifications (plan Firma) — mensaje en bloques con urgencia coloreada y botón al expediente",
+      "Microsoft Teams (plan Firma) — MessageCard con themeColor por urgencia y OpenUri al expediente",
+      "Webhook genérico (plan Firma) — POST JSON con firma HMAC-SHA256 en X-HEREDIA-Signature. Helper verifyWebhookSignature para clientes",
+      "Google Workspace SSO (plan Firma) — provider NextAuth opt-in via env. Restricción opcional por dominio Workspace (hd)",
+      "Calendar deep links — botones \"+ Google\" y \"+ Outlook / .ics\" en cada plazo del expediente",
+      "WhatsApp deep link en el contacto del expediente con texto pre-rellenado (ref + causante)",
+      "Sede del Catastro — campo Referencia Catastral + deep links a la ficha y al visor cartográfico",
+      "Drag-and-drop real en la subida de documentos del Portal Familia",
+      "Enforcement de maxUsers por plan al invitar miembros (Inicia 2 · Despacho 5 · Firma 20)",
+      "Trial seeded con datos fiscales que disparan 6 alertas Radar desde el día 1 — el moat se ve sin esperar 2 semanas",
+    ],
+    tag: "nuevo",
+  },
   {
     date: "2026-04-17",
     version: "1.4",
@@ -93,22 +114,12 @@ const TAG_STYLES: Record<string, string> = {
 export default function ChangelogPage() {
   return (
     <div className="min-h-screen bg-white">
-      <header className="border-b bg-white sticky top-0 z-50">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex justify-between items-center">
-          <Link href="/" className="text-xl font-bold text-primary">BARITUR PRO</Link>
-          <div className="flex gap-4 items-center text-sm">
-            <Link href="/precios" className="text-gray-600 hover:text-primary">Precios</Link>
-            <Link href="/login?demo=1" className="px-4 py-2 border border-primary text-primary rounded-md hover:bg-primary/5">
-              Probar demo
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main className="max-w-3xl mx-auto px-4 py-12">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Changelog</h1>
         <p className="text-gray-500 mb-10">
-          Novedades, mejoras y correcciones en BARITUR PRO. Publicamos actualizaciones cada semana.
+          Novedades, mejoras y correcciones en Heredia. Publicamos actualizaciones cada semana.
         </p>
 
         <div className="space-y-0">
@@ -138,16 +149,7 @@ export default function ChangelogPage() {
         </div>
       </main>
 
-      <footer className="py-8 border-t bg-gray-50">
-        <div className="max-w-3xl mx-auto px-4 text-center text-sm text-gray-500 space-y-2">
-          <p>
-            <Link href="/" className="text-primary hover:underline mr-4">Inicio</Link>
-            <Link href="/precios" className="text-primary hover:underline mr-4">Precios</Link>
-            <Link href="/legal/privacidad" className="text-primary hover:underline mr-4">Privacidad</Link>
-            <Link href="/legal/terminos" className="text-primary hover:underline">Terminos</Link>
-          </p>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

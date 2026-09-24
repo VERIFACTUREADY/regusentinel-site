@@ -1,5 +1,7 @@
 import { prisma } from "./prisma";
 
+import { contextHash } from "./ai-privacy";
+import { llamarModelo } from "./ai-gateway";
 const HAS_AI = !!process.env.ANTHROPIC_API_KEY;
 const MODEL = "claude-sonnet-4-6";
 
@@ -157,9 +159,6 @@ export async function generateDocRequest({ caseId, userId }: DocRequestInput): P
   let modelUsed = "stub";
 
   if (HAS_AI) {
-    const Anthropic = (await import("@anthropic-ai/sdk")).default;
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
     const userPrompt = `Genera un email de solicitud de documentación para la familia con los siguientes datos del expediente:
 
 ${ctx.text}
@@ -172,15 +171,15 @@ El email debe:
 5. Incluir instrucciones claras para enviar la documentación
 6. Cerrar con despedida profesional`;
 
-    const msg = await client.messages.create({
+    const respuesta = await llamarModelo({
       model: MODEL,
       max_tokens: 1500,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userPrompt }],
+      caseId,
     });
 
-    const block = msg.content[0];
-    const fullText = block.type === "text" ? block.text.trim() : "";
+    const fullText = respuesta.texto || "";
     const lines = fullText.split("\n");
     const subjectLine = lines[0] || "";
     emailSubject = subjectLine.replace(/^[Aa]sunto:\s*/i, "").trim() || `Solicitud de documentación - ${ref}`;
@@ -192,10 +191,10 @@ El email debe:
         caseId,
         userId,
         action: "doc_request",
-        prompt: ctx.text,
+        contextHash: contextHash(ctx.text),
         response: JSON.stringify({ emailSubject, emailBody, documentList: ctx.documentList }),
         model: modelUsed,
-        tokens: msg.usage ? msg.usage.input_tokens + msg.usage.output_tokens : null,
+        tokens: null,
       },
     });
   } else {
@@ -209,7 +208,7 @@ El email debe:
         caseId,
         userId,
         action: "doc_request",
-        prompt: ctx.text,
+        contextHash: contextHash(ctx.text),
         response: JSON.stringify({ emailSubject, emailBody, documentList: ctx.documentList }),
         model: modelUsed,
         tokens: null,

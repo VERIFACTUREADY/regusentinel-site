@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "BARITUR PRO",
-    short_name: "BARITUR",
+    name: "Heredia",
+    short_name: "Heredia",
     description: "Software de gestion post-mortem para gestorias y funerarias",
     start_url: "/dashboard",
     display: "standalone",

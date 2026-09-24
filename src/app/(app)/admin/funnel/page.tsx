@@ -1,7 +1,7 @@
-import { getServerSession } from "next-auth";
+import { getVerifiedUser } from "@/lib/session";
 import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isSuperAdmin } from "@/lib/admin";
 import Link from "next/link";
 
 export const metadata = { title: "Funnel de conversion" };
@@ -23,8 +23,11 @@ function lastNWeeks(n: number): { label: string; start: Date; end: Date }[] {
 }
 
 export default async function FunnelPage() {
-  const session = await getServerSession(authOptions);
-  if (session?.user?.role !== "OWNER") redirect("/dashboard");
+  // El email del superadmin salia del JWT: una cuenta borrada conservaba
+  // acceso al panel. Ahora se relee de la base de datos.
+  const verificado = await getVerifiedUser();
+  const session = verificado ? { user: verificado } : null;
+  if (!isSuperAdmin(session?.user?.email)) redirect("/dashboard");
 
   const now = new Date();
   const thirtyDaysAgo = new Date(now);
@@ -41,6 +44,10 @@ export default async function FunnelPage() {
     activeSubs,
     recentConversions,
     weeklyCounts,
+    registros,
+    registros30d,
+    orgsConExpedienteReal,
+    orgsConSubidaDeFamilia,
   ] = await Promise.all([
     prisma.demoRequest.count(),
     prisma.demoRequest.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
@@ -68,6 +75,26 @@ export default async function FunnelPage() {
         }),
       }))
     ),
+
+    // ─── Tramo self-service ───────────────────────────────────
+    // El embudo anterior saltaba de "lead" a "trial" y no veia el alta
+    // directa desde /precios, que es justo el camino que hay que medir.
+    // Todo sale de datos que ya existen: no hay tabla ni evento nuevo.
+    prisma.organization.count(),
+    prisma.organization.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+
+    // ACTIVACION. `seedSampleCase` crea "EXP-EJEMPLO" en cada alta, asi que
+    // contar organizaciones con expedientes daria el 100 % y no mediria nada:
+    // hay que excluirlo para ver quien ha abierto un expediente DE VERDAD.
+    prisma.organization.count({
+      where: { cases: { some: { deletedAt: null, ref: { not: "EXP-EJEMPLO" } } } },
+    }),
+
+    // Señal de activacion fuerte: la familia ha subido un documento por el
+    // portal. Es el momento en que el producto ha hecho su trabajo.
+    prisma.organization.count({
+      where: { cases: { some: { deletedAt: null, documents: { some: { isPortalUpload: true } } } } },
+    }),
   ]);
 
   const statusMap: Record<string, number> = {};
@@ -83,8 +110,11 @@ export default async function FunnelPage() {
     { stage: "Leads totales", value: totalLeads, color: "bg-gray-400" },
     { stage: "Contactados", value: statusMap["CONTACTED"] ?? 0, color: "bg-blue-400" },
     { stage: "Reunion", value: statusMap["MEETING"] ?? 0, color: "bg-yellow-400" },
-    { stage: "Piloto/Trial", value: (statusMap["PILOT"] ?? 0) + trialingSubs, color: "bg-purple-400" },
-    { stage: "Clientes", value: (statusMap["CUSTOMER"] ?? 0), color: "bg-green-500" },
+    { stage: "Registros (alta self-service)", value: registros, color: "bg-indigo-400" },
+    { stage: "Trial activo", value: (statusMap["PILOT"] ?? 0) + trialingSubs, color: "bg-purple-400" },
+    { stage: "Primer expediente real", value: orgsConExpedienteReal, color: "bg-teal-500" },
+    { stage: "Activados (familia sube documento)", value: orgsConSubidaDeFamilia, color: "bg-cyan-500" },
+    { stage: "Clientes de pago", value: activeSubs, color: "bg-green-500" },
   ];
   const maxFunnel = Math.max(...funnel.map((f) => f.value), 1);
 
@@ -141,6 +171,28 @@ export default async function FunnelPage() {
         <div className="bg-white p-4 rounded-lg border">
           <p className="text-xs text-gray-500">Conversion %</p>
           <p className="text-2xl font-bold text-primary">{conversionRate}%</p>
+        </div>
+      </div>
+
+      {/* Alta self-service: lo que el embudo de leads no veia */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-white p-4 rounded-lg border">
+          <p className="text-xs text-gray-500">Registros totales</p>
+          <p className="text-2xl font-bold text-indigo-600">{registros}</p>
+        </div>
+        <div className="bg-white p-4 rounded-lg border">
+          <p className="text-xs text-gray-500">Registros ultimos 30d</p>
+          <p className="text-2xl font-bold text-indigo-600">{registros30d}</p>
+        </div>
+        <div className="bg-white p-4 rounded-lg border">
+          <p className="text-xs text-gray-500">Con expediente real</p>
+          <p className="text-2xl font-bold text-teal-600">{orgsConExpedienteReal}</p>
+          <p className="text-[10px] text-gray-400 mt-1">excluye EXP-EJEMPLO</p>
+        </div>
+        <div className="bg-white p-4 rounded-lg border">
+          <p className="text-xs text-gray-500">Activados</p>
+          <p className="text-2xl font-bold text-cyan-600">{orgsConSubidaDeFamilia}</p>
+          <p className="text-[10px] text-gray-400 mt-1">la familia subio un documento</p>
         </div>
       </div>
 

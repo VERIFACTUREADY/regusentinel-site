@@ -1,18 +1,17 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getVerifiedSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import { WorkflowLogsClient } from "./workflow-logs-client";
 
 export const metadata = {
-  title: "Registro de automatizaciones — BARITUR PRO",
+  title: "Registro de automatizaciones — Heredia",
   robots: { index: false },
 };
 
 export default async function WorkflowLogsPage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) redirect("/login");
+  const session = await getVerifiedSession();
+  if (!session) redirect("/login");
   if (!hasPermission(session.user.role, "workflow.read")) redirect("/dashboard");
 
   const orgId = session.user.orgId;
@@ -23,6 +22,14 @@ export default async function WorkflowLogsPage() {
       include: {
         rule: { select: { id: true, name: true } },
         case: { select: { id: true, ref: true } },
+        // Sin este contador, «Reintentar fallidas» salía en toda ejecución
+        // PARTIAL o FAILED durante el primer render —incluidas las que ya no
+        // tenían nada pendiente— y sólo desaparecía tras recargar por el API.
+        _count: {
+          select: {
+            deliveries: { where: { status: { in: ["PENDING", "FAILED", "PROCESSING"] } } },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
       take: 30,
@@ -50,6 +57,7 @@ export default async function WorkflowLogsPage() {
     createdAt: l.createdAt.toISOString(),
     rule: l.rule,
     case: l.case,
+    pendingDeliveries: l._count.deliveries,
   }));
 
   return (
@@ -58,6 +66,16 @@ export default async function WorkflowLogsPage() {
       initialTotal={initialTotal}
       rules={rules}
       statMap={statMap}
+      /*
+       * El reintento provoca envíos reales y el API lo protege con
+       * `workflow.manage` —sólo OWNER y MANAGER—. La pantalla, en cambio,
+       * ofrecía el botón a los cuatro roles: un OPERATOR podía pulsarlo, ver
+       * «No se pudo reintentar», y no tener forma de saber que el problema era
+       * que no le corresponde a él. Esconderlo no es el control de seguridad
+       * —ése está en el servidor, y sigue estando—, es no prometer algo que no
+       * se va a poder hacer.
+       */
+      puedeReintentar={hasPermission(session.user.role, "workflow.manage")}
     />
   );
 }

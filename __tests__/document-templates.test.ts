@@ -109,7 +109,7 @@ describe("generateTemplatePDF", () => {
       remitenteEmail: values.remitenteEmail ?? "",
       remitentePhone: values.remitentePhone ?? "",
       recipientLabel: t.destinatario,
-      generatedBy: "BARITUR PRO",
+      generatedBy: "Heredia",
       generatedAt: new Date(),
     });
 
@@ -132,7 +132,7 @@ describe("generateTemplatePDF", () => {
         remitenteEmail: "test@example.com",
         remitentePhone: "+34 600 000 000",
         recipientLabel: t.destinatario,
-        generatedBy: "BARITUR PRO Test",
+        generatedBy: "Heredia Test",
         generatedAt: new Date(),
       });
 
@@ -151,7 +151,7 @@ describe("generateTemplatePDF", () => {
       remitenteEmail: "",
       remitentePhone: "",
       recipientLabel: t.destinatario,
-      generatedBy: "BARITUR PRO",
+      generatedBy: "Heredia",
       generatedAt: new Date(),
     });
 
@@ -171,7 +171,7 @@ describe("generateTemplatePDF", () => {
       remitenteEmail: "x@y.es",
       remitentePhone: "+34",
       recipientLabel: "Test",
-      generatedBy: "BARITUR PRO",
+      generatedBy: "Heredia",
       generatedAt: new Date(),
     });
 

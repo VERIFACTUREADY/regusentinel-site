@@ -5,6 +5,10 @@
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/cron/unblock-tasks",
+      "schedule": "0 5 * * *"
+    },
+    {
       "path": "/api/cron/demo-reset",
       "schedule": "0 3 * * *"
     },
@@ -35,6 +39,10 @@
     {
       "path": "/api/cron/daily-briefing",
       "schedule": "30 7 * * 1-5"
+    },
+    {
+      "path": "/api/cron/stripe-recovery",
+      "schedule": "17 2 * * *"
     }
   ]
 }

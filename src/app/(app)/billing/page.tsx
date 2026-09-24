@@ -64,9 +64,9 @@ const planCatalog: Record<PlanKey, {
     features: [
       "Hasta 20 usuarios",
       "200 expedientes/mes incluidos",
-      "Roles/permisos avanzados, SSO",
-      "API/webhooks + integraciones",
-      "DPA extendido + auditorias",
+      "Roles y permisos avanzados (5 niveles)",
+      "Integraciones salientes: Slack, Teams y webhook propio",
+      "Registro de auditoria exportable",
       "Onboarding asistido + formacion",
       "Soporte prioritario",
     ],
@@ -447,7 +447,7 @@ export default function BillingPage() {
       </div>
 
       <p className="text-xs text-gray-400 mt-6">
-        Precios sin IVA. Facturacion en EUR. Soporte: soporte@baritur.com.
+        Precios sin IVA. Facturacion en EUR. Soporte: soporte@heredia.app.
       </p>
     </div>
   );

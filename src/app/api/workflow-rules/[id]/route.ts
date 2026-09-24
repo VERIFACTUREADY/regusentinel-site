@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireOrgPermission } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "workflow.read")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const auth = await requireOrgPermission("workflow.read");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const rule = await prisma.workflowRule.findFirst({
     where: { id: params.id, orgId: session.user.orgId },
@@ -29,14 +24,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json(rule);
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "workflow.manage")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const auth = await requireOrgPermission("workflow.manage");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const rule = await prisma.workflowRule.findFirst({
     where: { id: params.id, orgId: session.user.orgId },
@@ -69,14 +61,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json(updated);
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.role) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "workflow.manage")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const auth = await requireOrgPermission("workflow.manage");
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const rule = await prisma.workflowRule.findFirst({
     where: { id: params.id, orgId: session.user.orgId },

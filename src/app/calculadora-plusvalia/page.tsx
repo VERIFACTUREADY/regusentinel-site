@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { PlusvaliaClient } from "./plusvalia-client";
 import { ProUpsell } from "@/components/pro-upsell";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "Calculadora de Plusvalía Municipal 2025 — IIVTNU por herencia",
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
     "metodo objetivo plusvalia",
     "plusvalia real",
   ],
-  alternates: { canonical: "https://bariturpro.com/calculadora-plusvalia" },
+  alternates: { canonical: "https://heredia.app/calculadora-plusvalia" },
   openGraph: {
     title: "Calculadora de Plusvalía Municipal — IIVTNU",
     description: "Calcula la plusvalía municipal por los dos métodos y elige el menor.",
@@ -60,20 +61,13 @@ export default function CalculadoraPlusvaliaPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-            <nav className="flex gap-3 sm:gap-4 text-sm">
-              <Link href="/calculadora-isd" className="text-gray-700 hover:text-primary">Sucesiones</Link>
-              <Link href="/calculadora-donaciones" className="text-gray-700 hover:text-primary hidden sm:inline">Donaciones</Link>
-              <Link href="/recursos" className="text-gray-700 hover:text-primary hidden md:inline">Recursos</Link>
-              <Link href="/#demo" className="text-primary font-semibold">Probar gratis</Link>
-            </nav>
-          </div>
-        </header>
+        <SiteHeader />
 
-        <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
-          <div className="max-w-4xl mx-auto px-4 py-12 sm:py-14">
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-blue-900 text-white">
+          <div className="absolute inset-0 dot-grid-light opacity-30" />
+          <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl animate-float-slow" />
+          <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
+          <div className="relative max-w-4xl mx-auto px-4 py-12 sm:py-14">
             <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-400/30 rounded-full px-3 py-1 text-xs text-emerald-300 mb-4">
               <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
               IIVTNU · Reforma 2021 · Los dos métodos
@@ -150,6 +144,7 @@ export default function CalculadoraPlusvaliaPage() {
             inferiores a los máximos legales). No constituye asesoramiento fiscal.
           </p>
         </div>
+        <SiteFooter />
       </div>
     </>
   );

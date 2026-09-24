@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "BARITUR PRO vs Excel, CRM genérico y software jurídico — Comparativa",
+  title: "Heredia vs Excel, CRM genérico y software jurídico — Comparativa",
   description:
-    "Cómo se compara BARITUR PRO con Excel, CRMs genéricos (HubSpot, Pipedrive) y software jurídico-fiscal tradicional para la gestión de herencias y el ISD.",
-  alternates: { canonical: "https://bariturpro.com/comparativa" },
+    "Cómo se compara Heredia con Excel, CRMs genéricos (HubSpot, Pipedrive) y software jurídico-fiscal tradicional para la gestión de herencias y el ISD.",
+  alternates: { canonical: "https://heredia.app/comparativa" },
 };
 
 interface FeatureRow {
@@ -14,7 +16,7 @@ interface FeatureRow {
   excel: "yes" | "partial" | "no";
   crm: "yes" | "partial" | "no";
   juridico: "yes" | "partial" | "no";
-  baritur: "yes" | "partial" | "no";
+  heredia: "yes" | "partial" | "no";
 }
 
 const FEATURES: FeatureRow[] = [
@@ -24,7 +26,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Borrador del Modelo 650 en PDF",
@@ -32,15 +34,15 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
-    feature: "Detección automática de plazos críticos",
-    detail: "Avisos de vencimiento del Modelo 650, ventana de prórroga, proximidad a tramos",
+    feature: "Radar ISD — vigilancia del plazo del Modelo 650",
+    detail: "Avisos antes de vencer el Modelo 650, ventana de prórroga, tramos de patrimonio, bonificaciones con caducidad y cambios de residencia",
     excel: "no",
     crm: "no",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Plantillas de tareas precargadas",
@@ -48,15 +50,15 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
-    feature: "Portal familia white-label",
-    detail: "URL única por expediente para que la familia suba documentos y consulte estado",
+    feature: "Portal Familia con tu marca",
+    detail: "URL única por expediente. Cada heredero ve plazos, documentos pendientes y chat con el gestor. Reduce 68% las consultas",
     excel: "no",
     crm: "no",
     juridico: "no",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Pack para banco automático",
@@ -64,7 +66,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "no",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Cumplimiento RGPD post-mortem específico",
@@ -72,15 +74,15 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "partial",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Audit trail completo",
-    detail: "Registro inmutable de cada acción, autor y momento — válido en juicio",
+    detail: "Registro append-only de cada acción, autor y momento, exportable con el expediente",
     excel: "no",
     crm: "partial",
     juridico: "yes",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Búsqueda global y dashboard de cartera",
@@ -88,7 +90,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "yes",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Especialización en herencias y post-mortem",
@@ -96,7 +98,7 @@ const FEATURES: FeatureRow[] = [
     excel: "no",
     crm: "no",
     juridico: "partial",
-    baritur: "yes",
+    heredia: "yes",
   },
   {
     feature: "Coste mensual",
@@ -104,7 +106,7 @@ const FEATURES: FeatureRow[] = [
     excel: "yes",
     crm: "no",
     juridico: "no",
-    baritur: "yes",
+    heredia: "yes",
   },
 ];
 
@@ -139,21 +141,15 @@ const Cell = ({ v }: { v: "yes" | "partial" | "no" }) => {
 export default function ComparativaPage() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="text-lg font-bold text-primary">BARITUR PRO</Link>
-          <nav className="flex gap-3 sm:gap-4 text-sm">
-            <Link href="/recursos" className="text-gray-700 hover:text-primary">Recursos</Link>
-            <Link href="/precios" className="text-gray-700 hover:text-primary">Precios</Link>
-            <Link href="/#demo" className="text-primary font-semibold">Probar gratis</Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
-      <div className="bg-gradient-to-br from-slate-900 to-blue-900 text-white">
-        <div className="max-w-5xl mx-auto px-4 py-12 sm:py-14">
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-blue-900 text-white">
+        <div className="absolute inset-0 dot-grid-light opacity-30" />
+        <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-500/30 rounded-full blur-3xl animate-float-slow" />
+        <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-blue-400/25 rounded-full blur-3xl animate-float" />
+        <div className="relative max-w-5xl mx-auto px-4 py-12 sm:py-14">
           <h1 className="text-3xl sm:text-4xl font-bold mb-3">
-            BARITUR PRO vs alternativas
+            Heredia vs alternativas
           </h1>
           <p className="text-base sm:text-lg text-blue-100 max-w-3xl">
             Por qué un software especializado en herencias y post-mortem supera a las hojas de cálculo,
@@ -182,7 +178,7 @@ export default function ComparativaPage() {
                     Software<br />jurídico
                   </th>
                   <th className="px-3 py-4 text-center text-xs font-bold text-primary uppercase tracking-wider bg-blue-50">
-                    BARITUR<br />PRO
+                    Heredia
                   </th>
                 </tr>
               </thead>
@@ -196,7 +192,7 @@ export default function ComparativaPage() {
                     <td className="px-3 py-3 text-center"><Cell v={f.excel} /></td>
                     <td className="px-3 py-3 text-center"><Cell v={f.crm} /></td>
                     <td className="px-3 py-3 text-center"><Cell v={f.juridico} /></td>
-                    <td className="px-3 py-3 text-center bg-blue-50/50"><Cell v={f.baritur} /></td>
+                    <td className="px-3 py-3 text-center bg-blue-50/50"><Cell v={f.heredia} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -270,7 +266,7 @@ export default function ComparativaPage() {
       {/* Why we win */}
       <div className="max-w-4xl mx-auto px-4 pb-12">
         <div className="bg-white rounded-2xl border p-6 sm:p-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Por qué BARITUR PRO es distinto</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Por qué Heredia es distinto</h2>
           <div className="grid sm:grid-cols-2 gap-5">
             {[
               {
@@ -305,10 +301,19 @@ export default function ComparativaPage() {
           <div className="grid md:grid-cols-2 gap-6 items-center">
             <div>
               <h2 className="text-2xl font-bold mb-3">¿Estás migrando desde Excel u otro sistema?</h2>
-              <p className="text-blue-200 text-sm">
-                Setup remoto en 30 minutos, plantillas precargadas, importación CSV de expedientes existentes.
+              <p className="text-blue-200 text-sm mb-3">
+                Plan de migración en 5 días, plantillas precargadas, importación de tu Excel actual.
                 14 días gratis para que pruebes con tu cartera real.
               </p>
+              <Link
+                href="/migrar-de-excel"
+                className="inline-flex items-center gap-1 text-sm font-semibold text-blue-200 hover:text-white transition-all"
+              >
+                Ver el plan de migración detallado
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </Link>
             </div>
             <div className="flex flex-col gap-3 items-stretch">
               <Link
@@ -321,12 +326,13 @@ export default function ComparativaPage() {
                 href="/#demo"
                 className="px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-lg text-sm text-center transition"
               >
-                Probar BARITUR PRO 14 días
+                Probar Heredia 14 días
               </Link>
             </div>
           </div>
         </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { parsePrefs, type NotifPrefs } from "@/lib/notif-prefs";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.id) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
+  const auth = await requireSession();
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const membership = await prisma.membership.findFirst({
     where: { userId: session.user.id, orgId: session.user.orgId },
@@ -24,10 +22,9 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.orgId || !session.user.id) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
+  const auth = await requireSession();
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const body = await req.json().catch(() => ({}));
   const incoming = body.prefs as Partial<NotifPrefs> | undefined;

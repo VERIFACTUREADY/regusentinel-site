@@ -1,5 +1,7 @@
 import { prisma } from "./prisma";
 
+import { contextHash } from "./ai-privacy";
+import { llamarModelo } from "./ai-gateway";
 const HAS_AI = !!process.env.ANTHROPIC_API_KEY;
 const MODEL = "claude-sonnet-4-6";
 
@@ -93,16 +95,14 @@ export async function generateHandoffBriefing(
 
   if (HAS_AI) {
     try {
-      const Anthropic = (await import("@anthropic-ai/sdk")).default;
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const msg = await client.messages.create({
+      const respuesta = await llamarModelo({
         model: MODEL,
         max_tokens: 1500,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: context }],
-      });
-      const block = msg.content[0];
-      const raw = block.type === "text" ? block.text.trim() : "";
+        caseId,
+    });
+      const raw = respuesta.texto || "";
       const jsonStr = extractJson(raw);
       const parsed = JSON.parse(jsonStr);
       result = {
@@ -126,7 +126,7 @@ export async function generateHandoffBriefing(
       caseId,
       userId,
       action: "handoff_briefing",
-      prompt: context.slice(0, 500),
+      contextHash: contextHash(context.slice(0, 500)),
       response: JSON.stringify(result),
       model: result.model,
     },

@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     remitentePhone: values.remitentePhone || "",
     recipientLabel: template.destinatario,
     place: typeof body.place === "string" ? body.place.slice(0, 80) : undefined,
-    generatedBy: "BARITUR PRO - Plantilla gratuita",
+    generatedBy: "Heredia - Plantilla gratuita",
     generatedAt: new Date(),
   });
 

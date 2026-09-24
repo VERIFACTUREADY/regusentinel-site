@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { ResetPasswordForm } from "./reset-password-form";
 
 export const metadata = {
-  title: "Restablecer contraseña — BARITUR PRO",
+  title: "Restablecer contraseña — Heredia",
   robots: { index: false },
 };
 
